@@ -1,0 +1,1925 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model attributes {
+  id                       BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  code                     String                     @unique(map: "uq_attributes_code") @default("") @db.VarChar(50)
+  name                     String                     @default("") @db.VarChar(100)
+  category                 String                     @default("") @db.VarChar(30)
+  description              String?                    @db.Text
+  logo_url                 String?                    @db.VarChar(255)
+  player_attribute_history player_attribute_history[]
+  player_attributes        player_attributes[]
+  position_attributes      position_attributes[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model award_categories {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  code        String   @unique(map: "uq_award_categories_code") @default("") @db.VarChar(50)
+  name        String   @default("") @db.VarChar(100)
+  scope       String   @default("") @db.VarChar(30)
+  description String?  @db.Text
+  awards      awards[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model award_criteria {
+  id             BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  award_id       BigInt  @db.UnsignedBigInt
+  criterion_type String  @default("") @db.VarChar(50)
+  field          String  @default("") @db.VarChar(100)
+  operator       String  @default("") @db.VarChar(20)
+  value          String  @default("") @db.VarChar(100)
+  weight         Decimal @default(0.00) @db.Decimal(5, 2)
+  awards         awards  @relation(fields: [award_id], references: [id], onDelete: Cascade, map: "fk_award_criteria_award_id")
+
+  @@index([award_id], map: "idx_award_criteria_award_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model award_editions {
+  id             BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  award_id       BigInt           @db.UnsignedBigInt
+  season_id      BigInt           @db.UnsignedBigInt
+  country_id     BigInt?          @db.UnsignedBigInt
+  period_start   DateTime         @db.Date
+  period_end     DateTime         @db.Date
+  status         String           @default("") @db.VarChar(30)
+  awards         awards           @relation(fields: [award_id], references: [id], onDelete: Cascade, map: "fk_award_editions_award_id")
+  countries      countries?       @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_award_editions_country_id")
+  seasons        seasons          @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_award_editions_season_id")
+  award_nominees award_nominees[]
+  player_awards  player_awards[]
+
+  @@index([award_id], map: "idx_award_editions_award_id")
+  @@index([country_id], map: "idx_award_editions_country_id")
+  @@index([season_id], map: "idx_award_editions_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model award_nominees {
+  id               BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  award_edition_id BigInt         @db.UnsignedBigInt
+  player_id        BigInt?        @db.UnsignedBigInt
+  club_id          BigInt?        @db.UnsignedBigInt
+  score            Decimal        @default(0.00) @db.Decimal(18, 2)
+  rank             Int            @default(0)
+  award_editions   award_editions @relation(fields: [award_edition_id], references: [id], onDelete: Cascade, map: "fk_award_nominees_award_edition_id")
+  clubs            clubs?         @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_award_nominees_club_id")
+  players          players?       @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_award_nominees_player_id")
+
+  @@index([award_edition_id], map: "idx_award_nominees_award_edition_id")
+  @@index([club_id], map: "idx_award_nominees_club_id")
+  @@index([player_id], map: "idx_award_nominees_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model awards {
+  id               BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  category_id      BigInt           @db.UnsignedBigInt
+  code             String           @unique(map: "uq_awards_code") @default("") @db.VarChar(50)
+  name             String           @default("") @db.VarChar(150)
+  frequency        String           @default("") @db.VarChar(30)
+  trophy_url       String?          @db.VarChar(255)
+  award_criteria   award_criteria[]
+  award_editions   award_editions[]
+  award_categories award_categories @relation(fields: [category_id], references: [id], onDelete: Cascade, map: "fk_awards_category_id")
+
+  @@index([category_id], map: "idx_awards_category_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model cities {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  country_id BigInt    @db.UnsignedBigInt
+  name       String    @default("") @db.VarChar(100)
+  countries  countries @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_cities_country_id")
+  clubs      clubs[]
+
+  @@index([country_id], map: "idx_cities_country_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model club_bonuses {
+  id              BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id         BigInt     @db.UnsignedBigInt
+  season_id       BigInt     @db.UnsignedBigInt
+  bonus_type      String     @default("") @db.VarChar(50)
+  condition_value Decimal    @default(0.0000) @db.Decimal(10, 4)
+  amount          Decimal    @default(0.00) @db.Decimal(18, 2)
+  currency_id     BigInt     @db.UnsignedBigInt
+  status          String     @default("") @db.VarChar(30)
+  clubs           clubs      @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_bonuses_club_id")
+  currencies      currencies @relation(fields: [currency_id], references: [id], onDelete: Cascade, map: "fk_club_bonuses_currency_id")
+  seasons         seasons    @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_club_bonuses_season_id")
+
+  @@index([club_id], map: "idx_club_bonuses_club_id")
+  @@index([currency_id], map: "idx_club_bonuses_currency_id")
+  @@index([season_id], map: "idx_club_bonuses_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model club_news {
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id       BigInt    @db.UnsignedBigInt
+  season_id     BigInt?   @db.UnsignedBigInt
+  news_type     String    @default("") @db.VarChar(50)
+  title         String    @default("") @db.VarChar(255)
+  thumbnail_url String?   @db.VarChar(255)
+  content       String?   @db.Text
+  published_at  DateTime? @db.DateTime(0)
+  clubs         clubs     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_news_club_id")
+  seasons       seasons?  @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_club_news_season_id")
+
+  @@index([club_id], map: "idx_club_news_club_id")
+  @@index([season_id], map: "idx_club_news_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model club_objectives {
+  id             BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id        BigInt  @db.UnsignedBigInt
+  season_id      BigInt  @db.UnsignedBigInt
+  objective_type String  @default("") @db.VarChar(50)
+  target_value   Decimal @default(0.00) @db.Decimal(18, 2)
+  reward         Decimal @default(0.00) @db.Decimal(18, 2)
+  status         String  @default("") @db.VarChar(30)
+  clubs          clubs   @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_objectives_club_id")
+  seasons        seasons @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_club_objectives_season_id")
+
+  @@index([club_id], map: "idx_club_objectives_club_id")
+  @@index([season_id], map: "idx_club_objectives_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model club_rankings {
+  id            BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id      BigInt                     @db.UnsignedBigInt
+  club_id       BigInt                     @db.UnsignedBigInt
+  ranking_type  club_rankings_ranking_type @default(WORLD_CLUB)
+  ranking_date  DateTime                   @db.Date
+  rank          Int                        @default(0)
+  points        Decimal                    @default(0.00) @db.Decimal(18, 2)
+  previous_rank Int                        @default(0)
+  coefficient   Decimal                    @default(0.0000) @db.Decimal(10, 4)
+  clubs         clubs                      @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_rankings_club_id")
+  game_worlds   game_worlds                @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_club_rankings_world_id")
+
+  @@index([club_id], map: "idx_club_rankings_club_id")
+  @@index([world_id, ranking_type, rank], map: "idx_club_rankings_rank")
+  @@index([world_id], map: "idx_club_rankings_world_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model club_sponsorships {
+  id          BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id     BigInt     @db.UnsignedBigInt
+  sponsor_id  BigInt     @db.UnsignedBigInt
+  start_date  DateTime   @db.Date
+  end_date    DateTime?  @db.Date
+  amount      Decimal    @default(0.00) @db.Decimal(18, 2)
+  currency_id BigInt     @db.UnsignedBigInt
+  status      String     @default("") @db.VarChar(30)
+  clubs       clubs      @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_sponsorships_club_id")
+  currencies  currencies @relation(fields: [currency_id], references: [id], onDelete: Cascade, map: "fk_club_sponsorships_currency_id")
+  sponsors    sponsors   @relation(fields: [sponsor_id], references: [id], onDelete: Cascade, map: "fk_club_sponsorships_sponsor_id")
+
+  @@index([club_id], map: "idx_club_sponsorships_club_id")
+  @@index([currency_id], map: "idx_club_sponsorships_currency_id")
+  @@index([sponsor_id], map: "idx_club_sponsorships_sponsor_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model club_tactic_positions {
+  id                           BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  tactic_id                    BigInt                         @db.UnsignedBigInt
+  formation_position_id        BigInt                         @db.UnsignedBigInt
+  player_id                    BigInt?                        @db.UnsignedBigInt
+  role                         String                         @default("") @db.VarChar(50)
+  duty                         String                         @default("") @db.VarChar(30)
+  formation_positions          formation_positions            @relation(fields: [formation_position_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_formation_position_id")
+  players                      players?                       @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_player_id")
+  club_tactics                 club_tactics                   @relation(fields: [tactic_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_tactic_id")
+  tactic_position_instructions tactic_position_instructions[]
+
+  @@index([formation_position_id], map: "idx_club_tactic_positions_formation_position_id")
+  @@index([player_id], map: "idx_club_tactic_positions_player_id")
+  @@index([tactic_id], map: "idx_club_tactic_positions_tactic_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model club_tactics {
+  id                    BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id               BigInt                  @db.UnsignedBigInt
+  name                  String                  @default("") @db.VarChar(100)
+  formation_id          BigInt                  @db.UnsignedBigInt
+  mentality             String                  @default("") @db.VarChar(30)
+  tempo                 Int                     @default(0)
+  passing_style         String                  @default("") @db.VarChar(30)
+  pressing_intensity    Int                     @default(0)
+  defensive_line        Int                     @default(0)
+  created_at            DateTime                @default(now()) @db.DateTime(0)
+  updated_at            DateTime                @default(now()) @db.DateTime(0)
+  club_tactic_positions club_tactic_positions[]
+  clubs                 clubs                   @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_tactics_club_id")
+  formations            formations              @relation(fields: [formation_id], references: [id], onDelete: Cascade, map: "fk_club_tactics_formation_id")
+  match_lineups         match_lineups[]
+
+  @@index([club_id], map: "idx_club_tactics_club_id")
+  @@index([formation_id], map: "idx_club_tactics_formation_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model clubs {
+  id                                                      BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id                                                BigInt                   @db.UnsignedBigInt
+  owner_user_id                                           BigInt?                  @db.UnsignedBigInt
+  country_id                                              BigInt                   @db.UnsignedBigInt
+  city_id                                                 BigInt                   @db.UnsignedBigInt
+  name                                                    String                   @default("") @db.VarChar(150)
+  short_name                                              String                   @default("") @db.VarChar(50)
+  founded_year                                            Int                      @default(0) @db.SmallInt
+  ranking_points                                          Decimal                  @default(1000.00) @db.Decimal(18, 2)
+  world_rank                                              Int                      @default(0)
+  previous_world_rank                                     Int                      @default(0)
+  reputation                                              Int                      @default(1000)
+  current_competition_id                                  BigInt?                  @db.UnsignedBigInt
+  logo_url                                                String?                  @db.VarChar(255)
+  home_kit_url                                            String?                  @db.VarChar(255)
+  away_kit_url                                            String?                  @db.VarChar(255)
+  third_kit_url                                           String?                  @db.VarChar(255)
+  status                                                  String                   @default("") @db.VarChar(30)
+  award_nominees                                          award_nominees[]
+  club_bonuses                                            club_bonuses[]
+  club_news                                               club_news[]
+  club_objectives                                         club_objectives[]
+  club_rankings                                           club_rankings[]
+  club_sponsorships                                       club_sponsorships[]
+  club_tactics                                            club_tactics[]
+  cities                                                  cities                   @relation(fields: [city_id], references: [id], onDelete: Cascade, map: "fk_clubs_city_id")
+  countries                                               countries                @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_clubs_country_id")
+  competitions                                            competitions?            @relation(fields: [current_competition_id], references: [id], map: "fk_clubs_current_competition_id")
+  users                                                   users?                   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade, map: "fk_clubs_owner_user_id")
+  game_worlds                                             game_worlds              @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_clubs_world_id")
+  facilities                                              facilities[]
+  financial_accounts                                      financial_accounts[]
+  financial_transactions                                  financial_transactions[]
+  knockout_ties_knockout_ties_away_club_idToclubs         knockout_ties[]          @relation("knockout_ties_away_club_idToclubs")
+  knockout_ties_knockout_ties_home_club_idToclubs         knockout_ties[]          @relation("knockout_ties_home_club_idToclubs")
+  knockout_ties_knockout_ties_winner_club_idToclubs       knockout_ties[]          @relation("knockout_ties_winner_club_idToclubs")
+  match_events                                            match_events[]
+  match_lineups                                           match_lineups[]
+  matches_matches_away_club_idToclubs                     matches[]                @relation("matches_away_club_idToclubs")
+  matches_matches_home_club_idToclubs                     matches[]                @relation("matches_home_club_idToclubs")
+  player_awards                                           player_awards[]
+  player_club_history                                     player_club_history[]
+  player_contracts_player_contracts_club_idToclubs        player_contracts[]       @relation("player_contracts_club_idToclubs")
+  player_contracts_player_contracts_parent_club_idToclubs player_contracts[]       @relation("player_contracts_parent_club_idToclubs")
+  player_statistics                                       player_statistics[]
+  players_players_current_club_idToclubs                  players[]                @relation("players_current_club_idToclubs")
+  players_players_trained_club_idToclubs                  players[]                @relation("players_trained_club_idToclubs")
+  scouting_assignments                                    scouting_assignments[]
+  stadiums                                                stadiums[]
+  staff_contracts                                         staff_contracts[]
+  stage_standings                                         stage_standings[]
+  stage_teams                                             stage_teams[]
+  training_sessions                                       training_sessions[]
+  transfer_offers_transfer_offers_from_club_idToclubs     transfer_offers[]        @relation("transfer_offers_from_club_idToclubs")
+  transfer_offers_transfer_offers_to_club_idToclubs       transfer_offers[]        @relation("transfer_offers_to_club_idToclubs")
+  transfers_transfers_from_club_idToclubs                 transfers[]              @relation("transfers_from_club_idToclubs")
+  transfers_transfers_to_club_idToclubs                   transfers[]              @relation("transfers_to_club_idToclubs")
+  youth_intakes                                           youth_intakes[]
+
+  @@index([city_id], map: "idx_clubs_city_id")
+  @@index([country_id], map: "idx_clubs_country_id")
+  @@index([current_competition_id], map: "idx_clubs_current_competition_id")
+  @@index([owner_user_id], map: "idx_clubs_owner_user_id")
+  @@index([world_id, ranking_points(sort: Desc)], map: "idx_clubs_points")
+  @@index([world_id], map: "idx_clubs_world_id")
+  @@index([world_id, world_rank], map: "idx_clubs_world_ranking")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model competition_prizes {
+  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_season_id BigInt?              @db.UnsignedBigInt
+  stage_id              BigInt?              @db.UnsignedBigInt
+  prize_type            String               @default("") @db.VarChar(50)
+  amount                Decimal              @default(0.00) @db.Decimal(18, 2)
+  currency_id           BigInt               @db.UnsignedBigInt
+  rank_from             Int                  @default(0)
+  rank_to               Int                  @default(0)
+  competition_seasons   competition_seasons? @relation(fields: [competition_season_id], references: [id], onDelete: Cascade, map: "fk_competition_prizes_competition_season_id")
+  currencies            currencies           @relation(fields: [currency_id], references: [id], onDelete: Cascade, map: "fk_competition_prizes_currency_id")
+  competition_stages    competition_stages?  @relation(fields: [stage_id], references: [id], onDelete: Cascade, map: "fk_competition_prizes_stage_id")
+
+  @@index([competition_season_id], map: "idx_competition_prizes_competition_season_id")
+  @@index([currency_id], map: "idx_competition_prizes_currency_id")
+  @@index([stage_id], map: "idx_competition_prizes_stage_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model competition_qualification_rules {
+  id                                                                               BigInt                                      @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_id                                                                   BigInt                                      @db.UnsignedBigInt
+  country_rank_min                                                                 Int                                         @default(1)
+  country_rank_max                                                                 Int                                         @default(999)
+  min_position                                                                     Int
+  max_position                                                                     Int
+  action_type                                                                      competition_qualification_rules_action_type
+  target_competition_id                                                            BigInt?                                     @db.UnsignedBigInt
+  description                                                                      String?                                     @db.VarChar(255)
+  created_at                                                                       DateTime                                    @default(now()) @db.DateTime(0)
+  updated_at                                                                       DateTime                                    @default(now()) @db.DateTime(0)
+  competitions_competition_qualification_rules_competition_idTocompetitions        competitions                                @relation("competition_qualification_rules_competition_idTocompetitions", fields: [competition_id], references: [id], onDelete: Cascade, map: "fk_comp_qual_rules_competition_id")
+  competitions_competition_qualification_rules_target_competition_idTocompetitions competitions?                               @relation("competition_qualification_rules_target_competition_idTocompetitions", fields: [target_competition_id], references: [id], map: "fk_comp_qual_rules_target_competition_id")
+  competition_season_qualification_rules                                           competition_season_qualification_rules[]
+
+  @@index([competition_id], map: "idx_comp_qual_rules_competition_id")
+  @@index([country_rank_min, country_rank_max], map: "idx_comp_qual_rules_country_rank")
+  @@index([target_competition_id], map: "idx_comp_qual_rules_target_competition_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model competition_ranking_rules {
+  id                    BigInt                                 @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_id        BigInt                                 @db.UnsignedBigInt
+  ranking_type          competition_ranking_rules_ranking_type @default(LEAGUE_COEFFICIENT)
+  min_rank              Int                                    @default(0)
+  max_rank              Int                                    @default(0)
+  qualification_slots   Int                                    @default(0)
+  seed_group            String                                 @default("") @db.VarChar(50)
+  prize_multiplier      Decimal                                @default(0.0000) @db.Decimal(10, 4)
+  reputation_multiplier Decimal                                @default(0.0000) @db.Decimal(10, 4)
+  competitions          competitions                           @relation(fields: [competition_id], references: [id], onDelete: Cascade, map: "fk_competition_ranking_rules_competition_id")
+
+  @@index([competition_id], map: "idx_competition_ranking_rules_competition_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model competition_season_qualification_rules {
+  id                              BigInt                          @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_season_id           BigInt                          @db.UnsignedBigInt
+  rule_id                         BigInt                          @db.UnsignedBigInt
+  created_at                      DateTime                        @default(now()) @db.DateTime(0)
+  competition_seasons             competition_seasons             @relation(fields: [competition_season_id], references: [id], onDelete: Cascade, map: "fk_csqr_competition_season_id")
+  competition_qualification_rules competition_qualification_rules @relation(fields: [rule_id], references: [id], onDelete: Cascade, map: "fk_csqr_rule_id")
+
+  @@unique([competition_season_id, rule_id], map: "uq_comp_season_rule")
+  @@index([competition_season_id], map: "idx_csqr_competition_season_id")
+  @@index([rule_id], map: "idx_csqr_rule_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model competition_seasons {
+  id                                     BigInt                                   @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_id                         BigInt                                   @db.UnsignedBigInt
+  season_id                              BigInt                                   @db.UnsignedBigInt
+  country_id                             BigInt?                                  @db.UnsignedBigInt
+  confederation_id                       BigInt?                                  @db.UnsignedBigInt
+  name                                   String                                   @default("") @db.VarChar(150)
+  status                                 String                                   @default("") @db.VarChar(30)
+  competition_prizes                     competition_prizes[]
+  competition_season_qualification_rules competition_season_qualification_rules[]
+  competitions                           competitions                             @relation(fields: [competition_id], references: [id], onDelete: Cascade, map: "fk_competition_seasons_competition_id")
+  confederations                         confederations?                          @relation(fields: [confederation_id], references: [id], onDelete: Cascade, map: "fk_competition_seasons_confederation_id")
+  countries                              countries?                               @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_competition_seasons_country_id")
+  seasons                                seasons                                  @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_competition_seasons_season_id")
+  competition_stages                     competition_stages[]
+  matches                                matches[]
+  player_statistics                      player_statistics[]
+  player_suspensions                     player_suspensions[]
+
+  @@index([competition_id], map: "idx_competition_seasons_competition_id")
+  @@index([confederation_id], map: "idx_competition_seasons_confederation_id")
+  @@index([country_id], map: "idx_competition_seasons_country_id")
+  @@index([season_id], map: "idx_competition_seasons_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model competition_stages {
+  id                                                                      BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_season_id                                                   BigInt?                       @db.UnsignedBigInt
+  name                                                                    String                        @default("") @db.VarChar(100)
+  stage_type                                                              competition_stages_stage_type @default(GROUP)
+  order_no                                                                Int                           @default(0)
+  status                                                                  String                        @default("") @db.VarChar(30)
+  competition_prizes                                                      competition_prizes[]
+  competition_seasons                                                     competition_seasons?          @relation(fields: [competition_season_id], references: [id], onDelete: Cascade, map: "fk_competition_stages_competition_season_id")
+  matches                                                                 matches[]
+  stage_groups                                                            stage_groups[]
+  stage_progressions_stage_progressions_from_stage_idTocompetition_stages stage_progressions[]          @relation("stage_progressions_from_stage_idTocompetition_stages")
+  stage_progressions_stage_progressions_to_stage_idTocompetition_stages   stage_progressions[]          @relation("stage_progressions_to_stage_idTocompetition_stages")
+  stage_rounds                                                            stage_rounds[]
+  stage_standings                                                         stage_standings[]
+  stage_teams                                                             stage_teams[]
+
+  @@index([competition_season_id], map: "idx_competition_stages_competition_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model competitions {
+  id                                                                                                  BigInt                            @id @default(autoincrement()) @db.UnsignedBigInt
+  code                                                                                                String                            @unique(map: "uq_competitions_code") @default("") @db.VarChar(50)
+  name                                                                                                String                            @default("") @db.VarChar(150)
+  scope                                                                                               String                            @default("") @db.VarChar(30)
+  country_id                                                                                          BigInt?                           @db.UnsignedBigInt
+  format_type                                                                                         competitions_format_type          @default(LEAGUE)
+  confederation_id                                                                                    BigInt?                           @db.UnsignedBigInt
+  tier                                                                                                Int                               @default(1)
+  total_teams                                                                                         Int                               @default(0)
+  competition_type                                                                                    competitions_competition_type     @default(DOMESTIC_LEAGUE)
+  participant_type                                                                                    competitions_participant_type     @default(CLUB)
+  is_youth                                                                                            Boolean                           @default(false)
+  age_limit                                                                                           Int?                              @db.UnsignedTinyInt
+  logo_url                                                                                            String?                           @db.VarChar(255)
+  trophy_url                                                                                          String?                           @db.VarChar(255)
+  clubs                                                                                               clubs[]
+  competition_qualification_rules_competition_qualification_rules_competition_idTocompetitions        competition_qualification_rules[] @relation("competition_qualification_rules_competition_idTocompetitions")
+  competition_qualification_rules_competition_qualification_rules_target_competition_idTocompetitions competition_qualification_rules[] @relation("competition_qualification_rules_target_competition_idTocompetitions")
+  competition_ranking_rules                                                                           competition_ranking_rules[]
+  competition_seasons                                                                                 competition_seasons[]
+  confederations                                                                                      confederations?                   @relation(fields: [confederation_id], references: [id], map: "fk_competitions_confederation_id")
+  countries                                                                                           countries?                        @relation(fields: [country_id], references: [id], map: "fk_competitions_country_id")
+  country_prize_modifiers                                                                             country_prize_modifiers[]
+
+  @@index([confederation_id], map: "idx_competitions_confederation_id")
+  @@index([country_id], map: "idx_competitions_country_id")
+  @@index([tier, competition_type], map: "idx_competitions_tier_type")
+  @@index([is_youth, age_limit], map: "idx_competitions_youth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model confederations {
+  id                                                       BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  code                                                     String                @unique(map: "uq_confederations_code") @default("") @db.VarChar(20)
+  name                                                     String                @default("") @db.VarChar(150)
+  short_name                                               String                @default("") @db.VarChar(50)
+  parent_id                                                BigInt?               @db.UnsignedBigInt
+  continent                                                String                @default("") @db.VarChar(50)
+  reputation                                               Int                   @default(0)
+  coefficient                                              Decimal               @default(0.0000) @db.Decimal(10, 4)
+  logo_url                                                 String?               @db.VarChar(255)
+  competition_seasons                                      competition_seasons[]
+  competitions                                             competitions[]
+  confederations                                           confederations?       @relation("confederationsToconfederations", fields: [parent_id], references: [id], onDelete: Cascade, map: "fk_confederations_parent_id")
+  other_confederations                                     confederations[]      @relation("confederationsToconfederations")
+  countries_countries_confederation_idToconfederations     countries[]           @relation("countries_confederation_idToconfederations")
+  countries_countries_sub_confederation_idToconfederations countries[]           @relation("countries_sub_confederation_idToconfederations")
+
+  @@index([parent_id], map: "idx_confederations_parent_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model countries {
+  id                                                            BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  code                                                          String                 @unique(map: "uq_countries_code") @default("") @db.VarChar(10)
+  name                                                          String                 @default("") @db.VarChar(100)
+  continent                                                     String                 @default("") @db.VarChar(50)
+  confederation_id                                              BigInt                 @db.UnsignedBigInt
+  sub_confederation_id                                          BigInt?                @db.UnsignedBigInt
+  flag_url                                                      String?                @db.VarChar(255)
+  award_editions                                                award_editions[]
+  cities                                                        cities[]
+  clubs                                                         clubs[]
+  competition_seasons                                           competition_seasons[]
+  competitions                                                  competitions[]
+  confederations_countries_confederation_idToconfederations     confederations         @relation("countries_confederation_idToconfederations", fields: [confederation_id], references: [id], onDelete: Cascade, map: "fk_countries_confederation_id")
+  confederations_countries_sub_confederation_idToconfederations confederations?        @relation("countries_sub_confederation_idToconfederations", fields: [sub_confederation_id], references: [id], onDelete: Cascade, map: "fk_countries_sub_confederation_id")
+  country_rankings                                              country_rankings[]
+  knockout_ties_knockout_ties_away_country_idTocountries        knockout_ties[]        @relation("knockout_ties_away_country_idTocountries")
+  knockout_ties_knockout_ties_home_country_idTocountries        knockout_ties[]        @relation("knockout_ties_home_country_idTocountries")
+  knockout_ties_knockout_ties_winner_country_idTocountries      knockout_ties[]        @relation("knockout_ties_winner_country_idTocountries")
+  match_events                                                  match_events[]
+  match_lineups                                                 match_lineups[]
+  matches_matches_away_country_idTocountries                    matches[]              @relation("matches_away_country_idTocountries")
+  matches_matches_home_country_idTocountries                    matches[]              @relation("matches_home_country_idTocountries")
+  players_players_nationality_idTocountries                     players[]              @relation("players_nationality_idTocountries")
+  players_players_second_nationality_idTocountries              players[]              @relation("players_second_nationality_idTocountries")
+  scouting_assignments                                          scouting_assignments[]
+  staff                                                         staff[]
+  stage_standings                                               stage_standings[]
+  stage_teams                                                   stage_teams[]
+
+  @@index([confederation_id], map: "idx_countries_confederation_id")
+  @@index([sub_confederation_id], map: "idx_countries_sub_confederation_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model country_prize_modifiers {
+  id             BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_id BigInt       @db.UnsignedBigInt
+  min_rank       Int          @default(0)
+  max_rank       Int          @default(0)
+  multiplier     Decimal      @default(0.0000) @db.Decimal(10, 4)
+  competitions   competitions @relation(fields: [competition_id], references: [id], onDelete: Cascade, map: "fk_country_prize_modifiers_competition_id")
+
+  @@index([competition_id], map: "idx_country_prize_modifiers_competition_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model country_rankings {
+  id            BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id      BigInt                        @db.UnsignedBigInt
+  country_id    BigInt                        @db.UnsignedBigInt
+  ranking_type  country_rankings_ranking_type @default(FIFA_NATIONAL)
+  ranking_date  DateTime                      @db.Date
+  rank          Int                           @default(0)
+  points        Decimal                       @default(0.00) @db.Decimal(18, 2)
+  previous_rank Int                           @default(0)
+  coefficient   Decimal                       @default(0.0000) @db.Decimal(10, 4)
+  countries     countries                     @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_country_rankings_country_id")
+  game_worlds   game_worlds                   @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_country_rankings_world_id")
+
+  @@index([country_id], map: "idx_country_rankings_country_id")
+  @@index([world_id], map: "idx_country_rankings_world_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model currencies {
+  id                         BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  code                       String                       @unique(map: "uq_currencies_code") @default("") @db.VarChar(10)
+  name                       String                       @default("") @db.VarChar(100)
+  symbol                     String                       @default("") @db.VarChar(10)
+  type                       currencies_type              @default(SOFT)
+  icon_url                   String?                      @db.VarChar(255)
+  is_active                  Boolean                      @default(false)
+  club_bonuses               club_bonuses[]
+  club_sponsorships          club_sponsorships[]
+  competition_prizes         competition_prizes[]
+  player_contract_bonuses    player_contract_bonuses[]
+  player_contracts           player_contracts[]
+  player_performance_bonuses player_performance_bonuses[]
+  staff_contracts            staff_contracts[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model facilities {
+  id                BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id           BigInt              @db.UnsignedBigInt
+  facility_type_id  BigInt              @db.UnsignedBigInt
+  facility_level_id BigInt              @db.UnsignedBigInt
+  status            String              @default("") @db.VarChar(30)
+  updated_at        DateTime            @default(now()) @db.DateTime(0)
+  clubs             clubs               @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_facilities_club_id")
+  facility_levels   facility_levels     @relation(fields: [facility_level_id], references: [id], onDelete: Cascade, map: "fk_facilities_facility_level_id")
+  facility_types    facility_types      @relation(fields: [facility_type_id], references: [id], onDelete: Cascade, map: "fk_facilities_facility_type_id")
+  facility_upgrades facility_upgrades[]
+
+  @@index([club_id], map: "idx_facilities_club_id")
+  @@index([facility_level_id], map: "idx_facilities_facility_level_id")
+  @@index([facility_type_id], map: "idx_facilities_facility_type_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model facility_levels {
+  id                                                                 BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  facility_type_id                                                   BigInt              @db.UnsignedBigInt
+  level                                                              Int                 @default(0)
+  name                                                               String              @default("") @db.VarChar(100)
+  cost                                                               Decimal             @default(0.00) @db.Decimal(18, 2)
+  upgrade_days                                                       Int                 @default(0)
+  facilities                                                         facilities[]
+  facility_types                                                     facility_types      @relation(fields: [facility_type_id], references: [id], onDelete: Cascade, map: "fk_facility_levels_facility_type_id")
+  facility_upgrades_facility_upgrades_from_level_idTofacility_levels facility_upgrades[] @relation("facility_upgrades_from_level_idTofacility_levels")
+  facility_upgrades_facility_upgrades_to_level_idTofacility_levels   facility_upgrades[] @relation("facility_upgrades_to_level_idTofacility_levels")
+
+  @@index([facility_type_id], map: "idx_facility_levels_facility_type_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model facility_types {
+  id              BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  code            String            @unique(map: "uq_facility_types_code") @default("") @db.VarChar(50)
+  name            String            @default("") @db.VarChar(100)
+  description     String?           @db.Text
+  facilities      facilities[]
+  facility_levels facility_levels[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model facility_upgrades {
+  id                                                               BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  facility_id                                                      BigInt          @db.UnsignedBigInt
+  from_level_id                                                    BigInt          @db.UnsignedBigInt
+  to_level_id                                                      BigInt          @db.UnsignedBigInt
+  cost                                                             Decimal         @default(0.00) @db.Decimal(18, 2)
+  start_season_id                                                  BigInt?         @db.UnsignedBigInt
+  start_season_day                                                 Int             @default(1)
+  upgrade_days                                                     Int             @default(0)
+  days_remaining                                                   Int             @default(0)
+  completion_season_day                                            Int?
+  started_at                                                       DateTime        @db.DateTime(0)
+  completed_at                                                     DateTime?       @db.DateTime(0)
+  status                                                           String          @default("") @db.VarChar(30)
+  facilities                                                       facilities      @relation(fields: [facility_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_facility_id")
+  facility_levels_facility_upgrades_from_level_idTofacility_levels facility_levels @relation("facility_upgrades_from_level_idTofacility_levels", fields: [from_level_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_from_level_id")
+  facility_levels_facility_upgrades_to_level_idTofacility_levels   facility_levels @relation("facility_upgrades_to_level_idTofacility_levels", fields: [to_level_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_to_level_id")
+
+  @@index([facility_id], map: "idx_facility_upgrades_facility_id")
+  @@index([from_level_id], map: "idx_facility_upgrades_from_level_id")
+  @@index([to_level_id], map: "idx_facility_upgrades_to_level_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model financial_accounts {
+  id                     BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id                BigInt                   @db.UnsignedBigInt
+  balance_cash           Decimal                  @default(0.00) @db.Decimal(18, 2)
+  balance_gold           Int                      @default(0)
+  status                 String                   @default("") @db.VarChar(30)
+  clubs                  clubs                    @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_financial_accounts_club_id")
+  financial_transactions financial_transactions[]
+
+  @@index([club_id], map: "idx_financial_accounts_club_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model financial_transactions {
+  id                   BigInt                               @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id              BigInt                               @db.UnsignedBigInt
+  financial_account_id BigInt                               @db.UnsignedBigInt
+  type                 String                               @default("") @db.VarChar(30)
+  category             String                               @default("") @db.VarChar(50)
+  amount               Decimal                              @default(0.00) @db.Decimal(18, 2)
+  currency_type        financial_transactions_currency_type @default(CASH)
+  reference_type       String                               @default("") @db.VarChar(50)
+  reference_id         BigInt                               @db.UnsignedBigInt
+  description          String?                              @db.Text
+  season_id            BigInt?                              @db.UnsignedBigInt
+  season_day           Int                                  @default(1)
+  transaction_date     DateTime                             @db.DateTime(0)
+  idempotency_key      String?                              @unique(map: "uq_financial_transactions_idempotency_key") @db.VarChar(100)
+  clubs                clubs                                @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_financial_transactions_club_id")
+  financial_accounts   financial_accounts                   @relation(fields: [financial_account_id], references: [id], onDelete: Cascade, map: "fk_financial_transactions_financial_account_id")
+
+  @@index([club_id], map: "idx_financial_transactions_club_id")
+  @@index([financial_account_id], map: "idx_financial_transactions_financial_account_id")
+  @@index([reference_id], map: "idx_financial_transactions_reference_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model formation_positions {
+  id                    BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  formation_id          BigInt                  @db.UnsignedBigInt
+  position_id           BigInt                  @db.UnsignedBigInt
+  slot_code             String                  @default("") @db.VarChar(30)
+  x                     Decimal                 @default(0.0000) @db.Decimal(10, 4)
+  y                     Decimal                 @default(0.0000) @db.Decimal(10, 4)
+  order_no              Int                     @default(0)
+  club_tactic_positions club_tactic_positions[]
+  formations            formations              @relation(fields: [formation_id], references: [id], onDelete: Cascade, map: "fk_formation_positions_formation_id")
+  positions             positions               @relation(fields: [position_id], references: [id], onDelete: Cascade, map: "fk_formation_positions_position_id")
+  match_players         match_players[]
+
+  @@index([formation_id], map: "idx_formation_positions_formation_id")
+  @@index([position_id], map: "idx_formation_positions_position_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model formations {
+  id                  BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  code                String                @unique(map: "uq_formations_code") @default("") @db.VarChar(50)
+  name                String                @default("") @db.VarChar(100)
+  description         String?               @db.Text
+  logo_url            String?               @db.VarChar(255)
+  club_tactics        club_tactics[]
+  formation_positions formation_positions[]
+  match_lineups       match_lineups[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model game_events {
+  id          BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id    BigInt      @db.UnsignedBigInt
+  event_type  String      @default("") @db.VarChar(50)
+  entity_type String      @default("") @db.VarChar(50)
+  entity_id   BigInt      @db.UnsignedBigInt
+  event_date  DateTime    @db.DateTime(0)
+  payload     Json?
+  status      String      @default("") @db.VarChar(30)
+  game_worlds game_worlds @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_game_events_world_id")
+
+  @@index([entity_id], map: "idx_game_events_entity_id")
+  @@index([world_id], map: "idx_game_events_world_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model game_worlds {
+  id               BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  name             String             @default("") @db.VarChar(150)
+  current_date     DateTime           @db.Date
+  status           String             @default("") @db.VarChar(30)
+  created_at       DateTime           @default(now()) @db.DateTime(0)
+  updated_at       DateTime           @default(now()) @db.DateTime(0)
+  club_rankings    club_rankings[]
+  clubs            clubs[]
+  country_rankings country_rankings[]
+  game_events      game_events[]
+  players          players[]
+  seasons          seasons[]
+  server_timeline  server_timeline?
+  staff            staff[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model gold_exchange_shop {
+  id               BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  name             String  @default("") @db.VarChar(100)
+  gold_cost        Int     @default(0)
+  cash_reward      Decimal @default(0.00) @db.Decimal(18, 2)
+  bonus_percentage Decimal @default(0.0000) @db.Decimal(10, 4)
+  is_active        Boolean @default(false)
+  order_no         Int     @default(0)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model injuries {
+  id                         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id                  BigInt    @db.UnsignedBigInt
+  type                       String    @default("") @db.VarChar(100)
+  severity                   Int       @default(0)
+  start_season_id            BigInt?   @db.UnsignedBigInt
+  start_season_day           Int       @default(1)
+  days_injured               Int       @default(0)
+  days_remaining             Int       @default(0)
+  expected_return_season_day Int?
+  start_date                 DateTime  @db.Date
+  expected_return_date       DateTime  @db.Date
+  actual_return_date         DateTime? @db.Date
+  status                     String    @default("") @db.VarChar(30)
+  players                    players   @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_injuries_player_id")
+
+  @@index([player_id], map: "idx_injuries_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model knockout_round_rules {
+  id                 BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  stage_round_id     BigInt?       @db.UnsignedBigInt
+  legs               Int           @default(0)
+  extra_time         Boolean       @default(false)
+  penalties          Boolean       @default(false)
+  away_goals_rule    Boolean       @default(false)
+  avoid_same_country Boolean       @default(false)
+  seeding_rule       String        @default("") @db.VarChar(50)
+  stage_rounds       stage_rounds? @relation(fields: [stage_round_id], references: [id], onDelete: Cascade, map: "fk_knockout_round_rules_stage_round_id")
+
+  @@index([stage_round_id], map: "idx_knockout_round_rules_stage_round_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model knockout_ties {
+  id                                                   BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  stage_round_id                                       BigInt?       @db.UnsignedBigInt
+  home_club_id                                         BigInt?       @db.UnsignedBigInt
+  away_club_id                                         BigInt?       @db.UnsignedBigInt
+  winner_club_id                                       BigInt?       @db.UnsignedBigInt
+  home_country_id                                      BigInt?       @db.UnsignedBigInt
+  away_country_id                                      BigInt?       @db.UnsignedBigInt
+  winner_country_id                                    BigInt?       @db.UnsignedBigInt
+  home_score                                           Int?
+  away_score                                           Int?
+  status                                               String        @default("") @db.VarChar(30)
+  clubs_knockout_ties_away_club_idToclubs              clubs?        @relation("knockout_ties_away_club_idToclubs", fields: [away_club_id], references: [id], onDelete: Cascade, map: "fk_knockout_ties_away_club_id")
+  countries_knockout_ties_away_country_idTocountries   countries?    @relation("knockout_ties_away_country_idTocountries", fields: [away_country_id], references: [id], onDelete: Cascade, map: "fk_knockout_ties_away_country_id")
+  clubs_knockout_ties_home_club_idToclubs              clubs?        @relation("knockout_ties_home_club_idToclubs", fields: [home_club_id], references: [id], onDelete: Cascade, map: "fk_knockout_ties_home_club_id")
+  countries_knockout_ties_home_country_idTocountries   countries?    @relation("knockout_ties_home_country_idTocountries", fields: [home_country_id], references: [id], onDelete: Cascade, map: "fk_knockout_ties_home_country_id")
+  stage_rounds                                         stage_rounds? @relation(fields: [stage_round_id], references: [id], onDelete: Cascade, map: "fk_knockout_ties_stage_round_id")
+  clubs_knockout_ties_winner_club_idToclubs            clubs?        @relation("knockout_ties_winner_club_idToclubs", fields: [winner_club_id], references: [id], onDelete: Cascade, map: "fk_knockout_ties_winner_club_id")
+  countries_knockout_ties_winner_country_idTocountries countries?    @relation("knockout_ties_winner_country_idTocountries", fields: [winner_country_id], references: [id], onDelete: Cascade, map: "fk_knockout_ties_winner_country_id")
+  matches                                              matches[]
+
+  @@index([away_club_id], map: "idx_knockout_ties_away_club_id")
+  @@index([away_country_id], map: "idx_knockout_ties_away_country_id")
+  @@index([home_club_id], map: "idx_knockout_ties_home_club_id")
+  @@index([home_country_id], map: "idx_knockout_ties_home_country_id")
+  @@index([stage_round_id], map: "idx_knockout_ties_stage_round_id")
+  @@index([winner_club_id], map: "idx_knockout_ties_winner_club_id")
+  @@index([winner_country_id], map: "idx_knockout_ties_winner_country_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model match_events {
+  id                                              BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  match_id                                        BigInt     @db.UnsignedBigInt
+  minute                                          Int        @default(0)
+  event_type                                      String     @default("") @db.VarChar(50)
+  club_id                                         BigInt?    @db.UnsignedBigInt
+  country_id                                      BigInt?    @db.UnsignedBigInt
+  player_id                                       BigInt?    @db.UnsignedBigInt
+  related_player_id                               BigInt?    @db.UnsignedBigInt
+  value                                           Int?
+  metadata                                        Json?
+  clubs                                           clubs?     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_match_events_club_id")
+  countries                                       countries? @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_match_events_country_id")
+  matches                                         matches    @relation(fields: [match_id], references: [id], onDelete: Cascade, map: "fk_match_events_match_id")
+  players_match_events_player_idToplayers         players?   @relation("match_events_player_idToplayers", fields: [player_id], references: [id], onDelete: Cascade, map: "fk_match_events_player_id")
+  players_match_events_related_player_idToplayers players?   @relation("match_events_related_player_idToplayers", fields: [related_player_id], references: [id], onDelete: Cascade, map: "fk_match_events_related_player_id")
+
+  @@index([club_id], map: "idx_match_events_club_id")
+  @@index([country_id], map: "idx_match_events_country_id")
+  @@index([match_id], map: "idx_match_events_match_id")
+  @@index([player_id], map: "idx_match_events_player_id")
+  @@index([related_player_id], map: "idx_match_events_related_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model match_lineups {
+  id               BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  match_id         BigInt          @db.UnsignedBigInt
+  club_id          BigInt?         @db.UnsignedBigInt
+  country_id       BigInt?         @db.UnsignedBigInt
+  club_tactic_id   BigInt?         @db.UnsignedBigInt
+  formation_id     BigInt          @db.UnsignedBigInt
+  created_at       DateTime        @default(now()) @db.DateTime(0)
+  tactics_snapshot Json?
+  clubs            clubs?          @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_match_lineups_club_id")
+  club_tactics     club_tactics?   @relation(fields: [club_tactic_id], references: [id], onDelete: Cascade, map: "fk_match_lineups_club_tactic_id")
+  countries        countries?      @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_match_lineups_country_id")
+  formations       formations      @relation(fields: [formation_id], references: [id], onDelete: Cascade, map: "fk_match_lineups_formation_id")
+  matches          matches         @relation(fields: [match_id], references: [id], onDelete: Cascade, map: "fk_match_lineups_match_id")
+  match_players    match_players[]
+
+  @@index([club_id], map: "idx_match_lineups_club_id")
+  @@index([club_tactic_id], map: "idx_match_lineups_club_tactic_id")
+  @@index([country_id], map: "idx_match_lineups_country_id")
+  @@index([formation_id], map: "idx_match_lineups_formation_id")
+  @@index([match_id], map: "idx_match_lineups_match_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model match_players {
+  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  match_id              BigInt               @db.UnsignedBigInt
+  lineup_id             BigInt               @db.UnsignedBigInt
+  player_id             BigInt               @db.UnsignedBigInt
+  formation_position_id BigInt?              @db.UnsignedBigInt
+  role                  String               @default("") @db.VarChar(50)
+  duty                  String               @default("") @db.VarChar(30)
+  started               Boolean              @default(false)
+  minutes               Int                  @default(0)
+  goals                 Int                  @default(0)
+  assists               Int                  @default(0)
+  rating                Decimal              @default(0.0000) @db.Decimal(10, 4)
+  yellow_cards          Int                  @default(0)
+  red_cards             Int                  @default(0)
+  position_code         String?              @db.VarChar(20)
+  shirt_number          Int?
+  is_captain            Boolean              @default(false)
+  subbed_in_minute      Int?
+  subbed_out_minute     Int?
+  formation_positions   formation_positions? @relation(fields: [formation_position_id], references: [id], onDelete: Cascade, map: "fk_match_players_formation_position_id")
+  match_lineups         match_lineups        @relation(fields: [lineup_id], references: [id], onDelete: Cascade, map: "fk_match_players_lineup_id")
+  matches               matches              @relation(fields: [match_id], references: [id], onDelete: Cascade, map: "fk_match_players_match_id")
+  players               players              @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_match_players_player_id")
+
+  @@index([formation_position_id], map: "idx_match_players_formation_position_id")
+  @@index([lineup_id], map: "idx_match_players_lineup_id")
+  @@index([match_id], map: "idx_match_players_match_id")
+  @@index([player_id], map: "idx_match_players_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model matches {
+  id                                           BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  competition_season_id                        BigInt?              @db.UnsignedBigInt
+  stage_id                                     BigInt?              @db.UnsignedBigInt
+  round_id                                     BigInt?              @db.UnsignedBigInt
+  group_id                                     BigInt?              @db.UnsignedBigInt
+  tie_id                                       BigInt?              @db.UnsignedBigInt
+  match_type                                   matches_match_type   @default(COMPETITIVE)
+  home_club_id                                 BigInt?              @db.UnsignedBigInt
+  away_club_id                                 BigInt?              @db.UnsignedBigInt
+  home_country_id                              BigInt?              @db.UnsignedBigInt
+  away_country_id                              BigInt?              @db.UnsignedBigInt
+  stadium_id                                   BigInt?              @db.UnsignedBigInt
+  season_id                                    BigInt?              @db.UnsignedBigInt
+  season_day                                   Int                  @default(1)
+  match_date                                   DateTime             @db.Date
+  kickoff_time                                 DateTime             @default(dbgenerated("'20:00:00'")) @db.Time(0)
+  home_score                                   Int?
+  away_score                                   Int?
+  status                                       String               @default("") @db.VarChar(30)
+  home_regular_score                           Int?
+  away_regular_score                           Int?
+  home_extra_score                             Int?
+  away_extra_score                             Int?
+  home_penalty_score                           Int?
+  away_penalty_score                           Int?
+  result_type                                  matches_result_type  @default(REGULAR)
+  attendance                                   Int                  @default(0)
+  ticket_revenue                               Decimal              @default(0.00) @db.Decimal(18, 2)
+  match_events                                 match_events[]
+  match_lineups                                match_lineups[]
+  match_players                                match_players[]
+  clubs_matches_away_club_idToclubs            clubs?               @relation("matches_away_club_idToclubs", fields: [away_club_id], references: [id], onDelete: Cascade, map: "fk_matches_away_club_id")
+  countries_matches_away_country_idTocountries countries?           @relation("matches_away_country_idTocountries", fields: [away_country_id], references: [id], onDelete: Cascade, map: "fk_matches_away_country_id")
+  competition_seasons                          competition_seasons? @relation(fields: [competition_season_id], references: [id], onDelete: Cascade, map: "fk_matches_competition_season_id")
+  stage_groups                                 stage_groups?        @relation(fields: [group_id], references: [id], onDelete: Cascade, map: "fk_matches_group_id")
+  clubs_matches_home_club_idToclubs            clubs?               @relation("matches_home_club_idToclubs", fields: [home_club_id], references: [id], onDelete: Cascade, map: "fk_matches_home_club_id")
+  countries_matches_home_country_idTocountries countries?           @relation("matches_home_country_idTocountries", fields: [home_country_id], references: [id], onDelete: Cascade, map: "fk_matches_home_country_id")
+  stage_rounds                                 stage_rounds?        @relation(fields: [round_id], references: [id], map: "fk_matches_round_id")
+  stadiums                                     stadiums?            @relation(fields: [stadium_id], references: [id], map: "fk_matches_stadium_id")
+  competition_stages                           competition_stages?  @relation(fields: [stage_id], references: [id], onDelete: Cascade, map: "fk_matches_stage_id")
+  knockout_ties                                knockout_ties?       @relation(fields: [tie_id], references: [id], onDelete: Cascade, map: "fk_matches_tie_id")
+  player_suspensions                           player_suspensions[]
+
+  @@index([away_club_id], map: "idx_matches_away_club_id")
+  @@index([away_country_id], map: "idx_matches_away_country_id")
+  @@index([competition_season_id], map: "idx_matches_competition_season_id")
+  @@index([group_id], map: "idx_matches_group_id")
+  @@index([home_club_id], map: "idx_matches_home_club_id")
+  @@index([home_country_id], map: "idx_matches_home_country_id")
+  @@index([match_type], map: "idx_matches_match_type")
+  @@index([round_id], map: "idx_matches_round_id")
+  @@index([stadium_id], map: "idx_matches_stadium_id")
+  @@index([stage_id], map: "idx_matches_stage_id")
+  @@index([tie_id], map: "idx_matches_tie_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model personality_traits {
+  id                        BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  code                      String                      @unique(map: "uq_personality_traits_code") @default("") @db.VarChar(50)
+  name                      String                      @default("") @db.VarChar(100)
+  description               String?                     @db.Text
+  player_personality_traits player_personality_traits[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model personality_types {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  code        String    @unique(map: "uq_personality_types_code") @default("") @db.VarChar(50)
+  name        String    @default("") @db.VarChar(100)
+  description String?   @db.Text
+  players     players[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model play_styles {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  code               String               @unique(map: "uq_play_styles_code") @default("") @db.VarChar(50)
+  name               String               @default("") @db.VarChar(100)
+  description        String?              @db.Text
+  player_play_styles player_play_styles[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_attribute_history {
+  id           BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id    BigInt     @db.UnsignedBigInt
+  attribute_id BigInt     @db.UnsignedBigInt
+  old_value    Int        @default(0)
+  new_value    Int        @default(0)
+  reason       String     @default("") @db.VarChar(255)
+  created_at   DateTime   @default(now()) @db.DateTime(0)
+  attributes   attributes @relation(fields: [attribute_id], references: [id], onDelete: Cascade, map: "fk_player_attribute_history_attribute_id")
+  players      players    @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_attribute_history_player_id")
+
+  @@index([attribute_id], map: "idx_player_attribute_history_attribute_id")
+  @@index([player_id], map: "idx_player_attribute_history_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_attributes {
+  player_id       BigInt     @db.UnsignedBigInt
+  attribute_id    BigInt     @db.UnsignedBigInt
+  value           Int?
+  potential_value Int        @default(0)
+  attributes      attributes @relation(fields: [attribute_id], references: [id], onDelete: Cascade, map: "fk_player_attributes_attribute_id")
+  players         players    @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_attributes_player_id")
+
+  @@id([player_id, attribute_id])
+  @@index([attribute_id], map: "idx_player_attributes_attribute_id")
+  @@index([player_id], map: "idx_player_attributes_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_awards {
+  id               BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  award_edition_id BigInt         @db.UnsignedBigInt
+  player_id        BigInt         @db.UnsignedBigInt
+  club_id          BigInt?        @db.UnsignedBigInt
+  rank             Int            @default(0)
+  score            Decimal        @default(0.00) @db.Decimal(18, 2)
+  awarded_at       DateTime       @db.DateTime(0)
+  award_editions   award_editions @relation(fields: [award_edition_id], references: [id], onDelete: Cascade, map: "fk_player_awards_award_edition_id")
+  clubs            clubs?         @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_player_awards_club_id")
+  players          players        @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_awards_player_id")
+
+  @@index([award_edition_id], map: "idx_player_awards_award_edition_id")
+  @@index([club_id], map: "idx_player_awards_club_id")
+  @@index([player_id], map: "idx_player_awards_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_club_history {
+  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id   BigInt    @db.UnsignedBigInt
+  club_id     BigInt    @db.UnsignedBigInt
+  start_date  DateTime  @db.Date
+  end_date    DateTime? @db.Date
+  transfer_id BigInt    @db.UnsignedBigInt
+  appearances Int       @default(0)
+  goals       Int       @default(0)
+  assists     Int       @default(0)
+  clubs       clubs     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_player_club_history_club_id")
+  players     players   @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_club_history_player_id")
+  transfers   transfers @relation(fields: [transfer_id], references: [id], onDelete: Cascade, map: "fk_player_club_history_transfer_id")
+
+  @@index([club_id], map: "idx_player_club_history_club_id")
+  @@index([player_id], map: "idx_player_club_history_player_id")
+  @@index([transfer_id], map: "idx_player_club_history_transfer_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_contract_bonuses {
+  id               BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  contract_id      BigInt           @db.UnsignedBigInt
+  bonus_type       String           @default("") @db.VarChar(50)
+  trigger_value    Decimal          @default(0.00) @db.Decimal(18, 2)
+  amount           Decimal          @default(0.00) @db.Decimal(18, 2)
+  currency_id      BigInt           @db.UnsignedBigInt
+  status           String           @default("") @db.VarChar(30)
+  player_contracts player_contracts @relation(fields: [contract_id], references: [id], onDelete: Cascade, map: "fk_player_contract_bonuses_contract_id")
+  currencies       currencies       @relation(fields: [currency_id], references: [id], onDelete: Cascade, map: "fk_player_contract_bonuses_currency_id")
+
+  @@index([contract_id], map: "idx_player_contract_bonuses_contract_id")
+  @@index([currency_id], map: "idx_player_contract_bonuses_currency_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_contracts {
+  id                                           BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id                                    BigInt                    @db.UnsignedBigInt
+  club_id                                      BigInt                    @db.UnsignedBigInt
+  start_season_id                              BigInt                    @default(1) @db.UnsignedBigInt
+  start_season_day                             Int                       @default(1)
+  end_season_id                                BigInt                    @default(1) @db.UnsignedBigInt
+  end_season_day                               Int                       @default(40)
+  start_date                                   DateTime                  @db.Date
+  end_date                                     DateTime?                 @db.Date
+  salary                                       Decimal                   @default(0.0000) @db.Decimal(10, 4)
+  salary_currency_id                           BigInt                    @db.UnsignedBigInt
+  signing_bonus                                Decimal                   @default(0.00) @db.Decimal(18, 2)
+  release_clause                               Decimal                   @default(0.00) @db.Decimal(18, 2)
+  squad_role                                   String                    @default("") @db.VarChar(50)
+  status                                       String                    @default("") @db.VarChar(30)
+  is_loan_contract                             Boolean                   @default(false)
+  parent_club_id                               BigInt?                   @db.UnsignedBigInt
+  player_contract_bonuses                      player_contract_bonuses[]
+  clubs_player_contracts_club_idToclubs        clubs                     @relation("player_contracts_club_idToclubs", fields: [club_id], references: [id], onDelete: Cascade, map: "fk_player_contracts_club_id")
+  clubs_player_contracts_parent_club_idToclubs clubs?                    @relation("player_contracts_parent_club_idToclubs", fields: [parent_club_id], references: [id], onDelete: Cascade, map: "fk_player_contracts_parent_club_id")
+  players                                      players                   @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_contracts_player_id")
+  currencies                                   currencies                @relation(fields: [salary_currency_id], references: [id], onDelete: Cascade, map: "fk_player_contracts_salary_currency_id")
+
+  @@index([club_id], map: "idx_player_contracts_club_id")
+  @@index([parent_club_id], map: "idx_player_contracts_parent_club_id")
+  @@index([player_id], map: "idx_player_contracts_player_id")
+  @@index([salary_currency_id], map: "idx_player_contracts_salary_currency_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_performance_bonuses {
+  id              BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id       BigInt     @db.UnsignedBigInt
+  season_id       BigInt     @db.UnsignedBigInt
+  bonus_type      String     @default("") @db.VarChar(50)
+  condition_value Decimal    @default(0.0000) @db.Decimal(10, 4)
+  amount          Decimal    @default(0.00) @db.Decimal(18, 2)
+  currency_id     BigInt     @db.UnsignedBigInt
+  status          String     @default("") @db.VarChar(30)
+  currencies      currencies @relation(fields: [currency_id], references: [id], onDelete: Cascade, map: "fk_player_performance_bonuses_currency_id")
+  players         players    @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_performance_bonuses_player_id")
+  seasons         seasons    @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_player_performance_bonuses_season_id")
+
+  @@index([currency_id], map: "idx_player_performance_bonuses_currency_id")
+  @@index([player_id], map: "idx_player_performance_bonuses_player_id")
+  @@index([season_id], map: "idx_player_performance_bonuses_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_personality_traits {
+  player_id          BigInt             @db.UnsignedBigInt
+  trait_id           BigInt             @db.UnsignedBigInt
+  value              Int?
+  players            players            @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_personality_traits_player_id")
+  personality_traits personality_traits @relation(fields: [trait_id], references: [id], onDelete: Cascade, map: "fk_player_personality_traits_trait_id")
+
+  @@id([player_id, trait_id])
+  @@index([player_id], map: "idx_player_personality_traits_player_id")
+  @@index([trait_id], map: "idx_player_personality_traits_trait_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_play_styles {
+  player_id     BigInt      @db.UnsignedBigInt
+  play_style_id BigInt      @db.UnsignedBigInt
+  level         Int         @default(0)
+  is_primary    Boolean     @default(false)
+  play_styles   play_styles @relation(fields: [play_style_id], references: [id], onDelete: Cascade, map: "fk_player_play_styles_play_style_id")
+  players       players     @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_play_styles_player_id")
+
+  @@id([player_id, play_style_id])
+  @@index([play_style_id], map: "idx_player_play_styles_play_style_id")
+  @@index([player_id], map: "idx_player_play_styles_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_positions {
+  player_id    BigInt    @db.UnsignedBigInt
+  position_id  BigInt    @db.UnsignedBigInt
+  ability      Int       @default(0)
+  is_preferred Boolean   @default(false)
+  players      players   @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_positions_player_id")
+  positions    positions @relation(fields: [position_id], references: [id], onDelete: Cascade, map: "fk_player_positions_position_id")
+
+  @@id([player_id, position_id])
+  @@index([player_id], map: "idx_player_positions_player_id")
+  @@index([position_id], map: "idx_player_positions_position_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_statistics {
+  id                     BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id              BigInt               @db.UnsignedBigInt
+  season_id              BigInt               @db.UnsignedBigInt
+  club_id                BigInt               @db.UnsignedBigInt
+  appearances            Int                  @default(0)
+  starts                 Int                  @default(0)
+  substitute_appearances Int                  @default(0)
+  minutes                Int                  @default(0)
+  goals                  Int                  @default(0)
+  assists                Int                  @default(0)
+  clean_sheets           Int                  @default(0)
+  yellow_cards           Int                  @default(0)
+  red_cards              Int                  @default(0)
+  average_rating         Decimal              @default(0.0000) @db.Decimal(10, 4)
+  motm                   Int                  @default(0)
+  competition_season_id  BigInt?              @db.UnsignedBigInt
+  clubs                  clubs                @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_player_statistics_club_id")
+  competition_seasons    competition_seasons? @relation(fields: [competition_season_id], references: [id], onDelete: Cascade, map: "fk_player_statistics_competition_season_id")
+  players                players              @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_statistics_player_id")
+  seasons                seasons              @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_player_statistics_season_id")
+
+  @@index([player_id, season_id, competition_season_id], map: "idx_player_stat_lookup")
+  @@index([club_id], map: "idx_player_statistics_club_id")
+  @@index([competition_season_id], map: "idx_player_statistics_competition_season_id")
+  @@index([player_id], map: "idx_player_statistics_player_id")
+  @@index([season_id], map: "idx_player_statistics_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_status {
+  player_id           BigInt   @id @db.UnsignedBigInt
+  fitness             Int      @default(0)
+  fatigue             Int      @default(0)
+  morale              Int      @default(0)
+  form                Int      @default(0)
+  match_sharpness     Int      @default(0)
+  happiness           Int      @default(0)
+  condition           Int      @default(0)
+  updated_at          DateTime @default(now()) @db.DateTime(0)
+  is_injured          Boolean  @default(false)
+  is_suspended        Boolean  @default(false)
+  is_on_national_duty Boolean  @default(false)
+  is_transfer_listed  Boolean  @default(false)
+  is_loan_listed      Boolean  @default(false)
+  asking_price        Decimal? @db.Decimal(18, 2)
+  players             players  @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_status_player_id")
+
+  @@index([is_injured, is_suspended, is_on_national_duty], map: "idx_player_status_flags")
+  @@index([player_id], map: "idx_player_status_player_id")
+  @@index([is_transfer_listed, is_loan_listed], map: "idx_player_status_transfer")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_suspensions {
+  id                    BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id             BigInt               @db.UnsignedBigInt
+  competition_season_id BigInt?              @db.UnsignedBigInt
+  match_id              BigInt?              @db.UnsignedBigInt
+  reason                String               @default("") @db.VarChar(50)
+  matches_banned        Int                  @default(0)
+  matches_served        Int                  @default(0)
+  start_date            DateTime             @db.Date
+  end_date              DateTime?            @db.Date
+  status                String               @default("") @db.VarChar(30)
+  created_at            DateTime             @default(now()) @db.DateTime(0)
+  competition_seasons   competition_seasons? @relation(fields: [competition_season_id], references: [id], onDelete: Cascade, map: "fk_player_suspensions_competition_season_id")
+  matches               matches?             @relation(fields: [match_id], references: [id], onDelete: Cascade, map: "fk_player_suspensions_match_id")
+  players               players              @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_suspensions_player_id")
+
+  @@index([competition_season_id], map: "idx_player_suspensions_competition_season_id")
+  @@index([match_id], map: "idx_player_suspensions_match_id")
+  @@index([player_id], map: "idx_player_suspensions_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_tendencies {
+  player_id   BigInt     @db.UnsignedBigInt
+  tendency_id BigInt     @db.UnsignedBigInt
+  value       Int?
+  players     players    @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_tendencies_player_id")
+  tendencies  tendencies @relation(fields: [tendency_id], references: [id], onDelete: Cascade, map: "fk_player_tendencies_tendency_id")
+
+  @@id([player_id, tendency_id])
+  @@index([player_id], map: "idx_player_tendencies_player_id")
+  @@index([tendency_id], map: "idx_player_tendencies_tendency_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_training {
+  id                  BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  training_session_id BigInt            @db.UnsignedBigInt
+  player_id           BigInt            @db.UnsignedBigInt
+  participation       Int               @default(0)
+  performance         Int               @default(0)
+  fatigue_gained      Int               @default(0)
+  injury_risk         Int               @default(0)
+  players             players           @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_training_player_id")
+  training_sessions   training_sessions @relation(fields: [training_session_id], references: [id], onDelete: Cascade, map: "fk_player_training_training_session_id")
+
+  @@index([player_id], map: "idx_player_training_player_id")
+  @@index([training_session_id], map: "idx_player_training_training_session_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model players {
+  id                                                   BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id                                             BigInt                       @db.UnsignedBigInt
+  nationality_id                                       BigInt                       @db.UnsignedBigInt
+  second_nationality_id                                BigInt?                      @db.UnsignedBigInt
+  personality_type_id                                  BigInt                       @db.UnsignedBigInt
+  first_name                                           String                       @default("") @db.VarChar(100)
+  last_name                                            String                       @default("") @db.VarChar(100)
+  date_of_birth                                        DateTime                     @db.Date
+  birth_season                                         Int                          @default(0)
+  birth_season_day                                     Int                          @default(1)
+  age                                                  Int                          @default(20)
+  preferred_foot                                       players_preferred_foot       @default(RIGHT)
+  height                                               Decimal                      @default(0.00) @db.Decimal(5, 2)
+  weight                                               Decimal                      @default(0.00) @db.Decimal(5, 2)
+  reputation                                           Int                          @default(0)
+  potential                                            Int                          @default(0)
+  market_value                                         Decimal                      @default(0.00) @db.Decimal(18, 2)
+  current_club_id                                      BigInt?                      @db.UnsignedBigInt
+  squad_type                                           players_squad_type           @default(FIRST_TEAM)
+  squad_number                                         Int?
+  trained_club_id                                      BigInt?                      @db.UnsignedBigInt
+  youth_intake_id                                      BigInt?                      @db.UnsignedBigInt
+  attributes_summary                                   Json?
+  photo_url                                            String?                      @db.VarChar(255)
+  award_nominees                                       award_nominees[]
+  club_tactic_positions                                club_tactic_positions[]
+  injuries                                             injuries[]
+  match_events_match_events_player_idToplayers         match_events[]               @relation("match_events_player_idToplayers")
+  match_events_match_events_related_player_idToplayers match_events[]               @relation("match_events_related_player_idToplayers")
+  match_players                                        match_players[]
+  player_attribute_history                             player_attribute_history[]
+  player_attributes                                    player_attributes[]
+  player_awards                                        player_awards[]
+  player_club_history                                  player_club_history[]
+  player_contracts                                     player_contracts[]
+  player_performance_bonuses                           player_performance_bonuses[]
+  player_personality_traits                            player_personality_traits[]
+  player_play_styles                                   player_play_styles[]
+  player_positions                                     player_positions[]
+  player_statistics                                    player_statistics[]
+  player_status                                        player_status?
+  player_suspensions                                   player_suspensions[]
+  player_tendencies                                    player_tendencies[]
+  player_training                                      player_training[]
+  clubs_players_current_club_idToclubs                 clubs?                       @relation("players_current_club_idToclubs", fields: [current_club_id], references: [id], onDelete: Cascade, map: "fk_players_current_club_id")
+  countries_players_nationality_idTocountries          countries                    @relation("players_nationality_idTocountries", fields: [nationality_id], references: [id], onDelete: Cascade, map: "fk_players_nationality_id")
+  personality_types                                    personality_types            @relation(fields: [personality_type_id], references: [id], onDelete: Cascade, map: "fk_players_personality_type_id")
+  countries_players_second_nationality_idTocountries   countries?                   @relation("players_second_nationality_idTocountries", fields: [second_nationality_id], references: [id], onDelete: Cascade, map: "fk_players_second_nationality_id")
+  clubs_players_trained_club_idToclubs                 clubs?                       @relation("players_trained_club_idToclubs", fields: [trained_club_id], references: [id], onDelete: Cascade, map: "fk_players_trained_club_id")
+  game_worlds                                          game_worlds                  @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_players_world_id")
+  youth_intakes                                        youth_intakes?               @relation(fields: [youth_intake_id], references: [id], onDelete: Cascade, map: "fk_players_youth_intake_id")
+  scouting_reports                                     scouting_reports[]
+  transfer_offers                                      transfer_offers[]
+  transfers                                            transfers[]
+
+  @@index([current_club_id], map: "idx_players_current_club_id")
+  @@index([market_value], map: "idx_players_market_value")
+  @@index([nationality_id], map: "idx_players_nationality_id")
+  @@index([personality_type_id], map: "idx_players_personality_type_id")
+  @@index([second_nationality_id], map: "idx_players_second_nationality_id")
+  @@index([current_club_id, squad_type], map: "idx_players_squad_type")
+  @@index([trained_club_id], map: "idx_players_trained_club_id")
+  @@index([world_id], map: "idx_players_world_id")
+  @@index([youth_intake_id], map: "idx_players_youth_intake_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model position_attributes {
+  id           BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  position_id  BigInt     @db.UnsignedBigInt
+  attribute_id BigInt     @db.UnsignedBigInt
+  multiplier   Decimal    @default(1.00) @db.Decimal(4, 2)
+  is_key       Boolean    @default(false)
+  order_no     Int        @default(0)
+  attributes   attributes @relation(fields: [attribute_id], references: [id], onDelete: Cascade, map: "fk_pos_attr_attribute_id")
+  positions    positions  @relation(fields: [position_id], references: [id], onDelete: Cascade, map: "fk_pos_attr_position_id")
+
+  @@unique([position_id, attribute_id], map: "uq_pos_attr")
+  @@index([attribute_id], map: "fk_pos_attr_attribute_id")
+  @@index([position_id, is_key], map: "idx_pos_attr_is_key")
+  @@index([position_id], map: "idx_pos_attr_position_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model positions {
+  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  code                 String                 @unique(map: "uq_positions_code") @default("") @db.VarChar(20)
+  name                 String                 @default("") @db.VarChar(50)
+  category             String                 @default("") @db.VarChar(30)
+  formation_positions  formation_positions[]
+  player_positions     player_positions[]
+  position_attributes  position_attributes[]
+  scouting_assignments scouting_assignments[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model scouting_assignments {
+  id                 BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id            BigInt             @db.UnsignedBigInt
+  staff_id           BigInt             @db.UnsignedBigInt
+  target_country_id  BigInt             @db.UnsignedBigInt
+  target_position_id BigInt             @db.UnsignedBigInt
+  start_date         DateTime           @db.Date
+  end_date           DateTime?          @db.Date
+  status             String             @default("") @db.VarChar(30)
+  clubs              clubs              @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_scouting_assignments_club_id")
+  staff              staff              @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_scouting_assignments_staff_id")
+  countries          countries          @relation(fields: [target_country_id], references: [id], onDelete: Cascade, map: "fk_scouting_assignments_target_country_id")
+  positions          positions          @relation(fields: [target_position_id], references: [id], onDelete: Cascade, map: "fk_scouting_assignments_target_position_id")
+  scouting_reports   scouting_reports[]
+
+  @@index([club_id], map: "idx_scouting_assignments_club_id")
+  @@index([staff_id], map: "idx_scouting_assignments_staff_id")
+  @@index([target_country_id], map: "idx_scouting_assignments_target_country_id")
+  @@index([target_position_id], map: "idx_scouting_assignments_target_position_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model scouting_reports {
+  id                   BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  assignment_id        BigInt               @db.UnsignedBigInt
+  player_id            BigInt               @db.UnsignedBigInt
+  rating               Int                  @default(0)
+  potential            Int                  @default(0)
+  estimated_value      Decimal              @default(0.00) @db.Decimal(18, 2)
+  report               String?              @db.Text
+  created_at           DateTime             @default(now()) @db.DateTime(0)
+  scouting_assignments scouting_assignments @relation(fields: [assignment_id], references: [id], onDelete: Cascade, map: "fk_scouting_reports_assignment_id")
+  players              players              @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_scouting_reports_player_id")
+
+  @@index([assignment_id], map: "idx_scouting_reports_assignment_id")
+  @@index([player_id], map: "idx_scouting_reports_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model seasons {
+  id                         BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id                   BigInt                       @db.UnsignedBigInt
+  name                       String                       @default("") @db.VarChar(50)
+  season_number              Int                          @default(1)
+  total_days                 Int                          @default(40)
+  current_day                Int                          @default(1)
+  start_date                 DateTime                     @db.Date
+  end_date                   DateTime?                    @db.Date
+  status                     String                       @default("") @db.VarChar(30)
+  is_transfer_window_open    Boolean                      @default(true)
+  award_editions             award_editions[]
+  club_bonuses               club_bonuses[]
+  club_news                  club_news[]
+  club_objectives            club_objectives[]
+  competition_seasons        competition_seasons[]
+  player_performance_bonuses player_performance_bonuses[]
+  player_statistics          player_statistics[]
+  game_worlds                game_worlds                  @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_seasons_world_id")
+  server_timeline            server_timeline[]
+  youth_intakes              youth_intakes[]
+
+  @@index([world_id], map: "idx_seasons_world_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model server_timeline {
+  id                      BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id                BigInt      @unique(map: "uq_server_timeline_world_id") @db.UnsignedBigInt
+  season_id               BigInt      @db.UnsignedBigInt
+  season_number           Int         @default(1)
+  season_day              Int         @default(1)
+  total_season_days       Int         @default(40)
+  world_day               Int         @default(1)
+  real_date               DateTime    @db.Date
+  season_status           String      @default("IN_PROGRESS") @db.VarChar(30)
+  is_transfer_window_open Boolean     @default(true)
+  is_paused               Boolean     @default(false)
+  last_processed_date     DateTime?   @db.Date
+  created_at              DateTime    @default(now()) @db.DateTime(0)
+  updated_at              DateTime    @default(now()) @db.DateTime(0)
+  seasons                 seasons     @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_server_timeline_season_id")
+  game_worlds             game_worlds @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_server_timeline_world_id")
+
+  @@index([season_id], map: "idx_server_timeline_season_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sponsors {
+  id                BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  name              String              @default("") @db.VarChar(150)
+  industry          String              @default("") @db.VarChar(100)
+  reputation        Int                 @default(0)
+  description       String?             @db.Text
+  logo_url          String?             @db.VarChar(255)
+  club_sponsorships club_sponsorships[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model stadiums {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id   BigInt    @db.UnsignedBigInt
+  name      String    @default("") @db.VarChar(150)
+  capacity  Int       @default(0)
+  condition Decimal   @default(0.0000) @db.Decimal(10, 4)
+  image_url String?   @db.VarChar(255)
+  matches   matches[]
+  clubs     clubs     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_stadiums_club_id")
+
+  @@index([club_id], map: "idx_stadiums_club_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model staff {
+  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id             BigInt                 @db.UnsignedBigInt
+  name                 String                 @default("") @db.VarChar(150)
+  staff_type           staff_staff_type       @default(HEAD_COACH)
+  nationality_id       BigInt                 @db.UnsignedBigInt
+  reputation           Int                    @default(0)
+  photo_url            String?                @db.VarChar(255)
+  scouting_assignments scouting_assignments[]
+  countries            countries              @relation(fields: [nationality_id], references: [id], onDelete: Cascade, map: "fk_staff_nationality_id")
+  game_worlds          game_worlds            @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_staff_world_id")
+  staff_attributes     staff_attributes[]
+  staff_contracts      staff_contracts[]
+  training_sessions    training_sessions[]
+
+  @@index([nationality_id], map: "idx_staff_nationality_id")
+  @@index([world_id], map: "idx_staff_world_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model staff_attribute_types {
+  id                    BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  code                  String                  @unique(map: "uq_staff_attribute_types_code") @default("") @db.VarChar(50)
+  name                  String                  @default("") @db.VarChar(100)
+  category              String                  @default("") @db.VarChar(50)
+  description           String?                 @db.Text
+  staff_attributes      staff_attributes[]
+  staff_role_attributes staff_role_attributes[]
+
+  @@index([category], map: "idx_staff_attribute_types_category")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model staff_attributes {
+  staff_id              BigInt                @db.UnsignedBigInt
+  attribute_id          BigInt                @db.UnsignedBigInt
+  value                 Int?
+  staff_attribute_types staff_attribute_types @relation(fields: [attribute_id], references: [id], onDelete: Cascade, map: "fk_staff_attributes_attribute_id")
+  staff                 staff                 @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_staff_attributes_staff_id")
+
+  @@id([staff_id, attribute_id])
+  @@index([attribute_id], map: "idx_staff_attributes_attribute_id")
+  @@index([staff_id], map: "idx_staff_attributes_staff_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model staff_contracts {
+  id                 BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  staff_id           BigInt     @db.UnsignedBigInt
+  club_id            BigInt     @db.UnsignedBigInt
+  start_season_id    BigInt     @default(1) @db.UnsignedBigInt
+  start_season_day   Int        @default(1)
+  end_season_id      BigInt     @default(1) @db.UnsignedBigInt
+  end_season_day     Int        @default(40)
+  start_date         DateTime   @db.Date
+  end_date           DateTime?  @db.Date
+  salary             Decimal    @default(0.0000) @db.Decimal(10, 4)
+  salary_currency_id BigInt     @db.UnsignedBigInt
+  status             String     @default("") @db.VarChar(30)
+  clubs              clubs      @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_club_id")
+  currencies         currencies @relation(fields: [salary_currency_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_salary_currency_id")
+  staff              staff      @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_staff_id")
+
+  @@index([club_id], map: "idx_staff_contracts_club_id")
+  @@index([salary_currency_id], map: "idx_staff_contracts_salary_currency_id")
+  @@index([staff_id], map: "idx_staff_contracts_staff_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model staff_role_attributes {
+  id                    BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
+  staff_type            staff_role_attributes_staff_type @default(HEAD_COACH)
+  attribute_type_id     BigInt                           @db.UnsignedBigInt
+  multiplier            Decimal                          @default(1.00) @db.Decimal(4, 2)
+  is_key                Boolean                          @default(false)
+  order_no              Int                              @default(0)
+  staff_attribute_types staff_attribute_types            @relation(fields: [attribute_type_id], references: [id], onDelete: Cascade, map: "fk_staff_role_attributes_attr")
+
+  @@index([attribute_type_id], map: "idx_staff_role_attributes_attr")
+  @@index([staff_type], map: "idx_staff_role_attributes_role")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model stage_groups {
+  id                 BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  stage_id           BigInt?             @db.UnsignedBigInt
+  name               String              @default("") @db.VarChar(50)
+  code               String              @default("") @db.VarChar(20)
+  order_no           Int                 @default(0)
+  matches            matches[]
+  competition_stages competition_stages? @relation(fields: [stage_id], references: [id], onDelete: Cascade, map: "fk_stage_groups_stage_id")
+  stage_standings    stage_standings[]
+  stage_teams        stage_teams[]
+
+  @@index([stage_id], map: "idx_stage_groups_stage_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model stage_progressions {
+  id                                                                      BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  from_stage_id                                                           BigInt             @db.UnsignedBigInt
+  to_stage_id                                                             BigInt             @db.UnsignedBigInt
+  rule_type                                                               String             @default("") @db.VarChar(50)
+  min_rank                                                                Int                @default(0)
+  max_rank                                                                Int                @default(0)
+  qualifier_count                                                         Int                @default(0)
+  description                                                             String?            @db.Text
+  logo_url                                                                String?            @db.VarChar(255)
+  competition_stages_stage_progressions_from_stage_idTocompetition_stages competition_stages @relation("stage_progressions_from_stage_idTocompetition_stages", fields: [from_stage_id], references: [id], onDelete: Cascade, map: "fk_stage_progressions_from_stage_id")
+  competition_stages_stage_progressions_to_stage_idTocompetition_stages   competition_stages @relation("stage_progressions_to_stage_idTocompetition_stages", fields: [to_stage_id], references: [id], onDelete: Cascade, map: "fk_stage_progressions_to_stage_id")
+
+  @@index([from_stage_id], map: "idx_stage_progressions_from_stage_id")
+  @@index([to_stage_id], map: "idx_stage_progressions_to_stage_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model stage_rounds {
+  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  stage_id             BigInt?                @db.UnsignedBigInt
+  name                 String                 @default("") @db.VarChar(100)
+  round_no             Int                    @default(0)
+  round_season_day     Int                    @default(1)
+  start_date           DateTime               @db.Date
+  end_date             DateTime?              @db.Date
+  knockout_round_rules knockout_round_rules[]
+  knockout_ties        knockout_ties[]
+  matches              matches[]
+  competition_stages   competition_stages?    @relation(fields: [stage_id], references: [id], onDelete: Cascade, map: "fk_stage_rounds_stage_id")
+
+  @@index([stage_id], map: "idx_stage_rounds_stage_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model stage_standings {
+  id                 BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  stage_id           BigInt?             @db.UnsignedBigInt
+  group_id           BigInt?             @db.UnsignedBigInt
+  club_id            BigInt?             @db.UnsignedBigInt
+  country_id         BigInt?             @db.UnsignedBigInt
+  played             Int                 @default(0)
+  wins               Int                 @default(0)
+  draws              Int                 @default(0)
+  losses             Int                 @default(0)
+  goals_for          Int                 @default(0)
+  goals_against      Int                 @default(0)
+  goal_difference    Int                 @default(0)
+  points             Int                 @default(0)
+  position           Int                 @default(0)
+  qualified          Boolean             @default(false)
+  eliminated         Boolean             @default(false)
+  clubs              clubs?              @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_stage_standings_club_id")
+  countries          countries?          @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_stage_standings_country_id")
+  stage_groups       stage_groups?       @relation(fields: [group_id], references: [id], onDelete: Cascade, map: "fk_stage_standings_group_id")
+  competition_stages competition_stages? @relation(fields: [stage_id], references: [id], onDelete: Cascade, map: "fk_stage_standings_stage_id")
+
+  @@index([club_id], map: "idx_stage_standings_club_id")
+  @@index([country_id], map: "idx_stage_standings_country_id")
+  @@index([group_id], map: "idx_stage_standings_group_id")
+  @@index([stage_id], map: "idx_stage_standings_stage_id")
+  @@index([stage_id, group_id], map: "idx_standing_stage_group")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model stage_teams {
+  id                   BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  stage_id             BigInt?             @db.UnsignedBigInt
+  group_id             BigInt?             @db.UnsignedBigInt
+  club_id              BigInt?             @db.UnsignedBigInt
+  country_id           BigInt?             @db.UnsignedBigInt
+  seed                 Int                 @default(0)
+  status               String              @default("") @db.VarChar(30)
+  qualification_source String              @default("") @db.VarChar(100)
+  clubs                clubs?              @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_stage_teams_club_id")
+  countries            countries?          @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_stage_teams_country_id")
+  stage_groups         stage_groups?       @relation(fields: [group_id], references: [id], onDelete: Cascade, map: "fk_stage_teams_group_id")
+  competition_stages   competition_stages? @relation(fields: [stage_id], references: [id], onDelete: Cascade, map: "fk_stage_teams_stage_id")
+
+  @@index([club_id], map: "idx_stage_teams_club_id")
+  @@index([country_id], map: "idx_stage_teams_country_id")
+  @@index([group_id], map: "idx_stage_teams_group_id")
+  @@index([stage_id], map: "idx_stage_teams_stage_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tactic_position_instructions {
+  id                    BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  tactic_position_id    BigInt                @db.UnsignedBigInt
+  instruction_id        BigInt                @db.UnsignedBigInt
+  value                 Int?
+  tactical_instructions tactical_instructions @relation(fields: [instruction_id], references: [id], onDelete: Cascade, map: "fk_tactic_position_instructions_instruction_id")
+  club_tactic_positions club_tactic_positions @relation(fields: [tactic_position_id], references: [id], onDelete: Cascade, map: "fk_tactic_position_instructions_tactic_position_id")
+
+  @@index([instruction_id], map: "idx_tactic_position_instructions_instruction_id")
+  @@index([tactic_position_id], map: "idx_tactic_position_instructions_tactic_position_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tactical_instructions {
+  id                           BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  code                         String                         @unique(map: "uq_tactical_instructions_code") @default("") @db.VarChar(50)
+  name                         String                         @default("") @db.VarChar(100)
+  category                     String                         @default("") @db.VarChar(30)
+  description                  String?                        @db.Text
+  tactic_position_instructions tactic_position_instructions[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tendencies {
+  id                BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  code              String              @unique(map: "uq_tendencies_code") @default("") @db.VarChar(50)
+  name              String              @default("") @db.VarChar(100)
+  description       String?             @db.Text
+  player_tendencies player_tendencies[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model training_sessions {
+  id               BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id          BigInt            @db.UnsignedBigInt
+  training_type_id BigInt            @db.UnsignedBigInt
+  season_id        BigInt?           @db.UnsignedBigInt
+  season_day       Int               @default(1)
+  session_date     DateTime          @db.Date
+  intensity        Int               @default(0)
+  coach_staff_id   BigInt?           @db.UnsignedBigInt
+  status           String            @default("") @db.VarChar(30)
+  player_training  player_training[]
+  clubs            clubs             @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_training_sessions_club_id")
+  staff            staff?            @relation(fields: [coach_staff_id], references: [id], onDelete: Cascade, map: "fk_training_sessions_coach_staff_id")
+  training_types   training_types    @relation(fields: [training_type_id], references: [id], onDelete: Cascade, map: "fk_training_sessions_training_type_id")
+
+  @@index([club_id], map: "idx_training_sessions_club_id")
+  @@index([coach_staff_id], map: "idx_training_sessions_coach_staff_id")
+  @@index([training_type_id], map: "idx_training_sessions_training_type_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model training_types {
+  id                BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  code              String              @unique(map: "uq_training_types_code") @default("") @db.VarChar(50)
+  name              String              @default("") @db.VarChar(100)
+  category          String              @default("") @db.VarChar(50)
+  description       String?             @db.Text
+  training_sessions training_sessions[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model transfer_offers {
+  id                                        BigInt                        @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id                                 BigInt                        @db.UnsignedBigInt
+  from_club_id                              BigInt                        @db.UnsignedBigInt
+  to_club_id                                BigInt                        @db.UnsignedBigInt
+  transfer_type                             transfer_offers_transfer_type @default(DOMESTIC)
+  offer_amount                              Decimal                       @default(0.00) @db.Decimal(18, 2)
+  currency_type                             transfer_offers_currency_type @default(CASH)
+  status                                    String                        @default("") @db.VarChar(30)
+  created_at                                DateTime                      @default(now()) @db.DateTime(0)
+  is_loan                                   Boolean                       @default(false)
+  loan_end_date                             DateTime?                     @db.Date
+  wage_split_percentage                     Decimal?                      @db.Decimal(10, 4)
+  buy_option_fee                            Decimal?                      @db.Decimal(10, 4)
+  clubs_transfer_offers_from_club_idToclubs clubs                         @relation("transfer_offers_from_club_idToclubs", fields: [from_club_id], references: [id], onDelete: Cascade, map: "fk_transfer_offers_from_club_id")
+  players                                   players                       @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_transfer_offers_player_id")
+  clubs_transfer_offers_to_club_idToclubs   clubs                         @relation("transfer_offers_to_club_idToclubs", fields: [to_club_id], references: [id], onDelete: Cascade, map: "fk_transfer_offers_to_club_id")
+
+  @@index([from_club_id], map: "idx_transfer_offers_from_club_id")
+  @@index([player_id], map: "idx_transfer_offers_player_id")
+  @@index([to_club_id], map: "idx_transfer_offers_to_club_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model transfers {
+  id                                  BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id                           BigInt                  @db.UnsignedBigInt
+  from_club_id                        BigInt                  @db.UnsignedBigInt
+  to_club_id                          BigInt                  @db.UnsignedBigInt
+  transfer_type                       transfers_transfer_type @default(DOMESTIC)
+  transfer_fee                        Decimal                 @default(0.00) @db.Decimal(18, 2)
+  currency_type                       transfers_currency_type @default(CASH)
+  add_ons                             Decimal                 @default(0.00) @db.Decimal(18, 2)
+  sell_on_percentage                  Decimal                 @default(0.0000) @db.Decimal(10, 4)
+  transfer_date                       DateTime                @db.DateTime(0)
+  is_loan                             Boolean                 @default(false)
+  loan_end_date                       DateTime?               @db.Date
+  wage_split_percentage               Decimal?                @db.Decimal(10, 4)
+  buy_option_fee                      Decimal?                @db.Decimal(10, 4)
+  player_club_history                 player_club_history[]
+  clubs_transfers_from_club_idToclubs clubs                   @relation("transfers_from_club_idToclubs", fields: [from_club_id], references: [id], onDelete: Cascade, map: "fk_transfers_from_club_id")
+  players                             players                 @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_transfers_player_id")
+  clubs_transfers_to_club_idToclubs   clubs                   @relation("transfers_to_club_idToclubs", fields: [to_club_id], references: [id], onDelete: Cascade, map: "fk_transfers_to_club_id")
+
+  @@index([from_club_id], map: "idx_transfers_from_club_id")
+  @@index([player_id], map: "idx_transfers_player_id")
+  @@index([to_club_id], map: "idx_transfers_to_club_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model users {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  username      String   @unique(map: "uq_users_username") @default("") @db.VarChar(100)
+  email         String   @unique(map: "uq_users_email") @default("") @db.VarChar(255)
+  password_hash String   @default("") @db.VarChar(255)
+  avatar_url    String?  @db.VarChar(255)
+  status        String   @default("") @db.VarChar(50)
+  created_at    DateTime @default(now()) @db.DateTime(0)
+  updated_at    DateTime @default(now()) @db.DateTime(0)
+  clubs         clubs[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model youth_intakes {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id        BigInt    @db.UnsignedBigInt
+  season_id      BigInt    @db.UnsignedBigInt
+  intake_date    DateTime  @db.Date
+  player_count   Int       @default(0)
+  quality_rating Int       @default(0)
+  status         String    @default("") @db.VarChar(30)
+  players        players[]
+  clubs          clubs     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_youth_intakes_club_id")
+  seasons        seasons   @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_youth_intakes_season_id")
+
+  @@index([club_id], map: "idx_youth_intakes_club_id")
+  @@index([season_id], map: "idx_youth_intakes_season_id")
+}
+
+enum staff_role_attributes_staff_type {
+  HEAD_COACH
+  ASSISTANT_COACH
+  FITNESS_COACH
+  GOALKEEPING_COACH
+  SCOUT
+  PHYSIO
+  YOUTH_DIRECTOR
+}
+
+enum competition_ranking_rules_ranking_type {
+  LEAGUE_COEFFICIENT
+  CLUB_COEFFICIENT
+  FIFA_NATIONAL
+}
+
+enum club_rankings_ranking_type {
+  WORLD_CLUB
+  CONTINENTAL
+  NATIONAL
+}
+
+enum competition_stages_stage_type {
+  GROUP
+  LEAGUE
+  KNOCKOUT
+}
+
+enum country_rankings_ranking_type {
+  FIFA_NATIONAL
+  LEAGUE_COEFFICIENT
+}
+
+enum staff_staff_type {
+  HEAD_COACH
+  ASSISTANT_COACH
+  FITNESS_COACH
+  GOALKEEPING_COACH
+  SCOUT
+  PHYSIO
+  YOUTH_DIRECTOR
+}
+
+enum currencies_type {
+  SOFT
+  HARD
+}
+
+enum transfer_offers_transfer_type {
+  DOMESTIC
+  INTERNATIONAL
+}
+
+enum transfers_transfer_type {
+  DOMESTIC
+  INTERNATIONAL
+}
+
+enum competitions_format_type {
+  LEAGUE
+  CUP
+  HYBRID
+}
+
+enum competition_qualification_rules_action_type {
+  CHAMPION
+  PROMOTION
+  RELEGATION
+  PROMOTION_PLAYOFF
+  RELEGATION_PLAYOFF
+  QUALIFY_SUPER_CUP
+  QUALIFY_CONTINENTAL_C1
+  QUALIFY_CONTINENTAL_C2
+  QUALIFY_CONTINENTAL_C3
+}
+
+enum financial_transactions_currency_type {
+  CASH
+  GOLD
+}
+
+enum matches_match_type {
+  COMPETITIVE
+  FRIENDLY
+}
+
+enum transfer_offers_currency_type {
+  CASH
+  GOLD
+}
+
+enum transfers_currency_type {
+  CASH
+  GOLD
+}
+
+enum competitions_competition_type {
+  DOMESTIC_LEAGUE
+  DOMESTIC_CUP
+  DOMESTIC_SUPER_CUP
+  CONTINENTAL_CLUB_C1
+  CONTINENTAL_CLUB_C2
+  CONTINENTAL_CLUB_C3
+  CONTINENTAL_NATIONAL
+  WORLD_NATIONAL
+  DOMESTIC_YOUTH_CUP
+  INVITATIONAL_YOUTH_CUP
+}
+
+enum competitions_participant_type {
+  CLUB
+  NATIONAL_TEAM
+  YOUTH_CLUB
+}
+
+enum players_preferred_foot {
+  LEFT
+  RIGHT
+  BOTH
+}
+
+enum players_squad_type {
+  FIRST_TEAM
+  RESERVES
+  YOUTH_U19
+  YOUTH_U21
+}
+
+enum matches_result_type {
+  REGULAR
+  EXTRA_TIME
+  PENALTIES
+  WALKOVER
+}
