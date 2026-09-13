@@ -25,4 +25,12 @@ export class GameWorldController {
   async advanceDay(@Param('id') id: string) {
     return this.gameWorldService.advanceDay(BigInt(id));
   }
+
+  @Post(':id/trigger-day1-auto')
+  @ApiOperation({ summary: 'Kích hoạt kiểm tra tự động hóa Day 1: tự động sinh giải đấu và lịch thi đấu' })
+  async triggerDay1Auto(@Param('id') id: string) {
+    await this.gameWorldService.checkAndTriggerDay1AutoGeneration(BigInt(id));
+    return { success: true, message: 'Đã hoàn tất quy trình tự động hóa Day 1 cho World ' + id };
+  }
+
 }

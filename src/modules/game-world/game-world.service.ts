@@ -1,17 +1,72 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
+import { CompetitionsService } from '../competitions/competitions.service';
 
 @Injectable()
-export class GameWorldService {
+export class GameWorldService implements OnApplicationBootstrap {
   private readonly logger = new Logger(GameWorldService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly competitionsService: CompetitionsService,
+  ) {}
 
+  /**
+   * Tự động kiểm tra khi server khởi động:
+   * Nếu đang ở Day 1 của Mùa giải mà chưa có lịch thi đấu, tự động sinh lịch ngay lập tức!
+   */
+  async onApplicationBootstrap() {
+    this.logger.log('GameWorldService: Kiểm tra trạng thái tự động hóa Day 1...');
+    await this.checkAndTriggerDay1AutoGeneration(1n);
+  }
+
+  /**
+   * Cron Job tự động chạy mỗi nửa đêm: Tiến 1 ngày trong game
+   */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleAutomaticMidnightCycle() {
-    this.logger.log('Online Game Server: Running automated midnight season cycle...');
+    this.logger.log('Online Game Server: Tự động chạy chu kỳ chuyển ngày nửa đêm (Midnight Cycle)...');
     await this.advanceDay(1n);
+  }
+
+  /**
+   * Hàm kiểm tra và tự động sinh giải đấu + lịch thi đấu khi phát hiện Day 1
+   */
+  async checkAndTriggerDay1AutoGeneration(worldId: bigint = 1n) {
+    try {
+      const activeSeason = await this.prisma.seasons.findFirst({
+        where: { world_id: worldId, status: 'ACTIVE' },
+        orderBy: { season_number: 'desc' },
+      });
+
+      if (!activeSeason) return;
+
+      // Nếu đang ở Day 1
+      if (activeSeason.current_day === 1) {
+        const matchCount = await this.prisma.matches.count({
+          where: { season_id: activeSeason.id },
+        });
+
+        if (matchCount === 0) {
+          this.logger.log(
+            `🚀 [AUTO DAY 1] Phát hiện Mùa ${activeSeason.season_number} đang ở Day 1 chưa có lịch thi đấu. Bắt đầu tự động tạo giải đấu và sinh Fixtures cho toàn bộ các giải...`
+          );
+
+          const result = await this.competitionsService.generateSeasonFixtures({
+            seasonId: activeSeason.id.toString(),
+          });
+
+          this.logger.log(`🎉 [AUTO DAY 1 THÀNH CÔNG] ${result.message}`);
+        } else {
+          this.logger.log(
+            `ℹ️ [DAY 1 INFO] Mùa ${activeSeason.season_number} Day 1 đã có sẵn ${matchCount} trận đấu được lên lịch.`
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error('Lỗi khi tự động kích hoạt sinh lịch đấu Day 1:', err);
+    }
   }
 
   async getWorlds() {
@@ -37,19 +92,25 @@ export class GameWorldService {
 
     return {
       world,
-      season: activeSeason ? {
-        id: activeSeason.id.toString(),
-        name: activeSeason.name,
-        season_number: activeSeason.season_number,
-        current_day: activeSeason.current_day,
-        total_days: activeSeason.total_days,
-        is_transfer_window_open: Boolean(activeSeason.is_transfer_window_open),
-        status: activeSeason.status,
-      } : null,
+      season: activeSeason
+        ? {
+            id: activeSeason.id.toString(),
+            name: activeSeason.name,
+            season_number: activeSeason.season_number,
+            current_day: activeSeason.current_day,
+            total_days: activeSeason.total_days,
+            is_transfer_window_open: Boolean(activeSeason.is_transfer_window_open),
+            status: activeSeason.status,
+          }
+        : null,
       timeline,
     };
   }
 
+  /**
+   * Tiến ngày trong mùa giải (Day 1 -> Day 40)
+   * Khi hết Day 40 -> Tự động sang Season mới, Day 1 và tự động tạo giải đấu + lịch đấu!
+   */
   async advanceDay(worldId: bigint = 1n) {
     const season = await this.prisma.seasons.findFirst({
       where: { world_id: worldId, status: 'ACTIVE' },
@@ -61,38 +122,67 @@ export class GameWorldService {
 
     const nextDay = season.current_day + 1;
     let seasonCompleted = false;
+    let newSeasonData: any = null;
 
     if (nextDay > season.total_days) {
       seasonCompleted = true;
+
+      // 1. Đóng mùa cũ
       await this.prisma.seasons.update({
         where: { id: season.id },
         data: { status: 'COMPLETED' },
       });
+
+      // 2. Chuyển giao sang Season N + 1
+      const nextSeasonNumber = season.season_number + 1;
+      this.logger.log(`🏁 Mùa ${season.season_number} đã kết thúc 40 ngày! Bắt đầu chuyển giao sang Mùa ${nextSeasonNumber} Day 1...`);
+
+      // 3. TỰ ĐỘNG KHỞI TẠO MÙA MỚI VÀ SINH LỊCH THI ĐẤU (AUTO ON DAY 1)
+      const initResult = await this.competitionsService.initializeNewSeason({
+        worldId: worldId.toString(),
+        seasonNumber: nextSeasonNumber,
+        autoGenerateFixtures: true,
+      });
+
+      newSeasonData = initResult.season;
+
+      // 4. Cập nhật server_timeline sang mùa mới, Day 1
+      const newSeasonId = BigInt(initResult.season.id);
+      await this.prisma.$executeRaw`
+        UPDATE server_timeline 
+        SET season_id = ${newSeasonId},
+            season_day = 1,
+            world_day = world_day + 1,
+            real_date = DATE_ADD(real_date, INTERVAL 1 DAY),
+            updated_at = NOW()
+        WHERE world_id = ${worldId}
+      `;
+
+      this.logger.log(`🎉 [AUTO DAY 1] Khởi tạo trọn vẹn Mùa ${nextSeasonNumber}: ${initResult.message}`);
     } else {
+      // Tiếp tục ngày tiếp theo trong mùa hiện tại
       await this.prisma.seasons.update({
         where: { id: season.id },
         data: { current_day: nextDay },
       });
+
+      await this.prisma.$executeRaw`
+        UPDATE server_timeline 
+        SET season_day = ${nextDay},
+            world_day = world_day + 1,
+            real_date = DATE_ADD(real_date, INTERVAL 1 DAY),
+            updated_at = NOW()
+        WHERE world_id = ${worldId}
+      `;
     }
 
-    // 1. Update server_timeline
-    await this.prisma.$executeRaw`
-      UPDATE server_timeline 
-      SET season_day = ${seasonCompleted ? season.total_days : nextDay},
-          world_day = world_day + 1,
-          real_date = DATE_ADD(real_date, INTERVAL 1 DAY),
-          updated_at = NOW()
-      WHERE world_id = ${worldId}
-    `;
-
-    // 2. Process Injuries Recovery (countdown days_remaining)
+    // Các tác vụ hồi phục & tài chính hàng ngày:
     await this.prisma.$executeRaw`
       UPDATE injuries 
       SET days_remaining = GREATEST(0, days_remaining - 1)
       WHERE days_remaining > 0
     `;
 
-    // 3. Sync player_status: set is_injured = 0 if days_remaining reaches 0
     await this.prisma.$executeRaw`
       UPDATE player_status ps
       JOIN injuries inj ON ps.player_id = inj.player_id
@@ -100,7 +190,6 @@ export class GameWorldService {
       WHERE inj.days_remaining = 0 AND ps.is_injured = 1
     `;
 
-    // 4. Recover Player Stamina & Condition (+10 condition, +5 fitness)
     await this.prisma.$executeRaw`
       UPDATE player_status 
       SET condition = LEAST(100, condition + 10),
@@ -108,21 +197,19 @@ export class GameWorldService {
       WHERE is_injured = 0
     `;
 
-    // 5. Daily Sponsor Bonus for Club Financial Accounts (+25,000 cash)
     await this.prisma.$executeRaw`
       UPDATE financial_accounts
       SET cash_balance = cash_balance + 25000
     `;
 
-    this.logger.log(`Server timeline advanced to Season ${season.season_number}, Day ${nextDay}`);
-
     return {
       message: seasonCompleted
-        ? `Mùa giải ${season.season_number} đã kết thúc 40 ngày thi đấu!`
+        ? `Mùa giải ${season.season_number} đã hoàn tất! Đã tự động tạo Mùa ${newSeasonData?.seasonNumber} và sinh toàn bộ giải đấu, lịch thi đấu Day 1!`
         : `Đã chuyển sang Ngày ${nextDay} / ${season.total_days} của Mùa ${season.season_number}`,
-      current_day: seasonCompleted ? season.total_days : nextDay,
-      season_number: season.season_number,
+      current_day: seasonCompleted ? 1 : nextDay,
+      season_number: seasonCompleted ? newSeasonData?.seasonNumber : season.season_number,
       season_completed: seasonCompleted,
+      auto_generated_fixtures: seasonCompleted,
       daily_grant: 25000,
       stamina_recovered: true,
     };

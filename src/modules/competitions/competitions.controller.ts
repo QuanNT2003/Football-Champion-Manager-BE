@@ -1,6 +1,8 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CompetitionsService } from './competitions.service';
+import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
+import { InitializeSeasonDto } from './dto/initialize-season.dto';
 
 @ApiTags('Giải Đấu & Bảng Xếp Hạng')
 @Controller('competitions')
@@ -66,4 +68,17 @@ export class CompetitionsController {
   ) {
     return this.competitionsService.getCompetitionTeams(BigInt(id), countryId);
   }
+
+  @Post('initialize-season')
+  @ApiOperation({ summary: 'Khởi tạo mùa giải mới: kích hoạt giải đấu, phân bổ CLB và sinh lịch thi đấu' })
+  async initializeSeason(@Body() dto: InitializeSeasonDto) {
+    return this.competitionsService.initializeNewSeason(dto);
+  }
+
+  @Post('generate-fixtures')
+  @ApiOperation({ summary: 'Tự động bốc thăm và sinh lịch thi đấu (Fixtures) cho các giải đấu trong mùa' })
+  async generateFixtures(@Body() dto: GenerateFixturesDto) {
+    return this.competitionsService.generateSeasonFixtures(dto);
+  }
+
 }
