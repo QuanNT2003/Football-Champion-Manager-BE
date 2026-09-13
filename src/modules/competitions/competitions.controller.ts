@@ -3,6 +3,7 @@ import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CompetitionsService } from './competitions.service';
 import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
 import { InitializeSeasonDto } from './dto/initialize-season.dto';
+import { ProcessSeasonTransitionDto } from './dto/process-season-transition.dto';
 
 @ApiTags('Giải Đấu & Bảng Xếp Hạng')
 @Controller('competitions')
@@ -86,6 +87,12 @@ export class CompetitionsController {
   @ApiOperation({ summary: 'Tự động bốc thăm và sinh lịch thi đấu (Fixtures) cho các giải đấu trong mùa' })
   async generateFixtures(@Body() dto: GenerateFixturesDto) {
     return this.competitionsService.generateSeasonFixtures(dto);
+  }
+
+  @Post('process-season-transition')
+  @ApiOperation({ summary: 'Chuyển giao mùa giải (Season Transition): Thăng/Xuống hạng, Cúp C1/C2 Châu Lục, Lão hóa cầu thủ (+1 tuổi) và tạo mùa mới' })
+  async processSeasonTransition(@Body() dto: ProcessSeasonTransitionDto) {
+    return this.competitionsService.processSeasonTransition(dto);
   }
 
 }

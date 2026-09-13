@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
 import { InitializeSeasonDto } from './dto/initialize-season.dto';
+import { ProcessSeasonTransitionDto } from './dto/process-season-transition.dto';
 
 @Injectable()
 export class CompetitionsService {
@@ -1181,120 +1182,203 @@ export class CompetitionsService {
       targetSeason = currentSeason;
     }
 
-    // 2. Lấy danh sách các khuôn mẫu giải đấu competitions
-    const whereComp: any = {};
+    // 2. Phân loại giải đấu: Quốc nội (Domestic Tiers 1..5) và Châu lục (Continental C1, C2)
+    const domesticComps = await this.prisma.competitions.findMany({
+      where: { scope: 'DOMESTIC', tier: { in: [1, 2, 3, 4, 5] } },
+      orderBy: { tier: 'asc' },
+    });
+
+    const continentalComps = await this.prisma.competitions.findMany({
+      where: { scope: 'CONTINENTAL' },
+      orderBy: { id: 'asc' },
+    });
+
+    // Lấy danh sách các quốc gia cần khởi tạo
+    const whereCountry: any = {};
     if (dto.countryId) {
-      whereComp.country_id = BigInt(dto.countryId);
+      whereCountry.id = BigInt(dto.countryId);
     }
-    const comps = await this.prisma.competitions.findMany({
-      where: whereComp,
-      include: { countries: true },
-      orderBy: [{ tier: 'asc' }, { id: 'asc' }],
+    const countries = await this.prisma.countries.findMany({
+      where: whereCountry,
+      select: { id: true, name: true, confederation_id: true },
     });
 
     let activatedCompSeasons = 0;
     let enrolledClubsCount = 0;
 
-    for (const comp of comps) {
-      // 2a. Tạo hoặc tìm competition_seasons cho mùa giải này
-      let compSeason = await this.prisma.competition_seasons.findFirst({
-        where: {
-          competition_id: comp.id,
-          season_id: targetSeason.id,
-        },
-      });
-
-      if (!compSeason) {
-        compSeason = await this.prisma.competition_seasons.create({
-          data: {
+    // 2a. Khởi tạo giải Quốc nội cho từng quốc gia
+    for (const country of countries) {
+      for (const comp of domesticComps) {
+        // Tìm hoặc tạo competition_seasons
+        let compSeason = await this.prisma.competition_seasons.findFirst({
+          where: {
             competition_id: comp.id,
             season_id: targetSeason.id,
-            country_id: comp.country_id,
-            confederation_id: comp.confederation_id,
-            name: `${comp.name} (${targetSeason.name})`,
-            status: 'ACTIVE',
+            country_id: country.id,
           },
         });
-        activatedCompSeasons++;
-      }
 
-      // 2b. Tạo stage chính (Regular Season) nếu chưa có
-      let stage = await this.prisma.competition_stages.findFirst({
-        where: { competition_season_id: compSeason.id },
-      });
-
-      if (!stage) {
-        stage = await this.prisma.competition_stages.create({
-          data: {
-            competition_season_id: compSeason.id,
-            name: comp.format_type === 'CUP' ? 'Vòng Chung Kết' : 'Regular Season',
-            stage_type: comp.format_type === 'CUP' ? 'KNOCKOUT' : 'LEAGUE',
-            order_no: 1,
-            status: 'ACTIVE',
-          },
-        });
-      }
-
-      // 2c. Kiểm tra xem stage_teams đã có chưa
-      const existingTeamsCount = await this.prisma.stage_teams.count({
-        where: { stage_id: stage.id },
-      });
-
-      if (existingTeamsCount === 0) {
-        // Tìm các CLB tham gia giải đấu này:
-        // Ưu tiên: CLB có current_competition_id = comp.id
-        let candidateClubs = await this.prisma.clubs.findMany({
-          where: {
-            current_competition_id: comp.id,
-            ...(comp.country_id ? { country_id: comp.country_id } : {}),
-          },
-          select: { id: true, country_id: true, reputation: true },
-          orderBy: { reputation: 'desc' },
-        });
-
-        // Nếu giải đặc thù chưa có current_competition_id, lấy theo tier và country
-        if (candidateClubs.length === 0 && comp.tier > 0) {
-          candidateClubs = await this.prisma.clubs.findMany({
-            where: {
-              ...(comp.country_id ? { country_id: comp.country_id } : {}),
+        if (!compSeason) {
+          compSeason = await this.prisma.competition_seasons.create({
+            data: {
+              competition_id: comp.id,
+              season_id: targetSeason.id,
+              country_id: country.id,
+              confederation_id: country.confederation_id,
+              name: `${country.name} Tier ${comp.tier} - ${targetSeason.name}`,
+              status: 'ACTIVE',
             },
-            take: comp.total_teams > 0 ? comp.total_teams : 16,
-            select: { id: true, country_id: true, reputation: true },
-            orderBy: { reputation: 'desc' },
+          });
+          activatedCompSeasons++;
+        }
+
+        // Tạo stage chính (Regular Season)
+        let stage = await this.prisma.competition_stages.findFirst({
+          where: { competition_season_id: compSeason.id },
+        });
+        if (!stage) {
+          stage = await this.prisma.competition_stages.create({
+            data: {
+              competition_season_id: compSeason.id,
+              name: 'Regular Season',
+              stage_type: 'LEAGUE',
+              order_no: 1,
+              status: 'ACTIVE',
+            },
           });
         }
 
-        if (candidateClubs.length > 0) {
-          // Bulk insert stage_teams
-          const teamData = candidateClubs.map((c, idx) => ({
-            stage_id: stage.id,
-            club_id: c.id,
-            country_id: c.country_id,
-            seed: idx + 1,
-            status: 'ACTIVE',
-            qualification_source: 'Direct Entry',
-          }));
+        // Kiểm tra stage_teams
+        const existingTeamsCount = await this.prisma.stage_teams.count({
+          where: { stage_id: stage.id },
+        });
 
-          await this.prisma.stage_teams.createMany({ data: teamData });
+        if (existingTeamsCount === 0) {
+          // Lấy danh sách CLB thuộc quốc gia này có current_competition_id = comp.id
+          const clubs = await this.prisma.clubs.findMany({
+            where: {
+              country_id: country.id,
+              current_competition_id: comp.id,
+            },
+            select: { id: true, country_id: true, reputation: true },
+            orderBy: { reputation: 'desc' },
+          });
 
-          // Bulk insert stage_standings ban đầu (0 điểm)
-          const standingData = candidateClubs.map((c, idx) => ({
-            stage_id: stage.id,
-            club_id: c.id,
-            country_id: c.country_id,
-            played: 0,
-            wins: 0,
-            draws: 0,
-            losses: 0,
-            goals_for: 0,
-            goals_against: 0,
-            goal_difference: 0,
-            points: 0,
-            position: idx + 1,
-          }));
+          if (clubs.length > 0) {
+            const teamData = clubs.map((c, idx) => ({
+              stage_id: stage.id,
+              club_id: c.id,
+              country_id: c.country_id,
+              seed: idx + 1,
+              status: 'ACTIVE',
+              qualification_source: 'Direct Entry',
+            }));
+            await this.prisma.stage_teams.createMany({ data: teamData });
 
-          await this.prisma.stage_standings.createMany({ data: standingData });
-          enrolledClubsCount += candidateClubs.length;
+            const standingData = clubs.map((c, idx) => ({
+              stage_id: stage.id,
+              club_id: c.id,
+              country_id: c.country_id,
+              played: 0,
+              wins: 0,
+              draws: 0,
+              losses: 0,
+              goals_for: 0,
+              goals_against: 0,
+              goal_difference: 0,
+              points: 0,
+              position: idx + 1,
+            }));
+            await this.prisma.stage_standings.createMany({ data: standingData });
+            enrolledClubsCount += clubs.length;
+          }
+        }
+      }
+    }
+
+    // 2b. Khởi tạo giải Châu lục (Cúp C1, Cúp C2) nếu không giới hạn 1 quốc gia cụ thể
+    if (!dto.countryId) {
+      for (const comp of continentalComps) {
+        let compSeason = await this.prisma.competition_seasons.findFirst({
+          where: {
+            competition_id: comp.id,
+            season_id: targetSeason.id,
+          },
+        });
+
+        if (!compSeason) {
+          compSeason = await this.prisma.competition_seasons.create({
+            data: {
+              competition_id: comp.id,
+              season_id: targetSeason.id,
+              country_id: null,
+              confederation_id: comp.confederation_id,
+              name: `${comp.name} - ${targetSeason.name}`,
+              status: 'ACTIVE',
+            },
+          });
+          activatedCompSeasons++;
+        }
+
+        let stage = await this.prisma.competition_stages.findFirst({
+          where: { competition_season_id: compSeason.id },
+        });
+        if (!stage) {
+          stage = await this.prisma.competition_stages.create({
+            data: {
+              competition_season_id: compSeason.id,
+              name: 'Group Stage',
+              stage_type: 'GROUP',
+              order_no: 1,
+              status: 'ACTIVE',
+            },
+          });
+        }
+
+        const existingTeamsCount = await this.prisma.stage_teams.count({
+          where: { stage_id: stage.id },
+        });
+
+        if (existingTeamsCount === 0) {
+          const candidateClubs = await this.prisma.clubs.findMany({
+            where: {
+              countries: {
+                ...(comp.confederation_id ? { confederation_id: comp.confederation_id } : {}),
+              },
+            },
+            take: comp.total_teams > 0 ? comp.total_teams : 32,
+            select: { id: true, country_id: true, reputation: true },
+            orderBy: { reputation: 'desc' },
+          });
+
+          if (candidateClubs.length > 0) {
+            const teamData = candidateClubs.map((c, idx) => ({
+              stage_id: stage.id,
+              club_id: c.id,
+              country_id: c.country_id,
+              seed: idx + 1,
+              status: 'ACTIVE',
+              qualification_source: 'Continental Berth',
+            }));
+            await this.prisma.stage_teams.createMany({ data: teamData });
+
+            const standingData = candidateClubs.map((c, idx) => ({
+              stage_id: stage.id,
+              club_id: c.id,
+              country_id: c.country_id,
+              played: 0,
+              wins: 0,
+              draws: 0,
+              losses: 0,
+              goals_for: 0,
+              goals_against: 0,
+              goal_difference: 0,
+              points: 0,
+              position: idx + 1,
+            }));
+            await this.prisma.stage_standings.createMany({ data: standingData });
+            enrolledClubsCount += candidateClubs.length;
+          }
         }
       }
     }
@@ -1322,6 +1406,338 @@ export class CompetitionsService {
       activatedCompSeasons,
       enrolledClubsCount,
       matchesGenerated,
+    };
+  }
+
+  /**
+   * Xử lý chuyển giao mùa giải (Season Transition Engine):
+   * 1. Quét BXH mùa vừa hoàn tất của các giải Tier 1..5
+   * 2. Xử lý Thăng hạng / Xuống hạng giữa các Tier (cập nhật clubs.current_competition_id)
+   * 3. Phân bổ suất tham dự Cúp C1 / C2 Châu Lục
+   * 4. Lão hóa cầu thủ (age + 1) và reset thẻ phạt
+   * 5. Khởi tạo Mùa giải mới & sinh lịch thi đấu
+   */
+  async processSeasonTransition(dto: ProcessSeasonTransitionDto) {
+    const worldId = dto.worldId ? BigInt(dto.worldId) : 1n;
+
+    // 1. Xác định mùa giải cần kết thúc
+    let completedSeason: any = null;
+    if (dto.completedSeasonId) {
+      completedSeason = await this.prisma.seasons.findUnique({
+        where: { id: BigInt(dto.completedSeasonId) },
+      });
+    } else {
+      completedSeason = await this.prisma.seasons.findFirst({
+        where: { world_id: worldId, status: 'ACTIVE' },
+        orderBy: { season_number: 'desc' },
+      });
+    }
+
+    if (!completedSeason) {
+      throw new NotFoundException('Không tìm thấy mùa giải cần chuyển giao');
+    }
+
+    const nextSeasonNumber = dto.newSeasonNumber || (completedSeason.season_number + 1);
+
+    // 2. Tìm tất cả các giải đấu quốc nội của mùa vừa hoàn tất
+    const whereCs: any = {
+      season_id: completedSeason.id,
+      competitions: {
+        scope: 'DOMESTIC',
+        tier: { in: [1, 2, 3, 4, 5] },
+      },
+    };
+    if (dto.countryId) {
+      whereCs.country_id = BigInt(dto.countryId);
+    }
+
+    const domesticCompSeasons = await this.prisma.competition_seasons.findMany({
+      where: whereCs,
+      include: {
+        competitions: true,
+        countries: true,
+        competition_stages: {
+          include: {
+            stage_standings: {
+              include: { clubs: true },
+              orderBy: [
+                { points: 'desc' },
+                { goal_difference: 'desc' },
+                { goals_for: 'desc' },
+              ],
+            },
+          },
+        },
+      },
+      orderBy: [{ country_id: 'asc' }, { competitions: { tier: 'asc' } }],
+    });
+
+    const promotions: any[] = [];
+    const relegations: any[] = [];
+    const continentalQualifications: any[] = [];
+
+    // Nhóm theo quốc gia
+    const byCountry: { [countryId: string]: typeof domesticCompSeasons } = {};
+    for (const cs of domesticCompSeasons) {
+      const cId = cs.country_id ? cs.country_id.toString() : '0';
+      if (!byCountry[cId]) byCountry[cId] = [];
+      byCountry[cId].push(cs);
+    }
+
+    // 3. Xử lý Thăng/Xuống hạng và Suất C1/C2 cho từng quốc gia
+    for (const [cId, seasonsList] of Object.entries(byCountry)) {
+      const tier1 = seasonsList.find((s) => s.competitions.tier === 1);
+      const tier2 = seasonsList.find((s) => s.competitions.tier === 2);
+      const tier3 = seasonsList.find((s) => s.competitions.tier === 3);
+      const tier4 = seasonsList.find((s) => s.competitions.tier === 4);
+      const tier5 = seasonsList.find((s) => s.competitions.tier === 5);
+
+      // --- TIER 1: VĐQG ---
+      if (tier1) {
+        const standings = tier1.competition_stages?.[0]?.stage_standings || [];
+        if (standings.length > 0) {
+          // Top 1-3 đi Cúp C1 Châu Lục
+          standings.slice(0, 3).forEach((s, idx) => {
+            continentalQualifications.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              tier: 1,
+              position: idx + 1,
+              targetCompetitionId: '8',
+              targetCompetitionName: 'Cúp C1 Châu Lục (Champions League)',
+            });
+          });
+
+          // Top 4-5 đi Cúp C2 Châu Lục
+          standings.slice(3, 5).forEach((s, idx) => {
+            continentalQualifications.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              tier: 1,
+              position: idx + 4,
+              targetCompetitionId: '9',
+              targetCompetitionName: 'Cúp C2 Châu Lục',
+            });
+          });
+
+          // Hạng 17, 18 rớt xuống Tier 2
+          const relegated = standings.slice(16, 18);
+          for (const s of relegated) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 2n },
+            });
+            relegations.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 1,
+              toTier: 2,
+              position: s.position,
+            });
+          }
+        }
+      }
+
+      // --- TIER 2: Hạng Nhất ---
+      if (tier2) {
+        const standings = tier2.competition_stages?.[0]?.stage_standings || [];
+        if (standings.length > 0) {
+          // Top 1, 2 thăng lên Tier 1
+          const promoted = standings.slice(0, 2);
+          for (const s of promoted) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 1n },
+            });
+            promotions.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 2,
+              toTier: 1,
+              position: s.position,
+            });
+          }
+
+          // Hạng 19, 20 rớt xuống Tier 3
+          const relegated = standings.slice(18, 20);
+          for (const s of relegated) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 3n },
+            });
+            relegations.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 2,
+              toTier: 3,
+              position: s.position,
+            });
+          }
+        }
+      }
+
+      // --- TIER 3: Hạng Nhì ---
+      if (tier3) {
+        const standings = tier3.competition_stages?.[0]?.stage_standings || [];
+        if (standings.length > 0) {
+          // Top 1, 2 thăng lên Tier 2
+          const promoted = standings.slice(0, 2);
+          for (const s of promoted) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 2n },
+            });
+            promotions.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 3,
+              toTier: 2,
+              position: s.position,
+            });
+          }
+
+          // Hạng 15, 16 rớt xuống Tier 4
+          const relegated = standings.slice(14, 16);
+          for (const s of relegated) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 4n },
+            });
+            relegations.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 3,
+              toTier: 4,
+              position: s.position,
+            });
+          }
+        }
+      }
+
+      // --- TIER 4: Hạng Ba ---
+      if (tier4) {
+        const standings = tier4.competition_stages?.[0]?.stage_standings || [];
+        if (standings.length > 0) {
+          // Top 1, 2 thăng lên Tier 3
+          const promoted = standings.slice(0, 2);
+          for (const s of promoted) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 3n },
+            });
+            promotions.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 4,
+              toTier: 3,
+              position: s.position,
+            });
+          }
+
+          // Hạng 15, 16 rớt xuống Tier 5
+          const relegated = standings.slice(14, 16);
+          for (const s of relegated) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 5n },
+            });
+            relegations.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 4,
+              toTier: 5,
+              position: s.position,
+            });
+          }
+        }
+      }
+
+      // --- TIER 5: Hạng Tư ---
+      if (tier5) {
+        const standings = tier5.competition_stages?.[0]?.stage_standings || [];
+        if (standings.length > 0) {
+          // Top 1, 2 thăng lên Tier 4
+          const promoted = standings.slice(0, 2);
+          for (const s of promoted) {
+            await this.prisma.clubs.update({
+              where: { id: s.club_id },
+              data: { current_competition_id: 4n },
+            });
+            promotions.push({
+              clubId: s.club_id.toString(),
+              clubName: s.clubs?.name,
+              fromTier: 5,
+              toTier: 4,
+              position: s.position,
+            });
+          }
+        }
+      }
+    }
+
+    // 4. Lão hóa cầu thủ (+1 tuổi) & reset thẻ phạt
+    let playersAgedCount = 0;
+    if (dto.agePlayers !== false) {
+      const updateResult = await this.prisma.$executeRaw`
+        UPDATE players 
+        SET age = age + 1
+        WHERE world_id = ${worldId}
+      `;
+      playersAgedCount = Number(updateResult);
+
+      // Reset thẻ phạt tích lũy mùa cũ
+      await this.prisma.$executeRaw`
+        UPDATE player_status
+        SET is_suspended = 0
+      `;
+    }
+
+    // 5. Đóng mùa cũ
+    await this.prisma.seasons.update({
+      where: { id: completedSeason.id },
+      data: { status: 'COMPLETED' },
+    });
+
+    // 6. Khởi tạo Mùa giải mới nếu được bật
+    let newSeasonResult: any = null;
+    if (dto.initializeNewSeason !== false) {
+      newSeasonResult = await this.initializeNewSeason({
+        worldId: worldId.toString(),
+        seasonNumber: nextSeasonNumber,
+        autoGenerateFixtures: true,
+        countryId: dto.countryId,
+      });
+
+      // Cập nhật server_timeline sang Mùa mới, Day 1
+      const newSeasonId = BigInt(newSeasonResult.season.id);
+      await this.prisma.$executeRaw`
+        UPDATE server_timeline 
+        SET season_id = ${newSeasonId},
+            season_number = ${nextSeasonNumber},
+            season_day = 1,
+            world_day = world_day + 1,
+            real_date = DATE_ADD(real_date, INTERVAL 1 DAY),
+            season_status = 'IN_PROGRESS',
+            updated_at = NOW()
+        WHERE world_id = ${worldId}
+      `;
+    }
+
+    return {
+      success: true,
+      message: `Chuyển giao thành công từ Mùa ${completedSeason.season_number} sang Mùa ${nextSeasonNumber}`,
+      completedSeason: {
+        id: completedSeason.id.toString(),
+        name: completedSeason.name,
+        seasonNumber: completedSeason.season_number,
+      },
+      nextSeason: newSeasonResult ? newSeasonResult.season : null,
+      summary: `Đã xử lý ${promotions.length} suất thăng hạng, ${relegations.length} suất rớt hạng, ${continentalQualifications.length} suất dự Cúp Châu Lục.`,
+      promotions,
+      relegations,
+      continentalQualifications,
+      playersAgedCount,
+      newSeasonResult,
     };
   }
 

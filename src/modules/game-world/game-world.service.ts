@@ -126,39 +126,26 @@ export class GameWorldService implements OnApplicationBootstrap {
 
     if (nextDay > season.total_days) {
       seasonCompleted = true;
-
-      // 1. Đóng mùa cũ
-      await this.prisma.seasons.update({
-        where: { id: season.id },
-        data: { status: 'COMPLETED' },
-      });
-
-      // 2. Chuyển giao sang Season N + 1
       const nextSeasonNumber = season.season_number + 1;
-      this.logger.log(`🏁 Mùa ${season.season_number} đã kết thúc 40 ngày! Bắt đầu chuyển giao sang Mùa ${nextSeasonNumber} Day 1...`);
+      this.logger.log(
+        `🏁 Mùa ${season.season_number} đã kết thúc ${season.total_days} ngày! Bắt đầu chuyển giao sang Mùa ${nextSeasonNumber} Day 1...`,
+      );
 
-      // 3. TỰ ĐỘNG KHỞI TẠO MÙA MỚI VÀ SINH LỊCH THI ĐẤU (AUTO ON DAY 1)
-      const initResult = await this.competitionsService.initializeNewSeason({
+      // 1. Chuyển giao mùa giải toàn diện:
+      // - Quét BXH thăng / xuống hạng Tier 1 -> 5
+      // - Phân bổ suất Cúp C1 / C2 Châu Lục
+      // - Tăng tuổi cầu thủ (+1 tuổi) & reset án phạt
+      // - Khởi tạo Mùa giải mới & sinh lịch thi đấu Day 1
+      const transitionResult = await this.competitionsService.processSeasonTransition({
         worldId: worldId.toString(),
-        seasonNumber: nextSeasonNumber,
-        autoGenerateFixtures: true,
+        completedSeasonId: season.id.toString(),
+        newSeasonNumber: nextSeasonNumber,
+        agePlayers: true,
+        initializeNewSeason: true,
       });
 
-      newSeasonData = initResult.season;
-
-      // 4. Cập nhật server_timeline sang mùa mới, Day 1
-      const newSeasonId = BigInt(initResult.season.id);
-      await this.prisma.$executeRaw`
-        UPDATE server_timeline 
-        SET season_id = ${newSeasonId},
-            season_day = 1,
-            world_day = world_day + 1,
-            real_date = DATE_ADD(real_date, INTERVAL 1 DAY),
-            updated_at = NOW()
-        WHERE world_id = ${worldId}
-      `;
-
-      this.logger.log(`🎉 [AUTO DAY 1] Khởi tạo trọn vẹn Mùa ${nextSeasonNumber}: ${initResult.message}`);
+      newSeasonData = transitionResult.nextSeason;
+      this.logger.log(`🎉 [CHUYỂN GIAO MÙA THÀNH CÔNG] ${transitionResult.summary}`);
     } else {
       // Tiếp tục ngày tiếp theo trong mùa hiện tại
       await this.prisma.seasons.update({
