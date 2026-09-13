@@ -169,7 +169,8 @@ export class PlayersService {
       squad_type: player.squad_type,
       squad_number: player.squad_number,
       photo_url: player.photo_url,
-      nationality: player.countries_players_nationality_idTocountries ? {
+      nationality: player.countries_players_nationality_idTocountries?.name || null,
+      nationality_detail: player.countries_players_nationality_idTocountries ? {
         id: player.countries_players_nationality_idTocountries.id.toString(),
         name: player.countries_players_nationality_idTocountries.name,
         code: player.countries_players_nationality_idTocountries.code,

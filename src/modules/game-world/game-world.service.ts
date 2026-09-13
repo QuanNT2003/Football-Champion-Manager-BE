@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 
 @Injectable()
@@ -6,6 +7,12 @@ export class GameWorldService {
   private readonly logger = new Logger(GameWorldService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async handleAutomaticMidnightCycle() {
+    this.logger.log('Online Game Server: Running automated midnight season cycle...');
+    await this.advanceDay(1n);
+  }
 
   async getWorlds() {
     return this.prisma.game_worlds.findMany({
@@ -68,19 +75,43 @@ export class GameWorldService {
       });
     }
 
-    // 1. Process Injuries Recovery (countdown days_remaining)
+    // 1. Update server_timeline
+    await this.prisma.$executeRaw`
+      UPDATE server_timeline 
+      SET season_day = ${seasonCompleted ? season.total_days : nextDay},
+          world_day = world_day + 1,
+          real_date = DATE_ADD(real_date, INTERVAL 1 DAY),
+          updated_at = NOW()
+      WHERE world_id = ${worldId}
+    `;
+
+    // 2. Process Injuries Recovery (countdown days_remaining)
     await this.prisma.$executeRaw`
       UPDATE injuries 
       SET days_remaining = GREATEST(0, days_remaining - 1)
       WHERE days_remaining > 0
     `;
 
-    // 2. Sync player_status: set is_injured = 0 if days_remaining reaches 0
+    // 3. Sync player_status: set is_injured = 0 if days_remaining reaches 0
     await this.prisma.$executeRaw`
       UPDATE player_status ps
       JOIN injuries inj ON ps.player_id = inj.player_id
       SET ps.is_injured = 0
       WHERE inj.days_remaining = 0 AND ps.is_injured = 1
+    `;
+
+    // 4. Recover Player Stamina & Condition (+10 condition, +5 fitness)
+    await this.prisma.$executeRaw`
+      UPDATE player_status 
+      SET condition = LEAST(100, condition + 10),
+          fitness = LEAST(100, fitness + 5)
+      WHERE is_injured = 0
+    `;
+
+    // 5. Daily Sponsor Bonus for Club Financial Accounts (+25,000 cash)
+    await this.prisma.$executeRaw`
+      UPDATE financial_accounts
+      SET cash_balance = cash_balance + 25000
     `;
 
     this.logger.log(`Server timeline advanced to Season ${season.season_number}, Day ${nextDay}`);
@@ -92,6 +123,8 @@ export class GameWorldService {
       current_day: seasonCompleted ? season.total_days : nextDay,
       season_number: season.season_number,
       season_completed: seasonCompleted,
+      daily_grant: 25000,
+      stamina_recovered: true,
     };
   }
 }

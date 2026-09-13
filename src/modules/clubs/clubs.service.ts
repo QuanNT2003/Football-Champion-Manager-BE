@@ -105,7 +105,8 @@ export class ClubsService {
       home_kit_url: club.home_kit_url,
       away_kit_url: club.away_kit_url,
       third_kit_url: club.third_kit_url,
-      country: club.countries ? {
+      country: club.countries?.name || null,
+      country_detail: club.countries ? {
         id: club.countries.id.toString(),
         name: club.countries.name,
         code: club.countries.code,

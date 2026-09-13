@@ -41,7 +41,7 @@ export class MatchesService {
       this.prisma.matches.findMany({
         where,
         skip,
-        take: limit,
+        take: l,
         orderBy: [{ season_day: 'asc' }, { id: 'asc' }],
         include: {
           clubs_matches_home_club_idToclubs: {
@@ -57,9 +57,9 @@ export class MatchesService {
 
     return {
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      page: p,
+      limit: l,
+      totalPages: Math.ceil(total / l),
       items: matches.map((m) => ({
         id: m.id.toString(),
         season_day: m.season_day,

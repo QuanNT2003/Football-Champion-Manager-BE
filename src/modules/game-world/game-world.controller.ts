@@ -21,8 +21,6 @@ export class GameWorldController {
   }
 
   @Post(':id/advance-day')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Chuyển sang ngày tiếp theo của mùa giải (Advance Day loop)' })
   async advanceDay(@Param('id') id: string) {
     return this.gameWorldService.advanceDay(BigInt(id));
