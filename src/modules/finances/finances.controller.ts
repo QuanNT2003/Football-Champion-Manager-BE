@@ -23,9 +23,9 @@ export class FinancesController {
   @ApiQuery({ name: 'limit', required: false, example: 50 })
   async getTransactions(
     @Param('clubId') clubId: string,
-    @Query('limit') limit: number = 50,
+    @Query('limit') limit?: number,
   ) {
-    return this.financesService.getTransactions(BigInt(clubId), Number(limit));
+    return this.financesService.getTransactions(BigInt(clubId), limit ? Number(limit) : 50);
   }
 
   @Get('gold-shop')

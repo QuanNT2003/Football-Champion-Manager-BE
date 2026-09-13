@@ -42,8 +42,28 @@ export class CompetitionsController {
   @ApiQuery({ name: 'limit', required: false, example: 10 })
   async getTopScorers(
     @Param('id') id: string,
-    @Query('limit') limit: number = 10,
+    @Query('limit') limit?: number,
   ) {
-    return this.competitionsService.getTopScorers(BigInt(id), Number(limit));
+    return this.competitionsService.getTopScorers(BigInt(id), limit ? Number(limit) : 10);
+  }
+
+  @Get(':id/top-assists')
+  @ApiOperation({ summary: 'Lấy bảng xếp hạng Vua kiến tạo (Top Assists)' })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  async getTopAssists(
+    @Param('id') id: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.competitionsService.getTopAssists(BigInt(id), limit ? Number(limit) : 10);
+  }
+
+  @Get(':id/teams')
+  @ApiOperation({ summary: 'Lấy danh sách các đội bóng tham gia giải đấu' })
+  @ApiQuery({ name: 'countryId', required: false })
+  async getCompetitionTeams(
+    @Param('id') id: string,
+    @Query('countryId') countryId?: string,
+  ) {
+    return this.competitionsService.getCompetitionTeams(BigInt(id), countryId);
   }
 }

@@ -28,7 +28,7 @@ export class ClubsService {
       this.prisma.clubs.findMany({
         where,
         skip,
-        take: limit,
+        take: l,
         orderBy: { reputation: 'desc' },
         include: {
           countries: { select: { id: true, name: true, flag_url: true } },
@@ -41,9 +41,9 @@ export class ClubsService {
 
     return {
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      page: p,
+      limit: l,
+      totalPages: Math.ceil(total / l),
       items: clubs.map((c) => ({
         id: c.id.toString(),
         name: c.name,

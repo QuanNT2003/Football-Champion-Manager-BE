@@ -26,7 +26,7 @@ export class TransfersService {
       this.prisma.player_status.findMany({
         where,
         skip,
-        take: limit,
+        take: l,
         include: {
           players: {
             include: {
@@ -47,9 +47,9 @@ export class TransfersService {
 
     return {
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      page: p,
+      limit: l,
+      totalPages: Math.ceil(total / l),
       items: list.map((item) => {
         const p = item.players;
         const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];

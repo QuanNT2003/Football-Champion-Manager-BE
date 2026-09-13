@@ -23,6 +23,7 @@ export class FinancesService {
   }
 
   async getTransactions(clubId: bigint, limit: number = 50) {
+    const l = Math.max(1, Number(limit) || 50);
     const account = await this.prisma.financial_accounts.findFirst({
       where: { club_id: clubId },
     });
@@ -32,7 +33,7 @@ export class FinancesService {
     return this.prisma.financial_transactions.findMany({
       where: { financial_account_id: account.id },
       orderBy: { transaction_date: 'desc' },
-      take: limit,
+      take: l,
     });
   }
 

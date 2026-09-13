@@ -39,7 +39,7 @@ export class PlayersService {
       this.prisma.players.findMany({
         where,
         skip,
-        take: limit,
+        take: l,
         orderBy: { reputation: 'desc' },
         include: {
           countries_players_nationality_idTocountries: { select: { name: true, flag_url: true } },
@@ -56,9 +56,9 @@ export class PlayersService {
 
     return {
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      page: p,
+      limit: l,
+      totalPages: Math.ceil(total / l),
       items: players.map((p) => {
         let attrSummary = null;
         if (p.attributes_summary) {
