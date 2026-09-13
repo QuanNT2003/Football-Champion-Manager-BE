@@ -8,16 +8,94 @@ export class CompetitionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getCompetitions(countryId?: string, tier?: number) {
+    let country: any = null;
+    let confederation: any = null;
+
+    if (countryId) {
+      try {
+        country = await this.prisma.countries.findUnique({
+          where: { id: BigInt(countryId) },
+          include: { confederations_countries_confederation_idToconfederations: true },
+        });
+        confederation = country?.confederations_countries_confederation_idToconfederations;
+      } catch (e) {
+        // ignore error
+      }
+    }
+
     const where: any = {};
-    if (countryId) where.country_id = BigInt(countryId);
     if (tier) where.tier = Number(tier);
 
-    return this.prisma.competitions.findMany({
+    const comps = await this.prisma.competitions.findMany({
       where,
-      orderBy: [{ tier: 'asc' }, { id: 'asc' }],
-      include: {
-        countries: { select: { id: true, name: true, flag_url: true } },
-      },
+      orderBy: [{ id: 'asc' }],
+    });
+
+    return comps.map((comp) => {
+      const isDomestic = comp.scope === 'DOMESTIC';
+      const isContinental = comp.scope === 'CONTINENTAL' || comp.scope === 'REGIONAL';
+      const isInternational = comp.scope === 'INTERNATIONAL';
+
+      let displayName = comp.name;
+      let groupLabel = '🏆 Đấu Trường Quốc Tế';
+      let regionName = 'Toàn Cầu';
+
+      if (isDomestic && country) {
+        groupLabel = `🇻🇳 Giải Đấu Quốc Nội (${country.name})`;
+        regionName = country.name;
+        displayName = `${comp.name} - ${country.name}`;
+      } else if (isContinental && confederation) {
+        groupLabel = `🌏 Cúp Châu Lục (${confederation.code})`;
+        regionName = confederation.name;
+        const code = confederation.code;
+        if (comp.id === 8n) {
+          if (code === 'AFC') displayName = 'Cúp C1 Châu Lục (AFC Champions League Elite)';
+          else if (code === 'UEFA') displayName = 'Cúp C1 Châu Lục (UEFA Champions League)';
+          else if (code === 'CONMEBOL') displayName = 'Cúp C1 Châu Lục (Copa Libertadores)';
+          else displayName = `${comp.name} (${code})`;
+        } else if (comp.id === 9n) {
+          if (code === 'AFC') displayName = 'Cúp C2 Châu Lục (AFC Champions League Two)';
+          else if (code === 'UEFA') displayName = 'Cúp C2 Châu Lục (UEFA Europa League)';
+          else if (code === 'CONMEBOL') displayName = 'Cúp C2 Châu Lục (Copa Sudamericana)';
+          else displayName = `${comp.name} (${code})`;
+        } else if (comp.id === 10n) {
+          if (code === 'AFC') displayName = 'Cúp C3 Châu Lục (AFC Challenge League)';
+          else if (code === 'UEFA') displayName = 'Cúp C3 Châu Lục (UEFA Conference League)';
+          else displayName = `${comp.name} (${code})`;
+        } else {
+          displayName = `${comp.name} (${code})`;
+        }
+      }
+
+      return {
+        id: comp.id.toString(),
+        code: comp.code,
+        name: comp.name,
+        displayName,
+        groupLabel,
+        regionName,
+        scope: comp.scope,
+        tier: comp.tier,
+        format_type: comp.format_type,
+        total_teams: comp.total_teams,
+        country_id: country ? country.id.toString() : null,
+        confederation_id: confederation ? confederation.id.toString() : null,
+        country: country
+          ? {
+              id: country.id.toString(),
+              name: country.name,
+              code: country.code,
+              flag_url: country.flag_url,
+            }
+          : null,
+        confederation: confederation
+          ? {
+              id: confederation.id.toString(),
+              name: confederation.name,
+              code: confederation.code,
+            }
+          : null,
+      };
     });
   }
 
@@ -40,13 +118,25 @@ export class CompetitionsService {
     return comp;
   }
 
-  async getStandings(competitionId: bigint, seasonId?: bigint) {
-    // Find active competition_season
-    const compSeason = await this.prisma.competition_seasons.findFirst({
-      where: {
-        competition_id: competitionId,
-        ...(seasonId ? { season_id: seasonId } : {}),
-      },
+  async getStandings(competitionId: bigint, seasonId?: bigint, countryId?: string) {
+    const comp = await this.prisma.competitions.findUnique({
+      where: { id: competitionId },
+    });
+
+    const isDomestic = comp?.scope === 'DOMESTIC';
+    const isContinental = comp?.scope === 'CONTINENTAL' || comp?.scope === 'REGIONAL';
+
+    // 1. Find active competition_season
+    const whereCs: any = {
+      competition_id: competitionId,
+      ...(seasonId ? { season_id: seasonId } : {}),
+    };
+    if (isDomestic && countryId) {
+      whereCs.country_id = BigInt(countryId);
+    }
+
+    let compSeason = await this.prisma.competition_seasons.findFirst({
+      where: whereCs,
       orderBy: { id: 'desc' },
       include: {
         competition_stages: {
@@ -64,130 +154,348 @@ export class CompetitionsService {
       },
     });
 
-    if (!compSeason || compSeason.competition_stages.length === 0) {
-      return { standings: [] };
+    // If not found with country_id (or for continental), fallback to finding any matching season
+    if (!compSeason && !seasonId) {
+      compSeason = await this.prisma.competition_seasons.findFirst({
+        where: { competition_id: competitionId },
+        orderBy: { id: 'desc' },
+        include: {
+          competition_stages: {
+            include: {
+              stage_standings: {
+                include: {
+                  clubs: {
+                    select: { id: true, name: true, short_name: true, logo_url: true },
+                  },
+                },
+                orderBy: [{ points: 'desc' }, { goal_difference: 'desc' }, { goals_for: 'desc' }],
+              },
+            },
+          },
+        },
+      });
     }
 
-    const stage = compSeason.competition_stages[0];
+    const stage = compSeason?.competition_stages?.[0];
+    const standings = stage?.stage_standings || [];
+
+    if (standings.length > 0) {
+      return {
+        competitionId: competitionId.toString(),
+        stageName: stage?.name || 'Vòng Bảng',
+        standings: standings.map((s, idx) => ({
+          id: s.id.toString(),
+          position: idx + 1,
+          club: s.clubs
+            ? {
+                id: s.clubs.id.toString(),
+                name: s.clubs.name,
+                short_name: s.clubs.short_name,
+                logo_url: s.clubs.logo_url,
+              }
+            : null,
+          played: s.played,
+          wins: s.wins,
+          draws: s.draws,
+          losses: s.losses,
+          goals_for: s.goals_for,
+          goals_against: s.goals_against,
+          goal_difference: s.goal_difference,
+          points: s.points,
+        })),
+      };
+    }
+
+    // Fallback if stage_standings has no records: Populate from participating clubs
+    let participatingClubs: any[] = [];
+    if (isDomestic && countryId) {
+      const cId = BigInt(countryId);
+      participatingClubs = await this.prisma.clubs.findMany({
+        where: {
+          country_id: cId,
+          ...(comp?.tier && comp.tier > 0 ? { current_competition_id: competitionId } : {}),
+        },
+        take: 20,
+        orderBy: { reputation: 'desc' },
+        select: { id: true, name: true, short_name: true, logo_url: true, reputation: true },
+      });
+    } else if (isContinental && countryId) {
+      const country = await this.prisma.countries.findUnique({
+        where: { id: BigInt(countryId) },
+        select: { confederation_id: true },
+      });
+      if (country?.confederation_id) {
+        participatingClubs = await this.prisma.clubs.findMany({
+          where: {
+            countries: { confederation_id: country.confederation_id },
+          },
+          take: 32,
+          orderBy: { reputation: 'desc' },
+          select: { id: true, name: true, short_name: true, logo_url: true, reputation: true },
+        });
+      }
+    }
+
+    if (participatingClubs.length === 0) {
+      participatingClubs = await this.prisma.clubs.findMany({
+        take: 16,
+        orderBy: { reputation: 'desc' },
+        select: { id: true, name: true, short_name: true, logo_url: true, reputation: true },
+      });
+    }
+
     return {
       competitionId: competitionId.toString(),
-      stageName: stage.name,
-      standings: stage.stage_standings.map((s, idx) => ({
+      stageName: 'Mùa giải mới',
+      standings: participatingClubs.map((c, idx) => ({
+        id: c.id.toString(),
         position: idx + 1,
-        club: s.clubs ? {
-          id: s.clubs.id.toString(),
-          name: s.clubs.name,
-          short_name: s.clubs.short_name,
-          logo_url: s.clubs.logo_url,
-        } : null,
-        played: s.played,
-        wins: s.wins,
-        draws: s.draws,
-        losses: s.losses,
-        goals_for: s.goals_for,
-        goals_against: s.goals_against,
-        goal_difference: s.goal_difference,
-        points: s.points,
+        club: {
+          id: c.id.toString(),
+          name: c.name,
+          short_name: c.short_name,
+          logo_url: c.logo_url,
+        },
+        played: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goals_for: 0,
+        goals_against: 0,
+        goal_difference: 0,
+        points: 0,
       })),
     };
   }
 
-  async getTopScorers(competitionId: bigint, limit: number = 10) {
+  async getTopScorers(competitionId: bigint, limit: number = 10, countryId?: string) {
     const l = Math.max(1, Number(limit) || 10);
-    const compSeason = await this.prisma.competition_seasons.findFirst({
-      where: { competition_id: competitionId },
+    const whereCs: any = { competition_id: competitionId };
+    if (countryId) whereCs.country_id = BigInt(countryId);
+
+    let compSeason = await this.prisma.competition_seasons.findFirst({
+      where: whereCs,
       orderBy: { id: 'desc' },
     });
 
-    if (!compSeason) return [];
+    if (!compSeason) {
+      compSeason = await this.prisma.competition_seasons.findFirst({
+        where: { competition_id: competitionId },
+        orderBy: { id: 'desc' },
+      });
+    }
 
-    const stats = await this.prisma.player_statistics.findMany({
+    if (compSeason) {
+      const stats = await this.prisma.player_statistics.findMany({
+        where: {
+          competition_season_id: compSeason.id,
+          goals: { gt: 0 },
+        },
+        take: l,
+        orderBy: [{ goals: 'desc' }, { assists: 'desc' }],
+        include: {
+          players: {
+            select: { id: true, first_name: true, last_name: true, photo_url: true },
+          },
+          clubs: {
+            select: { id: true, name: true, logo_url: true },
+          },
+        },
+      });
+
+      if (stats.length > 0) {
+        return stats.map((s, idx) => ({
+          rank: idx + 1,
+          player: s.players
+            ? {
+                id: s.players.id.toString(),
+                name: `${s.players.first_name} ${s.players.last_name}`.trim(),
+                photo_url: s.players.photo_url,
+              }
+            : null,
+          club: s.clubs
+            ? {
+                id: s.clubs.id.toString(),
+                name: s.clubs.name,
+                logo_url: s.clubs.logo_url,
+              }
+            : null,
+          goals: s.goals,
+          assists: s.assists,
+          appearances: s.appearances,
+          rating: s.average_rating,
+        }));
+      }
+    }
+
+    // Fallback: Top forwards from clubs in this competition
+    const clubs = await this.getCompetitionTeams(competitionId, countryId);
+    const clubIds = clubs.slice(0, 10).map((c) => BigInt(c.id));
+    if (clubIds.length === 0) return [];
+
+    const topPlayers = await this.prisma.players.findMany({
       where: {
-        competition_season_id: compSeason.id,
-        goals: { gt: 0 },
+        current_club_id: { in: clubIds },
       },
       take: l,
-      orderBy: [{ goals: 'desc' }, { assists: 'desc' }],
+      orderBy: [{ reputation: 'desc' }],
       include: {
-        players: {
-          select: { id: true, first_name: true, last_name: true, photo_url: true },
-        },
-        clubs: {
-          select: { id: true, name: true, logo_url: true },
-        },
+        clubs_players_current_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
       },
     });
 
-    return stats.map((s, idx) => ({
+    return topPlayers.map((p, idx) => ({
       rank: idx + 1,
-      player: s.players ? {
-        id: s.players.id.toString(),
-        name: `${s.players.first_name} ${s.players.last_name}`.trim(),
-        photo_url: s.players.photo_url,
-      } : null,
-      club: s.clubs ? {
-        id: s.clubs.id.toString(),
-        name: s.clubs.name,
-        logo_url: s.clubs.logo_url,
-      } : null,
-      goals: s.goals,
-      assists: s.assists,
-      appearances: s.appearances,
-      rating: s.average_rating,
+      player: {
+        id: p.id.toString(),
+        name: `${p.first_name} ${p.last_name}`.trim(),
+        photo_url: p.photo_url,
+      },
+      club: p.clubs_players_current_club_idToclubs
+        ? {
+            id: p.clubs_players_current_club_idToclubs.id.toString(),
+            name: p.clubs_players_current_club_idToclubs.name,
+            logo_url: p.clubs_players_current_club_idToclubs.logo_url,
+          }
+        : null,
+      goals: 0,
+      assists: 0,
+      appearances: 0,
+      rating: ((p.reputation || 7000) / 1000).toFixed(1),
     }));
   }
 
-  async getTopAssists(competitionId: bigint, limit: number = 10) {
+  async getTopAssists(competitionId: bigint, limit: number = 10, countryId?: string) {
     const l = Math.max(1, Number(limit) || 10);
-    const compSeason = await this.prisma.competition_seasons.findFirst({
-      where: { competition_id: competitionId },
+    const whereCs: any = { competition_id: competitionId };
+    if (countryId) whereCs.country_id = BigInt(countryId);
+
+    let compSeason = await this.prisma.competition_seasons.findFirst({
+      where: whereCs,
       orderBy: { id: 'desc' },
     });
 
-    if (!compSeason) return [];
+    if (!compSeason) {
+      compSeason = await this.prisma.competition_seasons.findFirst({
+        where: { competition_id: competitionId },
+        orderBy: { id: 'desc' },
+      });
+    }
 
-    const stats = await this.prisma.player_statistics.findMany({
+    if (compSeason) {
+      const stats = await this.prisma.player_statistics.findMany({
+        where: {
+          competition_season_id: compSeason.id,
+          assists: { gt: 0 },
+        },
+        take: l,
+        orderBy: [{ assists: 'desc' }, { goals: 'desc' }],
+        include: {
+          players: {
+            select: { id: true, first_name: true, last_name: true, photo_url: true },
+          },
+          clubs: {
+            select: { id: true, name: true, logo_url: true },
+          },
+        },
+      });
+
+      if (stats.length > 0) {
+        return stats.map((s, idx) => ({
+          rank: idx + 1,
+          player: s.players
+            ? {
+                id: s.players.id.toString(),
+                name: `${s.players.first_name} ${s.players.last_name}`.trim(),
+                photo_url: s.players.photo_url,
+              }
+            : null,
+          club: s.clubs
+            ? {
+                id: s.clubs.id.toString(),
+                name: s.clubs.name,
+                logo_url: s.clubs.logo_url,
+              }
+            : null,
+          goals: s.goals,
+          assists: s.assists,
+          appearances: s.appearances,
+          rating: s.average_rating,
+        }));
+      }
+    }
+
+    // Fallback: Top midfielders/playmakers
+    const clubs = await this.getCompetitionTeams(competitionId, countryId);
+    const clubIds = clubs.slice(0, 10).map((c) => BigInt(c.id));
+    if (clubIds.length === 0) return [];
+
+    const topPlayers = await this.prisma.players.findMany({
       where: {
-        competition_season_id: compSeason.id,
-        assists: { gt: 0 },
+        current_club_id: { in: clubIds },
       },
       take: l,
-      orderBy: [{ assists: 'desc' }, { goals: 'desc' }],
+      orderBy: [{ reputation: 'desc' }],
       include: {
-        players: {
-          select: { id: true, first_name: true, last_name: true, photo_url: true },
-        },
-        clubs: {
-          select: { id: true, name: true, logo_url: true },
-        },
+        clubs_players_current_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
       },
     });
 
-    return stats.map((s, idx) => ({
+    return topPlayers.map((p, idx) => ({
       rank: idx + 1,
-      player: s.players ? {
-        id: s.players.id.toString(),
-        name: `${s.players.first_name} ${s.players.last_name}`.trim(),
-        photo_url: s.players.photo_url,
-      } : null,
-      club: s.clubs ? {
-        id: s.clubs.id.toString(),
-        name: s.clubs.name,
-        logo_url: s.clubs.logo_url,
-      } : null,
-      goals: s.goals,
-      assists: s.assists,
-      appearances: s.appearances,
-      rating: s.average_rating,
+      player: {
+        id: p.id.toString(),
+        name: `${p.first_name} ${p.last_name}`.trim(),
+        photo_url: p.photo_url,
+      },
+      club: p.clubs_players_current_club_idToclubs
+        ? {
+            id: p.clubs_players_current_club_idToclubs.id.toString(),
+            name: p.clubs_players_current_club_idToclubs.name,
+            logo_url: p.clubs_players_current_club_idToclubs.logo_url,
+          }
+        : null,
+      goals: 0,
+      assists: 0,
+      appearances: 0,
+      rating: ((p.reputation || 7000) / 1000).toFixed(1),
     }));
+  }
+
+  private mapClubToTeamDto(c: any) {
+    return {
+      id: c.id.toString(),
+      name: c.name,
+      short_name: c.short_name,
+      logo_url: c.logo_url,
+      city: c.cities?.name,
+      country: c.countries?.name,
+      stadium: c.stadiums?.[0]
+        ? {
+            name: c.stadiums[0].name,
+            capacity: c.stadiums[0].capacity,
+          }
+        : null,
+      reputation: c.reputation,
+      manager: c.users ? { id: c.users.id.toString(), username: c.users.username } : null,
+    };
   }
 
   async getCompetitionTeams(competitionId: bigint, countryId?: string) {
-    if (countryId) {
+    const comp = await this.prisma.competitions.findUnique({
+      where: { id: competitionId },
+    });
+
+    const isDomestic = comp?.scope === 'DOMESTIC';
+    const isContinental = comp?.scope === 'CONTINENTAL' || comp?.scope === 'REGIONAL';
+
+    // 1. If domestic and countryId provided: return clubs of this country
+    if (isDomestic && countryId) {
+      const cId = BigInt(countryId);
       const clubs = await this.prisma.clubs.findMany({
         where: {
-          current_competition_id: competitionId,
-          country_id: BigInt(countryId),
+          country_id: cId,
+          ...(comp?.tier && comp.tier > 0 ? { current_competition_id: competitionId } : {}),
         },
         include: {
           stadiums: true,
@@ -198,24 +506,45 @@ export class CompetitionsService {
         orderBy: { reputation: 'desc' },
       });
 
-      return clubs.map((c) => ({
-        id: c.id.toString(),
-        name: c.name,
-        short_name: c.short_name,
-        logo_url: c.logo_url,
-        city: c.cities?.name,
-        country: c.countries?.name,
-        stadium: c.stadiums?.[0] ? {
-          name: c.stadiums[0].name,
-          capacity: c.stadiums[0].capacity,
-        } : null,
-        reputation: c.reputation,
-        manager: c.users ? { id: c.users.id.toString(), username: c.users.username } : null,
-      }));
+      if (clubs.length > 0) {
+        return clubs.map((c) => this.mapClubToTeamDto(c));
+      }
     }
 
+    // 2. If continental and countryId provided: return clubs of this confederation
+    if (isContinental && countryId) {
+      const country = await this.prisma.countries.findUnique({
+        where: { id: BigInt(countryId) },
+        select: { confederation_id: true },
+      });
+
+      if (country?.confederation_id) {
+        const clubs = await this.prisma.clubs.findMany({
+          where: {
+            countries: { confederation_id: country.confederation_id },
+          },
+          take: 32,
+          include: {
+            stadiums: true,
+            cities: true,
+            countries: true,
+            users: { select: { id: true, username: true } },
+          },
+          orderBy: { reputation: 'desc' },
+        });
+
+        if (clubs.length > 0) {
+          return clubs.map((c) => this.mapClubToTeamDto(c));
+        }
+      }
+    }
+
+    // 3. Try competition_seasons stage_teams
     const compSeason = await this.prisma.competition_seasons.findFirst({
-      where: { competition_id: competitionId },
+      where: {
+        competition_id: competitionId,
+        ...(countryId && isDomestic ? { country_id: BigInt(countryId) } : {}),
+      },
       orderBy: { id: 'desc' },
       include: {
         competition_stages: {
@@ -239,27 +568,11 @@ export class CompetitionsService {
 
     const stageTeams = compSeason?.competition_stages?.[0]?.stage_teams || [];
     if (stageTeams.length > 0) {
-      return stageTeams.map((st) => {
-        const c = st.clubs;
-        return {
-          id: c.id.toString(),
-          name: c.name,
-          short_name: c.short_name,
-          logo_url: c.logo_url,
-          city: c.cities?.name,
-          country: c.countries?.name,
-          stadium: c.stadiums?.[0] ? {
-            name: c.stadiums[0].name,
-            capacity: c.stadiums[0].capacity,
-          } : null,
-          reputation: c.reputation,
-          manager: c.users ? { id: c.users.id.toString(), username: c.users.username } : null,
-        };
-      });
+      return stageTeams.map((st) => this.mapClubToTeamDto(st.clubs));
     }
 
+    // 4. Default fallback: take top 20 clubs
     const clubs = await this.prisma.clubs.findMany({
-      where: { current_competition_id: competitionId },
       take: 20,
       include: {
         stadiums: true,
@@ -270,20 +583,7 @@ export class CompetitionsService {
       orderBy: { reputation: 'desc' },
     });
 
-    return clubs.map((c) => ({
-      id: c.id.toString(),
-      name: c.name,
-      short_name: c.short_name,
-      logo_url: c.logo_url,
-      city: c.cities?.name,
-      country: c.countries?.name,
-      stadium: c.stadiums?.[0] ? {
-        name: c.stadiums[0].name,
-        capacity: c.stadiums[0].capacity,
-      } : null,
-      reputation: c.reputation,
-      manager: c.users ? { id: c.users.id.toString(), username: c.users.username } : null,
-    }));
+    return clubs.map((c) => this.mapClubToTeamDto(c));
   }
 
   /**

@@ -29,34 +29,41 @@ export class CompetitionsController {
   @Get(':id/standings')
   @ApiOperation({ summary: 'Lấy Bảng xếp hạng giải đấu (Standings table)' })
   @ApiQuery({ name: 'seasonId', required: false })
+  @ApiQuery({ name: 'countryId', required: false })
   async getStandings(
     @Param('id') id: string,
     @Query('seasonId') seasonId?: string,
+    @Query('countryId') countryId?: string,
   ) {
     return this.competitionsService.getStandings(
       BigInt(id),
       seasonId ? BigInt(seasonId) : undefined,
+      countryId,
     );
   }
 
   @Get(':id/top-scorers')
   @ApiOperation({ summary: 'Lấy bảng xếp hạng Vua phá lưới (Top Scorers)' })
   @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'countryId', required: false })
   async getTopScorers(
     @Param('id') id: string,
     @Query('limit') limit?: number,
+    @Query('countryId') countryId?: string,
   ) {
-    return this.competitionsService.getTopScorers(BigInt(id), limit ? Number(limit) : 10);
+    return this.competitionsService.getTopScorers(BigInt(id), limit ? Number(limit) : 10, countryId);
   }
 
   @Get(':id/top-assists')
   @ApiOperation({ summary: 'Lấy bảng xếp hạng Vua kiến tạo (Top Assists)' })
   @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'countryId', required: false })
   async getTopAssists(
     @Param('id') id: string,
     @Query('limit') limit?: number,
+    @Query('countryId') countryId?: string,
   ) {
-    return this.competitionsService.getTopAssists(BigInt(id), limit ? Number(limit) : 10);
+    return this.competitionsService.getTopAssists(BigInt(id), limit ? Number(limit) : 10, countryId);
   }
 
   @Get(':id/teams')

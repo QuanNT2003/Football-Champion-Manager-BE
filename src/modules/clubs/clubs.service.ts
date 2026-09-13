@@ -69,7 +69,11 @@ export class ClubsService {
     const club = await this.prisma.clubs.findUnique({
       where: { id: clubId },
       include: {
-        countries: true,
+        countries: {
+          include: {
+            confederations_countries_confederation_idToconfederations: true,
+          },
+        },
         cities: true,
         stadiums: true,
         users: { select: { id: true, username: true } },
@@ -92,6 +96,7 @@ export class ClubsService {
     });
 
     const fin = club.financial_accounts?.[0] || null;
+    const confed = club.countries?.confederations_countries_confederation_idToconfederations;
 
     return {
       id: club.id.toString(),
@@ -105,12 +110,25 @@ export class ClubsService {
       home_kit_url: club.home_kit_url,
       away_kit_url: club.away_kit_url,
       third_kit_url: club.third_kit_url,
+      country_id: club.country_id ? club.country_id.toString() : null,
+      current_competition_id: club.current_competition_id ? club.current_competition_id.toString() : null,
       country: club.countries?.name || null,
+      confederation: confed ? {
+        id: confed.id.toString(),
+        name: confed.name,
+        code: confed.code,
+      } : null,
       country_detail: club.countries ? {
         id: club.countries.id.toString(),
         name: club.countries.name,
         code: club.countries.code,
         flag_url: club.countries.flag_url,
+        confederation_id: club.countries.confederation_id ? club.countries.confederation_id.toString() : null,
+        confederation: confed ? {
+          id: confed.id.toString(),
+          name: confed.name,
+          code: confed.code,
+        } : null,
       } : null,
       city: club.cities?.name,
       stadium: club.stadiums?.[0] ? {
