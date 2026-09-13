@@ -143,10 +143,129 @@ export class ClubsService {
     });
 
     if (!club) {
-      throw new NotFoundException('Bạn chưa chọn hoặc quản lý câu lạc bộ nào');
+      return null;
     }
 
     return this.getClubById(club.id);
+  }
+
+  async getStarterCountries(search?: string) {
+    const s = search && search.trim() ? `%${search.trim()}%` : '%';
+    const countries: any[] = await this.prisma.$queryRaw`
+      SELECT c.id, c.name, c.code, c.flag_url, COUNT(DISTINCT cl.id) as unclaimed_clubs
+      FROM countries c
+      JOIN clubs cl ON cl.country_id = c.id
+      JOIN competitions comp ON cl.current_competition_id = comp.id
+      WHERE comp.tier IN (3, 4, 5) AND cl.owner_user_id IS NULL AND c.name LIKE ${s}
+      GROUP BY c.id, c.name, c.code, c.flag_url
+      ORDER BY c.name ASC
+    `;
+
+    return countries.map((c) => ({
+      id: c.id.toString(),
+      name: c.name,
+      code: c.code,
+      flag_url: c.flag_url,
+      unclaimed_clubs: Number(c.unclaimed_clubs),
+    }));
+  }
+
+  async getStarterTiers(countryId: string) {
+    const cId = BigInt(countryId);
+    const tiers: any[] = await this.prisma.$queryRaw`
+      SELECT comp.tier, comp.name as competition_name, COUNT(cl.id) as unclaimed_count
+      FROM competitions comp
+      JOIN clubs cl ON cl.current_competition_id = comp.id
+      WHERE cl.country_id = ${cId} AND comp.tier IN (3, 4, 5) AND cl.owner_user_id IS NULL
+      GROUP BY comp.tier, comp.name
+      ORDER BY comp.tier ASC
+    `;
+
+    return tiers.map((t) => ({
+      tier: Number(t.tier),
+      competition_name: t.competition_name,
+      unclaimed_count: Number(t.unclaimed_count),
+    }));
+  }
+
+  async claimRandomStarterClub(userId: bigint, countryId: string, tier: number) {
+    const existingOwnership = await this.prisma.clubs.findFirst({
+      where: { owner_user_id: userId },
+    });
+
+    if (existingOwnership) {
+      throw new ConflictException(`Bạn đã và đang quản lý CLB '${existingOwnership.name}'.`);
+    }
+
+    const t = Number(tier);
+    if (![3, 4, 5].includes(t)) {
+      throw new BadRequestException('Chỉ được chọn câu lạc bộ khởi nghiệp ở giải Hạng 3, 4 hoặc 5');
+    }
+
+    const cId = BigInt(countryId);
+    const country = await this.prisma.countries.findUnique({
+      where: { id: cId },
+    });
+    if (!country) {
+      throw new NotFoundException('Không tìm thấy quốc gia đã chọn');
+    }
+
+    const availableClubs = await this.prisma.clubs.findMany({
+      where: {
+        country_id: cId,
+        owner_user_id: null,
+        competitions: {
+          tier: t,
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!availableClubs.length) {
+      throw new NotFoundException('Đã hết câu lạc bộ còn trống ở Hạng đấu này của Quốc gia đã chọn');
+    }
+
+    const randomIndex = Math.floor(Math.random() * availableClubs.length);
+    const chosenClub = availableClubs[randomIndex];
+
+    const updated = await this.prisma.clubs.updateMany({
+      where: {
+        id: chosenClub.id,
+        owner_user_id: null,
+      },
+      data: {
+        owner_user_id: userId,
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new ConflictException('Câu lạc bộ này vừa được một HLV khác nhận. Vui lòng thử lại!');
+    }
+
+    const fin = await this.prisma.financial_accounts.findFirst({
+      where: { club_id: chosenClub.id },
+    });
+
+    if (!fin) {
+      await this.prisma.financial_accounts.create({
+        data: {
+          club_id: chosenClub.id,
+          balance_cash: 1500000.0,
+          balance_gold: 200,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    const clubDetail = await this.getClubById(chosenClub.id);
+
+    return {
+      message: `Chúc mừng HLV! Bạn đã chính thức tiếp quản câu lạc bộ ${chosenClub.name}!`,
+      club: clubDetail,
+    };
   }
 
   async claimClub(userId: bigint, clubId: bigint) {
