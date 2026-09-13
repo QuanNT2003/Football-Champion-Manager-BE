@@ -44,13 +44,29 @@ export class GameWorldService implements OnApplicationBootstrap {
 
       // Nếu đang ở Day 1
       if (activeSeason.current_day === 1) {
+        const compSeasonCount = await this.prisma.competition_seasons.count({
+          where: { season_id: activeSeason.id },
+        });
+
         const matchCount = await this.prisma.matches.count({
           where: { season_id: activeSeason.id },
         });
 
-        if (matchCount === 0) {
+        if (compSeasonCount === 0) {
           this.logger.log(
-            `🚀 [AUTO DAY 1] Phát hiện Mùa ${activeSeason.season_number} đang ở Day 1 chưa có lịch thi đấu. Bắt đầu tự động tạo giải đấu và sinh Fixtures cho toàn bộ các giải...`
+            `🚀 [AUTO DAY 1] Phát hiện Mùa ${activeSeason.season_number} đang ở Day 1 nhưng chưa khởi tạo giải đấu. Bắt đầu tự động tạo toàn bộ giải đấu và sinh Fixtures...`,
+          );
+
+          const result = await this.competitionsService.initializeNewSeason({
+            worldId: activeSeason.world_id.toString(),
+            seasonNumber: activeSeason.season_number,
+            autoGenerateFixtures: true,
+          });
+
+          this.logger.log(`🎉 [AUTO DAY 1 THÀNH CÔNG] ${result.message}`);
+        } else if (matchCount === 0) {
+          this.logger.log(
+            `🚀 [AUTO DAY 1] Phát hiện Mùa ${activeSeason.season_number} đã có giải đấu nhưng chưa có lịch thi đấu. Bắt đầu sinh Fixtures...`,
           );
 
           const result = await this.competitionsService.generateSeasonFixtures({
@@ -60,7 +76,7 @@ export class GameWorldService implements OnApplicationBootstrap {
           this.logger.log(`🎉 [AUTO DAY 1 THÀNH CÔNG] ${result.message}`);
         } else {
           this.logger.log(
-            `ℹ️ [DAY 1 INFO] Mùa ${activeSeason.season_number} Day 1 đã có sẵn ${matchCount} trận đấu được lên lịch.`
+            `ℹ️ [DAY 1 INFO] Mùa ${activeSeason.season_number} Day 1 đã sẵn sàng: ${compSeasonCount} giải đấu và ${matchCount} trận đấu được lên lịch.`,
           );
         }
       }

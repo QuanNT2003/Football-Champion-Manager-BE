@@ -134,6 +134,14 @@ export class CompetitionsService {
     };
     if (isDomestic && countryId) {
       whereCs.country_id = BigInt(countryId);
+    } else if (isContinental && countryId) {
+      const country = await this.prisma.countries.findUnique({
+        where: { id: BigInt(countryId) },
+        select: { confederation_id: true },
+      });
+      if (country?.confederation_id) {
+        whereCs.confederation_id = country.confederation_id;
+      }
     }
 
     let compSeason = await this.prisma.competition_seasons.findFirst({
@@ -155,8 +163,8 @@ export class CompetitionsService {
       },
     });
 
-    // If not found with country_id (or for continental), fallback to finding any matching season
-    if (!compSeason && !seasonId) {
+    // If not found with country_id (for domestic), fallback to finding any matching season
+    if (!compSeason && !seasonId && !isContinental) {
       compSeason = await this.prisma.competition_seasons.findFirst({
         where: { competition_id: competitionId },
         orderBy: { id: 'desc' },
@@ -541,10 +549,20 @@ export class CompetitionsService {
     }
 
     // 3. Try competition_seasons stage_teams
+    let confedIdForFilter: bigint | null = null;
+    if (isContinental && countryId) {
+      const country = await this.prisma.countries.findUnique({
+        where: { id: BigInt(countryId) },
+        select: { confederation_id: true },
+      });
+      confedIdForFilter = country?.confederation_id || null;
+    }
+
     const compSeason = await this.prisma.competition_seasons.findFirst({
       where: {
         competition_id: competitionId,
         ...(countryId && isDomestic ? { country_id: BigInt(countryId) } : {}),
+        ...(confedIdForFilter ? { confederation_id: confedIdForFilter } : {}),
       },
       orderBy: { id: 'desc' },
       include: {
@@ -1296,13 +1314,43 @@ export class CompetitionsService {
       }
     }
 
-    // 2b. Khởi tạo giải Châu lục (Cúp C1, Cúp C2) nếu không giới hạn 1 quốc gia cụ thể
-    if (!dto.countryId) {
+    // 2b. Khởi tạo giải Châu lục (Cúp C1, Cúp C2, Cúp C3) theo từng Châu Lục (Confederations)
+    const mainConfederations = await this.prisma.confederations.findMany({
+      where: { parent_id: null },
+      orderBy: { id: 'asc' },
+    });
+
+    for (const confed of mainConfederations) {
+      // Nếu dto.countryId được truyền, chỉ khởi tạo Cúp Châu Lục của liên đoàn chứa quốc gia đó
+      if (dto.countryId) {
+        const ctry = countries.find((c) => c.id.toString() === dto.countryId);
+        if (ctry && ctry.confederation_id !== confed.id) {
+          continue;
+        }
+      }
+
       for (const comp of continentalComps) {
+        let cupName = `${comp.name} (${confed.code}) - ${targetSeason.name}`;
+        if (confed.code === 'AFC') {
+          if (comp.id === 8n) cupName = `Cúp C1 Châu Á - AFC Champions League Elite (${targetSeason.name})`;
+          else if (comp.id === 9n) cupName = `Cúp C2 Châu Á - AFC Champions League Two (${targetSeason.name})`;
+          else if (comp.id === 10n) cupName = `Cúp C3 Châu Á - AFC Challenge League (${targetSeason.name})`;
+        } else if (confed.code === 'UEFA') {
+          if (comp.id === 8n) cupName = `Cúp C1 Châu Âu - UEFA Champions League (${targetSeason.name})`;
+          else if (comp.id === 9n) cupName = `Cúp C2 Châu Âu - UEFA Europa League (${targetSeason.name})`;
+          else if (comp.id === 10n) cupName = `Cúp C3 Châu Âu - UEFA Conference League (${targetSeason.name})`;
+        } else if (confed.code === 'CONMEBOL') {
+          if (comp.id === 8n) cupName = `Cúp C1 Nam Mỹ - Copa Libertadores (${targetSeason.name})`;
+          else if (comp.id === 9n) cupName = `Cúp C2 Nam Mỹ - Copa Sudamericana (${targetSeason.name})`;
+        } else {
+          cupName = `${confed.code} ${comp.name} (${targetSeason.name})`;
+        }
+
         let compSeason = await this.prisma.competition_seasons.findFirst({
           where: {
             competition_id: comp.id,
             season_id: targetSeason.id,
+            confederation_id: confed.id,
           },
         });
 
@@ -1312,8 +1360,8 @@ export class CompetitionsService {
               competition_id: comp.id,
               season_id: targetSeason.id,
               country_id: null,
-              confederation_id: comp.confederation_id,
-              name: `${comp.name} - ${targetSeason.name}`,
+              confederation_id: confed.id,
+              name: cupName,
               status: 'ACTIVE',
             },
           });
@@ -1343,8 +1391,12 @@ export class CompetitionsService {
           const candidateClubs = await this.prisma.clubs.findMany({
             where: {
               countries: {
-                ...(comp.confederation_id ? { confederation_id: comp.confederation_id } : {}),
+                OR: [
+                  { confederation_id: confed.id },
+                  { confederations_countries_confederation_idToconfederations: { parent_id: confed.id } },
+                ],
               },
+              current_competition_id: 1n, // Ưu tiên các CLB hàng đầu Tier 1 trong châu lục
             },
             take: comp.total_teams > 0 ? comp.total_teams : 32,
             select: { id: true, country_id: true, reputation: true },
