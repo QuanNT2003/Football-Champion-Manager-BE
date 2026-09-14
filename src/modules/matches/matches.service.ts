@@ -44,6 +44,9 @@ export class MatchesService {
         take: l,
         orderBy: [{ season_day: 'asc' }, { id: 'asc' }],
         include: {
+          competition_seasons: { select: { id: true, name: true } },
+          competition_stages: { select: { id: true, name: true } },
+          stage_rounds: { select: { id: true, name: true, round_no: true } },
           clubs_matches_home_club_idToclubs: {
             select: { id: true, name: true, logo_url: true, reputation: true },
           },
@@ -66,6 +69,19 @@ export class MatchesService {
         match_date: m.match_date,
         kickoff_time: m.kickoff_time,
         status: m.status,
+        competitionSeason: m.competition_seasons ? {
+          id: m.competition_seasons.id.toString(),
+          name: m.competition_seasons.name,
+        } : null,
+        stage: m.competition_stages ? {
+          id: m.competition_stages.id.toString(),
+          name: m.competition_stages.name,
+        } : null,
+        round: m.stage_rounds ? {
+          id: m.stage_rounds.id.toString(),
+          name: m.stage_rounds.name,
+          round_no: m.stage_rounds.round_no,
+        } : null,
         homeScore: m.home_score,
         awayScore: m.away_score,
         attendance: m.attendance,
@@ -88,6 +104,9 @@ export class MatchesService {
     const match = await this.prisma.matches.findUnique({
       where: { id: matchId },
       include: {
+        competition_seasons: { select: { id: true, name: true } },
+        competition_stages: { select: { id: true, name: true } },
+        stage_rounds: { select: { id: true, name: true, round_no: true } },
         clubs_matches_home_club_idToclubs: {
           include: { stadiums: true },
         },
@@ -128,6 +147,19 @@ export class MatchesService {
       season_day: match.season_day,
       match_date: match.match_date,
       kickoff_time: match.kickoff_time,
+      competitionSeason: match.competition_seasons ? {
+        id: match.competition_seasons.id.toString(),
+        name: match.competition_seasons.name,
+      } : null,
+      stage: match.competition_stages ? {
+        id: match.competition_stages.id.toString(),
+        name: match.competition_stages.name,
+      } : null,
+      round: match.stage_rounds ? {
+        id: match.stage_rounds.id.toString(),
+        name: match.stage_rounds.name,
+        round_no: match.stage_rounds.round_no,
+      } : null,
       homeScore: match.home_score,
       awayScore: match.away_score,
       attendance: match.attendance,
