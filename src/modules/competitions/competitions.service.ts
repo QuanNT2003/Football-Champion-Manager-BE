@@ -3,17 +3,23 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
 import { InitializeSeasonDto } from './dto/initialize-season.dto';
 import { ProcessSeasonTransitionDto } from './dto/process-season-transition.dto';
+import { ContinentalCoefficientService } from './continental-coefficient.service';
 
 @Injectable()
 export class CompetitionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly continentalCoefficientService: ContinentalCoefficientService,
+  ) {}
+
 
   private readonly leagueLocalKickoffSlots = ['19:30', '20:00', '20:30', '21:00', '21:30'];
   private readonly cupLocalKickoffSlots = ['10:00', '10:30', '11:00', '11:30', '12:00'];
   private readonly serverUtcOffset = 7 * 60;
+  // 34 match days: First half Day 3-19 (17 days), Mid-season break Day 20-21, Second half Day 22-38 (17 days)
   private readonly leagueSeasonDays = [
     3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+    22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
   ];
   private readonly cupBusySeasonDays = new Set([3, 5, 6, 7, 11, 17, 23, 29, 35]);
 
@@ -92,6 +98,23 @@ export class CompetitionsService {
       let groupLabel = '🏆 Đấu Trường Quốc Tế';
       let regionName = 'Toàn Cầu';
 
+      let formatType: 'LEAGUE' | 'KNOCKOUT' | 'GROUP_KNOCKOUT' = 'LEAGUE';
+      let formatLabel = 'Vòng tròn tính điểm';
+      if (comp.competition_type === 'DOMESTIC_LEAGUE') {
+        formatType = 'LEAGUE';
+        formatLabel = 'Vòng tròn tính điểm (League)';
+      } else if (comp.competition_type === 'DOMESTIC_CUP' || comp.competition_type === 'DOMESTIC_SUPER_CUP') {
+        formatType = 'KNOCKOUT';
+        formatLabel = comp.competition_type === 'DOMESTIC_SUPER_CUP' ? 'Tranh Siêu Cúp' : 'Cúp Loại Trực Tiếp (Knockout)';
+      } else if (
+        comp.competition_type?.startsWith('CONTINENTAL_CLUB') ||
+        comp.competition_type?.startsWith('WORLD') ||
+        comp.competition_type?.startsWith('CONTINENTAL_NATIONAL')
+      ) {
+        formatType = 'GROUP_KNOCKOUT';
+        formatLabel = 'Vòng Bảng & Loại Trực Tiếp (Knockout)';
+      }
+
       if (isDomestic && country) {
         groupLabel = `🇻🇳 Giải Đấu Quốc Nội (${country.name})`;
         regionName = country.name;
@@ -129,6 +152,8 @@ export class CompetitionsService {
         scope: comp.scope,
         tier: comp.tier,
         format_type: comp.format_type,
+        formatType,
+        formatLabel,
         total_teams: comp.total_teams,
         country_id: country ? country.id.toString() : null,
         confederation_id: confederation ? confederation.id.toString() : null,
@@ -201,6 +226,19 @@ export class CompetitionsService {
       include: {
         competition_stages: {
           include: {
+            stage_groups: {
+              orderBy: { order_no: 'asc' },
+              include: {
+                stage_standings: {
+                  include: {
+                    clubs: {
+                      select: { id: true, name: true, short_name: true, logo_url: true },
+                    },
+                  },
+                  orderBy: [{ points: 'desc' }, { goal_difference: 'desc' }, { goals_for: 'desc' }],
+                },
+              },
+            },
             stage_standings: {
               include: {
                 clubs: {
@@ -222,6 +260,19 @@ export class CompetitionsService {
         include: {
           competition_stages: {
             include: {
+              stage_groups: {
+                orderBy: { order_no: 'asc' },
+                include: {
+                  stage_standings: {
+                    include: {
+                      clubs: {
+                        select: { id: true, name: true, short_name: true, logo_url: true },
+                      },
+                    },
+                    orderBy: [{ points: 'desc' }, { goal_difference: 'desc' }, { goals_for: 'desc' }],
+                  },
+                },
+              },
               stage_standings: {
                 include: {
                   clubs: {
@@ -239,10 +290,60 @@ export class CompetitionsService {
     const stage = compSeason?.competition_stages?.[0];
     const standings = stage?.stage_standings || [];
 
-    if (standings.length > 0) {
+    let formatType: 'LEAGUE' | 'KNOCKOUT' | 'GROUP_KNOCKOUT' = 'LEAGUE';
+    let formatLabel = 'Vòng tròn tính điểm';
+    if (comp?.competition_type === 'DOMESTIC_LEAGUE') {
+      formatType = 'LEAGUE';
+      formatLabel = 'Vòng tròn tính điểm (League)';
+    } else if (comp?.competition_type === 'DOMESTIC_CUP' || comp?.competition_type === 'DOMESTIC_SUPER_CUP') {
+      formatType = 'KNOCKOUT';
+      formatLabel = comp?.competition_type === 'DOMESTIC_SUPER_CUP' ? 'Tranh Siêu Cúp' : 'Cúp Loại Trực Tiếp (Knockout)';
+    } else if (
+      comp?.competition_type?.startsWith('CONTINENTAL_CLUB') ||
+      comp?.competition_type?.startsWith('WORLD') ||
+      comp?.competition_type?.startsWith('CONTINENTAL_NATIONAL')
+    ) {
+      formatType = 'GROUP_KNOCKOUT';
+      formatLabel = 'Vòng Bảng & Loại Trực Tiếp (Knockout)';
+    }
+
+    // Extract groups if competition has multiple groups (e.g. Continental Cup Group Stage: Group A to H)
+    const rawGroups = stage?.stage_groups || [];
+    const groups = rawGroups
+      .map((g) => ({
+        id: g.id.toString(),
+        name: g.name,
+        orderNo: g.order_no,
+        standings: (g.stage_standings || []).map((s, idx) => ({
+          id: s.id.toString(),
+          position: idx + 1,
+          club: s.clubs
+            ? {
+                id: s.clubs.id.toString(),
+                name: s.clubs.name,
+                short_name: s.clubs.short_name,
+                logo_url: s.clubs.logo_url,
+              }
+            : null,
+          played: s.played,
+          wins: s.wins,
+          draws: s.draws,
+          losses: s.losses,
+          goals_for: s.goals_for,
+          goals_against: s.goals_against,
+          goal_difference: s.goal_difference,
+          points: s.points,
+        })),
+      }))
+      .filter((g) => g.standings.length > 0);
+
+    if (standings.length > 0 || groups.length > 0) {
       return {
         competitionId: competitionId.toString(),
         stageName: stage?.name || 'Vòng Bảng',
+        formatType,
+        formatLabel,
+        groups: groups.length > 0 ? groups : undefined,
         standings: standings.map((s, idx) => ({
           id: s.id.toString(),
           position: idx + 1,
@@ -783,32 +884,40 @@ export class CompetitionsService {
     return new Date(Date.UTC(1970, 0, 1, serverHour, serverMinute, 0));
   }
 
-  private getLeagueRoundDays(teamCount: number, totalRounds: number) {
-    const leagueDaysCount = teamCount >= 18 ? 34 : 30;
-    const availableDays = this.leagueSeasonDays;
-    const baseDays = availableDays
-      .filter((day) => !this.cupBusySeasonDays.has(day))
-      .slice(0, leagueDaysCount);
+  private getLeagueRoundDays(teamCount: number, totalRounds: number): number[] {
+    const baseDays = [...this.leagueSeasonDays];
 
-    if (baseDays.length < leagueDaysCount) {
-      for (const day of availableDays) {
-        if (baseDays.length >= leagueDaysCount) break;
-        if (!baseDays.includes(day)) baseDays.push(day);
+    // Tier 3..5 (16 teams -> 30 rounds): Rest on Days [6, 14, 25, 33]
+    if (totalRounds < baseDays.length) {
+      const restDays = new Set<number>([6, 14, 25, 33]);
+      const activeDays = baseDays.filter((day) => !restDays.has(day));
+      return activeDays.slice(0, totalRounds);
+    }
+
+    if (totalRounds === baseDays.length) {
+      return baseDays;
+    }
+
+    // Double match days strictly scheduled to avoid >2 matches/day with National & Continental Cups:
+    // Tier 1 (18 teams -> 34 rounds = (18 - 1) * 2): Thi đấu trọn vẹn 34 ngày, mỗi ngày 1 vòng (0 double day)
+    // Tier 2 (20 teams -> 38 rounds = (20 - 1) * 2 = 34 ngày + 4 ngày đá 2 vòng): Days [8, 14, 27, 34]
+    let specifiedDoubleDays: number[] = [];
+    if (teamCount === 20 || totalRounds === 38) {
+      specifiedDoubleDays = [8, 14, 27, 34];
+    } else {
+      const extraRounds = totalRounds - baseDays.length;
+      specifiedDoubleDays = baseDays.slice(-extraRounds);
+    }
+
+    const roundDays: number[] = [];
+    for (const day of baseDays) {
+      roundDays.push(day);
+      if (specifiedDoubleDays.includes(day)) {
+        roundDays.push(day);
       }
     }
 
-    baseDays.sort((a, b) => a - b);
-
-    const extraRounds = Math.max(0, totalRounds - baseDays.length);
-    const doubleDays = baseDays
-      .filter((day) => !this.cupBusySeasonDays.has(day))
-      .slice(-extraRounds);
-
-    const roundDays = [...baseDays];
-    for (const day of doubleDays) {
-      roundDays.push(day);
-    }
-
+    roundDays.sort((a, b) => a - b);
     return roundDays.slice(0, totalRounds);
   }
 
@@ -1316,7 +1425,8 @@ export class CompetitionsService {
     // 4. VÒNG BẢNG CÚP CHÂU LỤC C1, C2, C3 (6 LƯỢT TRẬN VÒNG BẢNG - DAYS 5, 11, 17, 23, 29, 35)
     // =========================================================================
     if (!dto.countryId && (!dto.competitionSeasonId || ['8', '9', '10'].includes(dto.competitionId || ''))) {
-      const contCupDays = [5, 11, 17, 23, 29, 35];
+      // Continental Group Stage (6 matchdays): Days [5, 9, 13, 17, 23, 26]
+    const contCupDays = [5, 9, 13, 17, 23, 26];
       const contMatches: any[] = [];
       const whereContinentalCS: any = {
         season_id: season.id,
@@ -1657,6 +1767,9 @@ export class CompetitionsService {
             const seasonDay = roundDays[roundNo - 1] || this.leagueSeasonDays[this.leagueSeasonDays.length - 1];
             await this.ensureStageRound(stage.id, targetSeason, roundNo, seasonDay, `Vòng ${roundNo}`);
           }
+
+          // Gán competition_season_qualification_rules bám sát theo thứ hạng châu lục của quốc gia
+          await this.assignQualificationRulesForSeason(compSeason.id, comp.id, country.id, country.confederation_id);
         }
       }
     }
@@ -1753,12 +1866,15 @@ export class CompetitionsService {
           const roundName = comp.competition_type === 'DOMESTIC_SUPER_CUP' ? 'Chung kết' : 'Vòng 1';
           await this.ensureStageRound(stage.id, targetSeason, 1, seasonDay, roundName);
         }
+
+        // Gán competition_season_qualification_rules cho Cúp Quốc Gia / Siêu Cúp
+        await this.assignQualificationRulesForSeason(compSeason.id, comp.id, country.id, country.confederation_id);
       }
     }
 
     // 2c. Khởi tạo giải Châu lục (Cúp C1, Cúp C2, Cúp C3) theo từng Châu Lục (Confederations)
     const mainConfederations = await this.prisma.confederations.findMany({
-      where: { parent_id: null },
+      where: { id: { in: [1n, 2n, 3n, 5n] } },
       orderBy: { id: 'asc' },
     });
 
@@ -1862,10 +1978,55 @@ export class CompetitionsService {
           });
         }
 
+        // Gán rule vô địch Cúp Châu Lục
+        await this.assignQualificationRulesForSeason(compSeason.id, comp.id, null, confed.id);
+
+        // Xử lý Cúp C3 Châu Lục (comp.id === 10n) có vòng Sơ loại cho các quốc gia hạng 23+
+        const qualifyingEntries = continentalQualifications.filter(
+          (q) => q.targetCompetitionId === '10' && q.isQualifying === true && q.confedCode === confed.code
+        );
+
+        if (comp.id === 10n && qualifyingEntries.length > 0) {
+          // Tạo Stage Vòng Sơ Loại Cúp C3 (Day 2 & Day 3)
+          let qualStage = await this.prisma.competition_stages.findFirst({
+            where: { competition_season_id: compSeason.id, stage_type: 'KNOCKOUT' },
+          });
+          if (!qualStage) {
+            qualStage = await this.prisma.competition_stages.create({
+              data: {
+                competition_season_id: compSeason.id,
+                name: 'Vòng Sơ Loại Cúp C3 (Qualifying Play-off)',
+                stage_type: 'KNOCKOUT',
+                order_no: 1,
+                status: 'ACTIVE',
+              },
+            });
+          }
+
+          // Vòng Sơ Loại 1 (Day 2) nếu có trên 20 đội tham dự
+          if (qualifyingEntries.length > 20) {
+            await this.ensureStageRound(qualStage.id, targetSeason, 1, 2, 'Vòng Sơ Loại 1');
+          }
+          // Vòng Sơ Loại 2 (Day 3 - Play-off quyết định 10 vé Vòng Bảng)
+          await this.ensureStageRound(qualStage.id, targetSeason, 2, 3, 'Vòng Sơ Loại Play-off');
+
+          // Đăng ký các đội sơ loại vào qualStage
+          const qualClubs = await this.prisma.clubs.findMany({
+            where: { id: { in: qualifyingEntries.map((q) => BigInt(q.clubId)) } },
+            select: { id: true, country_id: true, reputation: true },
+            orderBy: { reputation: 'desc' },
+          });
+          if (qualClubs.length > 0) {
+            enrolledClubsCount += await this.ensureStageParticipants(qualStage.id, qualClubs, null, 'C3 Qualifier');
+          }
+        }
+
         if (candidateClubs.length > 0) {
-          const groupSize = Math.ceil(candidateClubs.length / Math.max(1, groups.length));
+          // Đảm bảo tối đa đúng 32 đội bước vào 8 bảng đấu (4 đội / bảng)
+          const tournament32Clubs = candidateClubs.slice(0, 32);
+          const groupSize = 4;
           for (let g = 0; g < groups.length; g++) {
-            const groupClubs = candidateClubs.slice(g * groupSize, g * groupSize + groupSize);
+            const groupClubs = tournament32Clubs.slice(g * groupSize, g * groupSize + groupSize);
             enrolledClubsCount += await this.ensureStageParticipants(
               stage.id,
               groupClubs,
@@ -1874,8 +2035,10 @@ export class CompetitionsService {
             );
           }
 
+          // Continental group stage: Days [5, 9, 13, 17, 23, 26]
+          const contGroupDays = [5, 9, 13, 17, 23, 26];
           for (let roundNo = 1; roundNo <= 6; roundNo++) {
-            const seasonDay = [5, 11, 17, 23, 29, 35][roundNo - 1];
+            const seasonDay = contGroupDays[roundNo - 1];
             await this.ensureStageRound(stage.id, targetSeason, roundNo, seasonDay, `Lượt ${roundNo}`);
           }
         }
@@ -1916,38 +2079,141 @@ export class CompetitionsService {
    * 4. Lão hóa cầu thủ (age + 1) và reset thẻ phạt
    * 5. Khởi tạo Mùa giải mới & sinh lịch thi đấu
    */
-  async processSeasonTransition(dto: ProcessSeasonTransitionDto) {
-    const worldId = dto.worldId ? BigInt(dto.worldId) : 1n;
 
-    // 1. Xác định mùa giải cần kết thúc
-    let completedSeason: any = null;
-    if (dto.completedSeasonId) {
-      completedSeason = await this.prisma.seasons.findUnique({
-        where: { id: BigInt(dto.completedSeasonId) },
-      });
-    } else {
-      completedSeason = await this.prisma.seasons.findFirst({
-        where: { world_id: worldId, status: 'ACTIVE' },
-        orderBy: { season_number: 'desc' },
-      });
+
+  /**
+   * Gán các quy tắc thăng hạng, xuống hạng, và phân bổ suất Cúp Châu Lục (competition_qualification_rules)
+   * vào competition_season_qualification_rules bám sát theo thứ hạng châu lục của quốc gia.
+   */
+  async assignQualificationRulesForSeason(
+    compSeasonId: bigint,
+    competitionId: bigint,
+    countryId: bigint | null,
+    confedId: bigint | null,
+  ): Promise<number> {
+    try {
+      let applicableRules: any[] = [];
+
+      if (competitionId === 1n && countryId) {
+        // Giải VĐQG Tier 1: Lấy rank Hệ số giải VĐQG (LEAGUE_COEFFICIENT)
+        const countryRankInfo = await this.prisma.country_rankings.findFirst({
+          where: { country_id: countryId, ranking_type: 'LEAGUE_COEFFICIENT' },
+          orderBy: { ranking_date: 'desc' },
+        });
+        const cRank = countryRankInfo?.rank || 1;
+
+        applicableRules = await this.prisma.competition_qualification_rules.findMany({
+          where: {
+            competition_id: 1n,
+            country_rank_min: { lte: cRank },
+            country_rank_max: { gte: cRank },
+          },
+        });
+      } else {
+        // Các giải Tier 2..5, Cúp Quốc Gia, Siêu Cúp, Cúp C1, C2, C3
+        applicableRules = await this.prisma.competition_qualification_rules.findMany({
+          where: {
+            competition_id: competitionId,
+          },
+        });
+      }
+
+      let count = 0;
+      for (const r of applicableRules) {
+        await this.prisma.competition_season_qualification_rules.upsert({
+          where: {
+            competition_season_id_rule_id: {
+              competition_season_id: compSeasonId,
+              rule_id: r.id,
+            },
+          },
+          update: {},
+          create: {
+            competition_season_id: compSeasonId,
+            rule_id: r.id,
+          },
+        });
+        count++;
+      }
+      return count;
+    } catch (err) {
+      console.warn(`[assignQualificationRulesForSeason] compSeasonId=${compSeasonId} error:`, err);
+      return 0;
+    }
+  }
+
+  /**
+   * Tính toán số suất tham dự Cúp Châu Lục (C1, C2, C3) cho từng quốc gia
+   * dựa trên thứ hạng Hệ số giải VĐQG (LEAGUE_COEFFICIENT) trong liên đoàn châu lục.
+   */
+  async getContinentalSlotsByCountry(countryId: bigint): Promise<{
+    c1: number;
+    c2: number;
+    c3: number;
+    isQualifyingC3: boolean;
+    rank: number;
+    confedCode: string;
+  }> {
+    const country = await this.prisma.countries.findUnique({
+      where: { id: countryId },
+      include: {
+        confederations_countries_confederation_idToconfederations: true,
+        country_rankings: {
+          where: { ranking_type: 'LEAGUE_COEFFICIENT' },
+          orderBy: { ranking_date: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    const confed = country?.confederations_countries_confederation_idToconfederations;
+    const confedCode = confed?.code || 'UEFA';
+    const rank = country?.country_rankings?.[0]?.rank || 1;
+
+    // LIÊN ĐOÀN CHÂU MỸ (AMERICAS): 16 quốc gia (4 nhóm hạt giống)
+    // 32 C1, 32 C2, 32 C3 vào thẳng Vòng Bảng (0 sơ loại)
+    if (confedCode === 'AMERICAS' || confedCode === 'CONMEBOL') {
+      if (rank <= 4) return { c1: 3, c2: 2, c3: 2, isQualifyingC3: false, rank, confedCode: 'AMERICAS' };
+      if (rank <= 8) return { c1: 2, c2: 2, c3: 2, isQualifyingC3: false, rank, confedCode: 'AMERICAS' };
+      if (rank <= 12) return { c1: 2, c2: 2, c3: 2, isQualifyingC3: false, rank, confedCode: 'AMERICAS' };
+      return { c1: 1, c2: 2, c3: 2, isQualifyingC3: false, rank, confedCode: 'AMERICAS' };
     }
 
-    if (!completedSeason) {
-      throw new NotFoundException('Không tìm thấy mùa giải cần chuyển giao');
+    // LIÊN ĐOÀN 32 QUỐC GIA (UEFA: 32 QG, AFC: 32 QG, CAF: 32 QG)
+    // 32 C1, 32 C2, 32 C3 vào thẳng Vòng Bảng (0 sơ loại)
+    // Nhóm 1: Top 1-4 (Có đủ 3 C1, 2 C2, 1 C3)
+    if (rank <= 4) {
+      return { c1: 3, c2: 2, c3: 1, isQualifyingC3: false, rank, confedCode };
     }
+    // Nhóm 2: Top 5-10 (Có đủ 2 C1, 2 C2, 1 C3)
+    if (rank <= 10) {
+      return { c1: 2, c2: 2, c3: 1, isQualifyingC3: false, rank, confedCode };
+    }
+    // Nhóm 3: Top 11-18 (Có đủ 1 C1, 1 C2, 1 C3)
+    if (rank <= 18) {
+      return { c1: 1, c2: 1, c3: 1, isQualifyingC3: false, rank, confedCode };
+    }
+    // Nhóm 4: Top 19-22 (Có 0 C1, 1 C2, 1 C3)
+    if (rank <= 22) {
+      return { c1: 0, c2: 1, c3: 1, isQualifyingC3: false, rank, confedCode };
+    }
+    // Nhóm 5: Top 23-32 (Nhà vô địch VĐQG vào thẳng Cúp C3)
+    return { c1: 0, c2: 0, c3: 1, isQualifyingC3: false, rank, confedCode };
+  }
 
-    const nextSeasonNumber = dto.newSeasonNumber || (completedSeason.season_number + 1);
-
-    // 2. Tìm tất cả các giải đấu quốc nội của mùa vừa hoàn tất
+  // =========================================================================
+  // 1. KHÂU THĂNG HẠNG / XUỐNG HẠNG VÀ CẤP VÉ CÚP CHÂU LỤC
+  // =========================================================================
+  async processPromotionsAndRelegations(completedSeasonId: bigint, countryId?: string) {
     const whereCs: any = {
-      season_id: completedSeason.id,
+      season_id: completedSeasonId,
       competitions: {
         scope: 'DOMESTIC',
         tier: { in: [1, 2, 3, 4, 5] },
       },
     };
-    if (dto.countryId) {
-      whereCs.country_id = BigInt(dto.countryId);
+    if (countryId) {
+      whereCs.country_id = BigInt(countryId);
     }
 
     const domesticCompSeasons = await this.prisma.competition_seasons.findMany({
@@ -1983,7 +2249,6 @@ export class CompetitionsService {
       byCountry[cId].push(cs);
     }
 
-    // 3. Xử lý Thăng/Xuống hạng và Suất C1/C2 cho từng quốc gia
     for (const [cId, seasonsList] of Object.entries(byCountry)) {
       const tier1 = seasonsList.find((s) => s.competitions.tier === 1);
       const tier2 = seasonsList.find((s) => s.competitions.tier === 2);
@@ -1995,29 +2260,61 @@ export class CompetitionsService {
       if (tier1) {
         const standings = tier1.competition_stages?.[0]?.stage_standings || [];
         if (standings.length > 0) {
-          // Top 1-3 đi Cúp C1 Châu Lục
-          standings.slice(0, 3).forEach((s, idx) => {
-            continentalQualifications.push({
-              clubId: s.club_id.toString(),
-              clubName: s.clubs?.name,
-              tier: 1,
-              position: idx + 1,
-              targetCompetitionId: '8',
-              targetCompetitionName: 'Cúp C1 Châu Lục (Champions League)',
-            });
-          });
+          const countryIdBigInt = BigInt(cId);
+          const slots = await this.getContinentalSlotsByCountry(countryIdBigInt);
 
-          // Top 4-5 đi Cúp C2 Châu Lục
-          standings.slice(3, 5).forEach((s, idx) => {
-            continentalQualifications.push({
-              clubId: s.club_id.toString(),
-              clubName: s.clubs?.name,
-              tier: 1,
-              position: idx + 4,
-              targetCompetitionId: '9',
-              targetCompetitionName: 'Cúp C2 Châu Lục',
+          let currentPointer = 0;
+          if (slots.c1 > 0) {
+            const c1Teams = standings.slice(currentPointer, currentPointer + slots.c1);
+            c1Teams.forEach((s, idx) => {
+              continentalQualifications.push({
+                clubId: s.club_id.toString(),
+                clubName: s.clubs?.name,
+                tier: 1,
+                position: currentPointer + idx + 1,
+                targetCompetitionId: '8',
+                targetCompetitionName: 'Cúp C1 Châu Lục (Champions League)',
+                countryRank: slots.rank,
+                confedCode: slots.confedCode,
+              });
             });
-          });
+            currentPointer += slots.c1;
+          }
+
+          if (slots.c2 > 0) {
+            const c2Teams = standings.slice(currentPointer, currentPointer + slots.c2);
+            c2Teams.forEach((s, idx) => {
+              continentalQualifications.push({
+                clubId: s.club_id.toString(),
+                clubName: s.clubs?.name,
+                tier: 1,
+                position: currentPointer + idx + 1,
+                targetCompetitionId: '9',
+                targetCompetitionName: 'Cúp C2 Châu Lục',
+                countryRank: slots.rank,
+                confedCode: slots.confedCode,
+              });
+            });
+            currentPointer += slots.c2;
+          }
+
+          if (slots.c3 > 0) {
+            const c3Teams = standings.slice(currentPointer, currentPointer + slots.c3);
+            c3Teams.forEach((s, idx) => {
+              continentalQualifications.push({
+                clubId: s.club_id.toString(),
+                clubName: s.clubs?.name,
+                tier: 1,
+                position: currentPointer + idx + 1,
+                targetCompetitionId: '10',
+                targetCompetitionName: slots.isQualifyingC3 ? 'Cúp C3 Châu Lục (Vòng Sơ Loại)' : 'Cúp C3 Châu Lục (Vòng Bảng)',
+                isQualifying: slots.isQualifyingC3,
+                countryRank: slots.rank,
+                confedCode: slots.confedCode,
+              });
+            });
+            currentPointer += slots.c3;
+          }
 
           // Hạng 17, 18 rớt xuống Tier 2
           const relegated = standings.slice(16, 18);
@@ -2041,7 +2338,6 @@ export class CompetitionsService {
       if (tier2) {
         const standings = tier2.competition_stages?.[0]?.stage_standings || [];
         if (standings.length > 0) {
-          // Top 1, 2 thăng lên Tier 1
           const promoted = standings.slice(0, 2);
           for (const s of promoted) {
             await this.prisma.clubs.update({
@@ -2057,7 +2353,6 @@ export class CompetitionsService {
             });
           }
 
-          // Hạng 19, 20 rớt xuống Tier 3
           const relegated = standings.slice(18, 20);
           for (const s of relegated) {
             await this.prisma.clubs.update({
@@ -2079,7 +2374,6 @@ export class CompetitionsService {
       if (tier3) {
         const standings = tier3.competition_stages?.[0]?.stage_standings || [];
         if (standings.length > 0) {
-          // Top 1, 2 thăng lên Tier 2
           const promoted = standings.slice(0, 2);
           for (const s of promoted) {
             await this.prisma.clubs.update({
@@ -2095,7 +2389,6 @@ export class CompetitionsService {
             });
           }
 
-          // Hạng 15, 16 rớt xuống Tier 4
           const relegated = standings.slice(14, 16);
           for (const s of relegated) {
             await this.prisma.clubs.update({
@@ -2117,7 +2410,6 @@ export class CompetitionsService {
       if (tier4) {
         const standings = tier4.competition_stages?.[0]?.stage_standings || [];
         if (standings.length > 0) {
-          // Top 1, 2 thăng lên Tier 3
           const promoted = standings.slice(0, 2);
           for (const s of promoted) {
             await this.prisma.clubs.update({
@@ -2133,7 +2425,6 @@ export class CompetitionsService {
             });
           }
 
-          // Hạng 15, 16 rớt xuống Tier 5
           const relegated = standings.slice(14, 16);
           for (const s of relegated) {
             await this.prisma.clubs.update({
@@ -2155,7 +2446,6 @@ export class CompetitionsService {
       if (tier5) {
         const standings = tier5.competition_stages?.[0]?.stage_standings || [];
         if (standings.length > 0) {
-          // Top 1, 2 thăng lên Tier 4
           const promoted = standings.slice(0, 2);
           for (const s of promoted) {
             await this.prisma.clubs.update({
@@ -2174,7 +2464,542 @@ export class CompetitionsService {
       }
     }
 
-    // 4. Lão hóa cầu thủ (+1 tuổi) & reset thẻ phạt
+    return {
+      promotions,
+      relegations,
+      continentalQualifications,
+      domesticCompSeasons,
+    };
+  }
+
+  // =========================================================================
+  // 2. KHÂU HỢP ĐỒNG CẦU THỦ, CHO MƯỢN & GIẢI NGHỆ (MỤC 1)
+  // =========================================================================
+  async processContractsAndRetirements(worldId: bigint, completedSeasonId: bigint) {
+    let expiredLoansCount = 0;
+    let expiredContractsCount = 0;
+    let retiredPlayersCount = 0;
+
+    // 1. Cầu thủ hết hạn hợp đồng cho mượn (trả về CLB mẹ parent_club_id)
+    const expiredLoanContracts = await this.prisma.player_contracts.findMany({
+      where: {
+        is_loan_contract: true,
+        status: 'ACTIVE',
+        end_season_id: { lte: completedSeasonId },
+      },
+    });
+
+    for (const contract of expiredLoanContracts) {
+      await this.prisma.player_contracts.update({
+        where: { id: contract.id },
+        data: { status: 'EXPIRED', end_date: new Date() },
+      });
+
+      if (contract.parent_club_id) {
+        await this.prisma.players.update({
+          where: { id: contract.player_id },
+          data: { current_club_id: contract.parent_club_id },
+        });
+      }
+      expiredLoansCount++;
+    }
+
+    // 2. Cầu thủ hết hạn hợp đồng chính thức (chuyển thành tự do)
+    const expiredRegularContracts = await this.prisma.player_contracts.findMany({
+      where: {
+        is_loan_contract: false,
+        status: 'ACTIVE',
+        end_season_id: { lte: completedSeasonId },
+      },
+    });
+
+    for (const contract of expiredRegularContracts) {
+      await this.prisma.player_contracts.update({
+        where: { id: contract.id },
+        data: { status: 'EXPIRED', end_date: new Date() },
+      });
+
+      await this.prisma.players.update({
+        where: { id: contract.player_id },
+        data: { current_club_id: null },
+      });
+      expiredContractsCount++;
+    }
+
+    // 3. Cầu thủ giải nghệ do tuổi cao (age >= 38)
+    const veteranPlayers = await this.prisma.players.findMany({
+      where: {
+        world_id: worldId,
+        age: { gte: 38 },
+        current_club_id: { not: null },
+      },
+      select: { id: true, age: true },
+    });
+
+    for (const p of veteranPlayers) {
+      const shouldRetire = p.age >= 40 || Math.random() < 0.4;
+      if (shouldRetire) {
+        await this.prisma.players.update({
+          where: { id: p.id },
+          data: { current_club_id: null },
+        });
+
+        await this.prisma.player_contracts.updateMany({
+          where: { player_id: p.id, status: 'ACTIVE' },
+          data: { status: 'TERMINATED', end_date: new Date() },
+        });
+        retiredPlayersCount++;
+      }
+    }
+
+    return {
+      expiredLoansCount,
+      expiredContractsCount,
+      retiredPlayersCount,
+    };
+  }
+
+  // =========================================================================
+  // 3. KHÂU XỬ LÝ LỊCH SỬ ÁN TREO GIÒ MÙA CŨ (MỤC 3)
+  // =========================================================================
+  async cleanPlayerSuspensions(completedSeasonId: bigint) {
+    // 1. Reset cờ nhanh cấm thi đấu
+    await this.prisma.$executeRaw`
+      UPDATE player_status
+      SET is_suspended = 0
+    `;
+
+    // 2. Chuyển các án phạt cũ / đang active sang EXPIRED
+    const result = await this.prisma.player_suspensions.updateMany({
+      where: {
+        OR: [
+          { status: 'ACTIVE' },
+          { status: 'PENDING' },
+          { competition_seasons: { season_id: completedSeasonId } },
+        ],
+      },
+      data: {
+        status: 'EXPIRED',
+        end_date: new Date(),
+      },
+    });
+
+    return {
+      expiredSuspensionsCount: result.count,
+    };
+  }
+
+  // =========================================================================
+  // 4. KHÂU TÀI CHÍNH, TIỀN THƯỞNG THÀNH TÍCH & MỤC TIÊU CLB (MỤC 4)
+  // =========================================================================
+  async distributeSeasonFinancesAndObjectives(
+    completedSeason: any,
+    nextSeason: any,
+    domesticCompSeasons: any[],
+  ) {
+    let totalPrizesDistributed = 0;
+    let clubsRewardedCount = 0;
+    let objectivesProcessedCount = 0;
+
+    const defaultCurrency = await this.prisma.currencies.findFirst({
+      where: { is_active: true },
+      orderBy: { id: 'asc' },
+    });
+    const currencyId = defaultCurrency?.id || 1n;
+
+    // Định mức tiền thưởng (CASH) theo thứ hạng giải đấu
+    const prizeScaleByTier: Record<number, { first: number; second: number; top4: number; rest: number }> = {
+      1: { first: 20000000, second: 12000000, top4: 8000000, rest: 2000000 },
+      2: { first: 10000000, second: 6000000, top4: 4000000, rest: 1000000 },
+      3: { first: 5000000, second: 3000000, top4: 2000000, rest: 500000 },
+      4: { first: 2500000, second: 1500000, top4: 1000000, rest: 300000 },
+      5: { first: 1000000, second: 600000, top4: 400000, rest: 100000 },
+    };
+
+    for (const cs of domesticCompSeasons) {
+      const tier = cs.competitions?.tier || 1;
+      const standings = cs.competition_stages?.[0]?.stage_standings || [];
+      const scale = prizeScaleByTier[tier] || prizeScaleByTier[1];
+
+      // Hệ số tiền thưởng giải Quốc nội biến động theo thứ hạng quốc gia mùa này
+      const countryMultiplier = cs.country_id
+        ? await this.continentalCoefficientService.getCountryPrizeMultiplier(cs.country_id)
+        : 1.0;
+
+      for (let i = 0; i < standings.length; i++) {
+        const s = standings[i];
+        const rank = i + 1;
+        let basePrize = scale.rest;
+        if (rank === 1) basePrize = scale.first;
+        else if (rank === 2) basePrize = scale.second;
+        else if (rank <= 4) basePrize = scale.top4;
+
+        // Tiền thưởng thực tế = Định mức gốc x Hệ số quốc gia
+        const prizeAmount = Math.round(basePrize * countryMultiplier);
+
+        if (prizeAmount > 0 && s.club_id) {
+          // 1. Đảm bảo financial_accounts cho CLB
+          let account = await this.prisma.financial_accounts.findFirst({
+            where: { club_id: s.club_id },
+          });
+          if (!account) {
+            account = await this.prisma.financial_accounts.create({
+              data: {
+                club_id: s.club_id,
+                balance_cash: 0,
+                balance_gold: 0,
+                status: 'ACTIVE',
+              },
+            });
+          }
+
+          // 2. Cộng tiền thưởng và ghi transaction
+          await this.prisma.financial_accounts.update({
+            where: { id: account.id },
+            data: { balance_cash: { increment: prizeAmount } },
+          });
+
+          const idempotencyKey = `PRIZE_${account.id}_${completedSeason.id}_${cs.id}_${rank}`;
+          try {
+            await this.prisma.financial_transactions.create({
+              data: {
+                club_id: s.club_id,
+                financial_account_id: account.id,
+                type: 'PRIZE_MONEY',
+                category: 'SEASON_REWARDS',
+                amount: prizeAmount,
+                currency_type: 'CASH',
+                reference_type: 'COMPETITION_SEASON',
+                reference_id: cs.id,
+                season_id: completedSeason.id,
+                season_day: completedSeason.total_days || 40,
+                description: `Tiền thưởng Hạng ${rank} giải ${cs.name} (Hệ số QG x${countryMultiplier}) - Mùa ${completedSeason.season_number}`,
+                transaction_date: new Date(),
+                idempotency_key: idempotencyKey,
+              },
+            });
+
+            await this.prisma.club_bonuses.create({
+              data: {
+                club_id: s.club_id,
+                season_id: completedSeason.id,
+                bonus_type: 'SEASON_RANK_PRIZE',
+                condition_value: rank,
+                amount: prizeAmount,
+                currency_id: currencyId,
+                status: 'PAID',
+              },
+            });
+          } catch (e) {
+            // Bỏ qua nếu trùng idempotency key
+          }
+
+          totalPrizesDistributed += prizeAmount;
+          clubsRewardedCount++;
+        }
+
+        // 3. Đánh giá và khởi tạo mục tiêu CLB (club_objectives)
+        const oldObjectives = await this.prisma.club_objectives.findMany({
+          where: { club_id: s.club_id, season_id: completedSeason.id, status: 'ACTIVE' },
+        });
+        for (const obj of oldObjectives) {
+          const targetRank = Number(obj.target_value) || 1;
+          const isAchieved = rank <= targetRank;
+          await this.prisma.club_objectives.update({
+            where: { id: obj.id },
+            data: { status: isAchieved ? 'ACHIEVED' : 'FAILED' },
+          });
+          objectivesProcessedCount++;
+        }
+
+        // Khởi tạo mục tiêu mùa mới nếu có nextSeason
+        if (nextSeason) {
+          const nextTargetRank = tier === 1 ? 4 : 2;
+          try {
+            await this.prisma.club_objectives.create({
+              data: {
+                club_id: s.club_id,
+                season_id: BigInt(nextSeason.id),
+                objective_type: tier === 1 ? 'LEAGUE_FINISH_TOP4' : 'LEAGUE_PROMOTION',
+                target_value: nextTargetRank,
+                reward: tier === 1 ? 5000000 : 3000000,
+                status: 'ACTIVE',
+              },
+            });
+          } catch (e) {
+            // bỏ qua nếu đã tồn tại
+          }
+        }
+      }
+    }
+
+    // Chi trả tiền thưởng Cúp Châu Lục CỐ ĐỊNH 100% (C1, C2, C3 - không nhân hệ số quốc gia)
+    const contPrizeResult = await this.continentalCoefficientService.distributeContinentalFixedPrizes(completedSeason);
+    totalPrizesDistributed += contPrizeResult.totalContinentalPrizes;
+    clubsRewardedCount += contPrizeResult.clubsRewardedCount;
+
+    return {
+      totalPrizesDistributed,
+      clubsRewardedCount,
+      objectivesProcessedCount,
+      continentalPrizesDistributed: contPrizeResult.totalContinentalPrizes,
+    };
+  }
+
+  // =========================================================================
+  // 5. KHÂU LỄ TRAO GIẢI VINH DANH DAY 39 & THỐNG KÊ CÁ NHÂN (MỤC 5)
+  // =========================================================================
+  async processSeasonIndividualAwards(worldId: bigint, completedSeason: any) {
+    // 1. Đảm bảo category INDIVIDUAL_SEASON
+    let category = await this.prisma.award_categories.findUnique({
+      where: { code: 'INDIVIDUAL_SEASON' },
+    });
+    if (!category) {
+      category = await this.prisma.award_categories.create({
+        data: {
+          code: 'INDIVIDUAL_SEASON',
+          name: 'Giải Thưởng Cá Nhân Mùa Giải',
+          scope: 'SEASONAL',
+          description: 'Các danh hiệu cá nhân xuất sắc nhất mùa giải bóng đá',
+        },
+      });
+    }
+
+    // Danh sách 4 danh hiệu
+    const awardDefs = [
+      { code: 'GOLDEN_BOOT', name: 'Chiếc Giày Vàng (Vua Phá Lưới)', sortField: 'goals' },
+      { code: 'PLAYMAKER_AWARD', name: 'Vua Kiến Tạo (Chân Chuyền Xuất Sắc)', sortField: 'assists' },
+      { code: 'GOLDEN_GLOVE', name: 'Găng Tay Vàng (Thủ Môn Xuất Sắc Nhất)', sortField: 'clean_sheets' },
+      { code: 'PLAYER_OF_THE_SEASON', name: 'Cầu Thủ Xuất Sắc Nhất Mùa (Ballon d\'Or)', sortField: 'composite' },
+    ];
+
+    const awardsGiven: any[] = [];
+
+    // 2. Lấy thống kê của mùa giải completedSeason
+    const allStats = await this.prisma.player_statistics.findMany({
+      where: { season_id: completedSeason.id },
+      include: {
+        players: { select: { id: true, first_name: true, last_name: true } },
+        clubs: { select: { id: true, name: true } },
+      },
+    });
+
+    if (allStats.length === 0) {
+      return { awardsGiven, message: 'Chưa có dữ liệu thống kê cầu thủ cho mùa này' };
+    }
+
+    // Gom dữ liệu tổng theo player_id
+    const playerAggMap = new Map<string, {
+      playerId: bigint;
+      clubId: bigint | null;
+      playerName: string;
+      clubName: string;
+      goals: number;
+      assists: number;
+      cleanSheets: number;
+      appearances: number;
+      motm: number;
+      avgRating: number;
+      compositeScore: number;
+    }>();
+
+    for (const stat of allStats) {
+      const pId = stat.player_id.toString();
+      const ratingNum = Number(stat.average_rating) || 6.0;
+      if (!playerAggMap.has(pId)) {
+        playerAggMap.set(pId, {
+          playerId: stat.player_id,
+          clubId: stat.club_id,
+          playerName: `${stat.players?.first_name || ''} ${stat.players?.last_name || ''}`.trim() || `Player #${pId}`,
+          clubName: stat.clubs?.name || 'Unknown',
+          goals: 0,
+          assists: 0,
+          cleanSheets: 0,
+          appearances: 0,
+          motm: 0,
+          avgRating: 0,
+          compositeScore: 0,
+        });
+      }
+      const agg = playerAggMap.get(pId)!;
+      agg.goals += stat.goals;
+      agg.assists += stat.assists;
+      agg.cleanSheets += stat.clean_sheets;
+      agg.appearances += stat.appearances;
+      agg.motm += stat.motm;
+      agg.avgRating = (agg.avgRating + ratingNum) / 2;
+    }
+
+    playerAggMap.forEach((agg) => {
+      agg.compositeScore = Number(
+        (agg.avgRating * 10 + agg.motm * 5 + agg.goals * 2 + agg.assists).toFixed(2),
+      );
+    });
+
+    const playerList = Array.from(playerAggMap.values());
+
+    for (const def of awardDefs) {
+      let award = await this.prisma.awards.findUnique({
+        where: { code: def.code },
+      });
+      if (!award) {
+        award = await this.prisma.awards.create({
+          data: {
+            category_id: category.id,
+            code: def.code,
+            name: def.name,
+            frequency: 'SEASONAL',
+          },
+        });
+      }
+
+      // Tạo award_edition cho mùa giải này
+      let edition = await this.prisma.award_editions.findFirst({
+        where: { award_id: award.id, season_id: completedSeason.id },
+      });
+      if (!edition) {
+        edition = await this.prisma.award_editions.create({
+          data: {
+            award_id: award.id,
+            season_id: completedSeason.id,
+            period_start: completedSeason.start_date || new Date(),
+            period_end: new Date(),
+            status: 'AWARDED',
+          },
+        });
+      }
+
+      let sorted = [...playerList];
+      if (def.sortField === 'goals') {
+        sorted = sorted.filter((p) => p.goals > 0).sort((a, b) => b.goals - a.goals);
+      } else if (def.sortField === 'assists') {
+        sorted = sorted.filter((p) => p.assists > 0).sort((a, b) => b.assists - a.assists);
+      } else if (def.sortField === 'clean_sheets') {
+        sorted = sorted.filter((p) => p.cleanSheets > 0).sort((a, b) => b.cleanSheets - a.cleanSheets);
+      } else {
+        sorted = sorted.sort((a, b) => b.compositeScore - a.compositeScore);
+      }
+
+      const top3 = sorted.slice(0, 3);
+      if (top3.length > 0) {
+        for (let r = 0; r < top3.length; r++) {
+          const candidate = top3[r];
+          const rank = r + 1;
+          const scoreVal =
+            def.sortField === 'goals'
+              ? candidate.goals
+              : def.sortField === 'assists'
+                ? candidate.assists
+                : def.sortField === 'clean_sheets'
+                  ? candidate.cleanSheets
+                  : candidate.compositeScore;
+
+          try {
+            await this.prisma.player_awards.create({
+              data: {
+                award_edition_id: edition.id,
+                player_id: candidate.playerId,
+                club_id: candidate.clubId,
+                rank,
+                score: scoreVal,
+                awarded_at: new Date(),
+              },
+            });
+
+            await this.prisma.award_nominees.create({
+              data: {
+                award_edition_id: edition.id,
+                player_id: candidate.playerId,
+                club_id: candidate.clubId,
+                rank,
+                score: scoreVal,
+              },
+            });
+          } catch (e) {
+            // Bỏ qua nếu đã ghi nhận
+          }
+        }
+
+        const winner = top3[0];
+        awardsGiven.push({
+          awardCode: def.code,
+          awardName: def.name,
+          winner: {
+            playerId: winner.playerId.toString(),
+            playerName: winner.playerName,
+            clubName: winner.clubName,
+            score:
+              def.sortField === 'goals'
+                ? `${winner.goals} Bàn thắng`
+                : def.sortField === 'assists'
+                  ? `${winner.assists} Kiến tạo`
+                  : def.sortField === 'clean_sheets'
+                    ? `${winner.cleanSheets} Trận sạch lưới`
+                    : `${winner.compositeScore} Điểm tổng hợp`,
+          },
+        });
+      }
+    }
+
+    return {
+      awardsGiven,
+      totalAwardsProcessed: awardsGiven.length,
+    };
+  }
+
+  // =========================================================================
+  // HÀM ĐIỀU PHỐI CHÍNH: CHUYỂN GIAO MÙA GIẢI (SEASON TRANSITION ENGINE)
+  // =========================================================================
+  async processSeasonTransition(dto: ProcessSeasonTransitionDto) {
+    const worldId = dto.worldId ? BigInt(dto.worldId) : 1n;
+
+    // 1. Xác định mùa giải cần kết thúc
+    let completedSeason: any = null;
+    if (dto.completedSeasonId) {
+      completedSeason = await this.prisma.seasons.findUnique({
+        where: { id: BigInt(dto.completedSeasonId) },
+      });
+    } else {
+      completedSeason = await this.prisma.seasons.findFirst({
+        where: { world_id: worldId, status: 'ACTIVE' },
+        orderBy: { season_number: 'desc' },
+      });
+    }
+
+    if (!completedSeason) {
+      throw new NotFoundException('Không tìm thấy mùa giải cần chuyển giao');
+    }
+
+    const nextSeasonNumber = dto.newSeasonNumber || (completedSeason.season_number + 1);
+
+    // 2. Chốt sổ và cập nhật Rank Quốc Gia mới dựa trên kết quả Cúp Châu Lục mùa vừa qua (UEFA Coefficient Engine)
+    let countryRankingUpdate: any = { updatedCountriesCount: 0, topCountriesByConfed: {} };
+    try {
+      countryRankingUpdate = await this.continentalCoefficientService.updateCountryRankingsForNewSeason(
+        worldId,
+        completedSeason.id,
+      );
+    } catch (err) {
+      console.warn('[processSeasonTransition] Lỗi cập nhật hệ số quốc gia:', err);
+    }
+
+    // 3. Khâu 1: Xử lý Thăng/Xuống hạng và Suất vé Cúp Châu Lục (dùng Rank mới nhất)
+    const promoResult = await this.processPromotionsAndRelegations(completedSeason.id, dto.countryId);
+    const { promotions, relegations, continentalQualifications, domesticCompSeasons } = promoResult;
+
+    // 4. Khâu 2: Xử lý Hợp đồng cầu thủ, Trả mượn & Giải nghệ (Mục 1)
+    let contractResult: any = { expiredLoansCount: 0, expiredContractsCount: 0, retiredPlayersCount: 0 };
+    if (dto.processContracts !== false) {
+      contractResult = await this.processContractsAndRetirements(worldId, completedSeason.id);
+    }
+
+    // 5. Khâu 3: Xử lý Lịch sử Án treo giò (Mục 3)
+    let suspensionResult: any = { expiredSuspensionsCount: 0 };
+    if (dto.processSuspensions !== false) {
+      suspensionResult = await this.cleanPlayerSuspensions(completedSeason.id);
+    }
+
+    // 6. Khâu 4: Lão hóa cầu thủ (+1 tuổi)
     let playersAgedCount = 0;
     if (dto.agePlayers !== false) {
       const updateResult = await this.prisma.$executeRaw`
@@ -2183,21 +3008,21 @@ export class CompetitionsService {
         WHERE world_id = ${worldId}
       `;
       playersAgedCount = Number(updateResult);
-
-      // Reset thẻ phạt tích lũy mùa cũ
-      await this.prisma.$executeRaw`
-        UPDATE player_status
-        SET is_suspended = 0
-      `;
     }
 
-    // 5. Đóng mùa cũ
+    // 6. Khâu 5: Lễ trao giải cá nhân Day 39 & Vinh danh (Mục 5)
+    let awardResult: any = { awardsGiven: [], totalAwardsProcessed: 0 };
+    if (dto.processAwards !== false) {
+      awardResult = await this.processSeasonIndividualAwards(worldId, completedSeason);
+    }
+
+    // 7. Đóng mùa giải cũ
     await this.prisma.seasons.update({
       where: { id: completedSeason.id },
       data: { status: 'COMPLETED' },
     });
 
-    // 6. Khởi tạo Mùa giải mới nếu được bật
+    // 8. Khởi tạo Mùa giải mới & Sinh toàn bộ lịch đấu Day 1
     let newSeasonResult: any = null;
     if (dto.initializeNewSeason !== false) {
       newSeasonResult = await this.initializeNewSeason({
@@ -2207,14 +3032,23 @@ export class CompetitionsService {
         countryId: dto.countryId,
       }, continentalQualifications);
 
-      // initializeNewSeason already points server_timeline to the new season/day/date.
-      // Transition only advances the cumulative world day counter.
+      // Cập nhật ngày thế giới tích lũy
       await this.prisma.$executeRaw`
         UPDATE server_timeline 
         SET world_day = world_day + 1,
             updated_at = NOW()
         WHERE world_id = ${worldId}
       `;
+    }
+
+    // 9. Khâu 6: Phân phối Tài chính, Tiền thưởng thứ hạng & Mục tiêu CLB (Mục 4)
+    let financeResult: any = { totalPrizesDistributed: 0, clubsRewardedCount: 0, objectivesProcessedCount: 0 };
+    if (dto.distributeFinances !== false) {
+      financeResult = await this.distributeSeasonFinancesAndObjectives(
+        completedSeason,
+        newSeasonResult ? newSeasonResult.season : null,
+        domesticCompSeasons,
+      );
     }
 
     return {
@@ -2226,12 +3060,160 @@ export class CompetitionsService {
         seasonNumber: completedSeason.season_number,
       },
       nextSeason: newSeasonResult ? newSeasonResult.season : null,
-      summary: `Đã xử lý ${promotions.length} suất thăng hạng, ${relegations.length} suất rớt hạng, ${continentalQualifications.length} suất dự Cúp Châu Lục.`,
+      summary: `Đã xử lý ${promotions.length} suất thăng hạng, ${relegations.length} suất rớt hạng, ${continentalQualifications.length} suất dự Cúp Châu Lục. Trao ${financeResult.totalPrizesDistributed.toLocaleString()} CASH tiền thưởng cho ${financeResult.clubsRewardedCount} CLB.`,
+      countryRankingUpdate,
       promotions,
       relegations,
       continentalQualifications,
       playersAgedCount,
+      contractResult,
+      suspensionResult,
+      financeResult,
+      awardResult,
       newSeasonResult,
+    };
+  }
+
+
+  async getKnockoutBracket(competitionId: bigint, seasonId?: bigint, countryId?: string) {
+    const comp = await this.prisma.competitions.findUnique({
+      where: { id: competitionId },
+      select: { id: true, name: true, competition_type: true, scope: true },
+    });
+
+    if (!comp) {
+      throw new NotFoundException('Không tìm thấy giải đấu');
+    }
+
+    const isDomestic = comp.scope === 'DOMESTIC';
+    const isContinental = comp.scope === 'CONTINENTAL' || comp.scope === 'REGIONAL';
+
+    const whereCs: any = {
+      competition_id: competitionId,
+      ...(seasonId ? { season_id: seasonId } : {}),
+    };
+
+    if (isDomestic && countryId) {
+      whereCs.country_id = BigInt(countryId);
+    } else if (isContinental && countryId) {
+      const country = await this.prisma.countries.findUnique({
+        where: { id: BigInt(countryId) },
+        select: { confederation_id: true },
+      });
+      if (country?.confederation_id) {
+        whereCs.confederation_id = country.confederation_id;
+      }
+    }
+
+    let compSeason = await this.prisma.competition_seasons.findFirst({
+      where: whereCs,
+      orderBy: { id: 'desc' },
+    });
+
+    if (!compSeason && !seasonId && !isContinental) {
+      compSeason = await this.prisma.competition_seasons.findFirst({
+        where: { competition_id: competitionId },
+        orderBy: { id: 'desc' },
+      });
+    }
+
+    if (!compSeason) {
+      return {
+        competitionId: competitionId.toString(),
+        competitionName: comp.name,
+        seasonName: 'Mùa giải mới',
+        totalMatches: 0,
+        rounds: [],
+      };
+    }
+
+    const matches = await this.prisma.matches.findMany({
+      where: { competition_season_id: compSeason.id },
+      include: {
+        stage_rounds: true,
+        stage_groups: true,
+        competition_stages: true,
+        clubs_matches_home_club_idToclubs: {
+          select: { id: true, name: true, short_name: true, logo_url: true },
+        },
+        clubs_matches_away_club_idToclubs: {
+          select: { id: true, name: true, short_name: true, logo_url: true },
+        },
+      },
+      orderBy: [{ season_day: 'asc' }, { id: 'asc' }],
+    });
+
+    const roundMap = new Map<string, { roundName: string; roundOrder: number; seasonDay: number; matches: any[] }>();
+
+    for (const m of matches) {
+      const stageName = m.competition_stages?.name || '';
+      const roundName = m.stage_rounds?.name || stageName || `Ngày ${m.season_day}`;
+      const roundKey = `${m.stage_rounds?.id || m.season_day}_${roundName}`;
+
+      if (!roundMap.has(roundKey)) {
+        roundMap.set(roundKey, {
+          roundName,
+          roundOrder: m.stage_rounds?.round_no ?? m.season_day,
+          seasonDay: m.season_day,
+          matches: [],
+        });
+      }
+
+      let winnerClubId: string | null = null;
+      if (m.status === 'COMPLETED' && m.home_score !== null && m.away_score !== null) {
+        if (m.home_score > m.away_score) {
+          winnerClubId = m.home_club_id?.toString() || null;
+        } else if (m.away_score > m.home_score) {
+          winnerClubId = m.away_club_id?.toString() || null;
+        } else if (m.home_penalty_score !== null && m.away_penalty_score !== null) {
+          if (m.home_penalty_score > m.away_penalty_score) {
+            winnerClubId = m.home_club_id?.toString() || null;
+          } else if (m.away_penalty_score > m.home_penalty_score) {
+            winnerClubId = m.away_club_id?.toString() || null;
+          }
+        }
+      }
+
+      roundMap.get(roundKey)!.matches.push({
+        id: m.id.toString(),
+        seasonDay: m.season_day,
+        matchDate: m.match_date ? m.match_date.toISOString().split('T')[0] : null,
+        kickoffTime: m.kickoff_time ? m.kickoff_time.toISOString().split('T')[1]?.slice(0, 5) || '20:00' : '20:00',
+        status: m.status,
+        groupName: m.stage_groups?.name || null,
+        homeClub: m.clubs_matches_home_club_idToclubs
+          ? {
+              id: m.clubs_matches_home_club_idToclubs.id.toString(),
+              name: m.clubs_matches_home_club_idToclubs.name,
+              short_name: m.clubs_matches_home_club_idToclubs.short_name,
+              logo_url: m.clubs_matches_home_club_idToclubs.logo_url,
+            }
+          : null,
+        awayClub: m.clubs_matches_away_club_idToclubs
+          ? {
+              id: m.clubs_matches_away_club_idToclubs.id.toString(),
+              name: m.clubs_matches_away_club_idToclubs.name,
+              short_name: m.clubs_matches_away_club_idToclubs.short_name,
+              logo_url: m.clubs_matches_away_club_idToclubs.logo_url,
+            }
+          : null,
+        homeScore: m.home_score,
+        awayScore: m.away_score,
+        homePenaltyScore: m.home_penalty_score,
+        awayPenaltyScore: m.away_penalty_score,
+        resultType: m.result_type,
+        winnerClubId,
+      });
+    }
+
+    const rounds = Array.from(roundMap.values()).sort((a, b) => a.seasonDay - b.seasonDay || a.roundOrder - b.roundOrder);
+
+    return {
+      competitionId: competitionId.toString(),
+      competitionName: comp.name,
+      seasonName: compSeason.name,
+      totalMatches: matches.length,
+      rounds,
     };
   }
 

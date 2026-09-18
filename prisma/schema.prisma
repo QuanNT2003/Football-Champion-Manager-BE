@@ -1,3 +1,12 @@
+enum staff_coaching_license {
+  E
+  D
+  C
+  B
+  A
+  PRO
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -694,6 +703,8 @@ model formations {
   club_tactics        club_tactics[]
   formation_positions formation_positions[]
   match_lineups       match_lineups[]
+  staff_preferred_formations staff[]               @relation("staff_preferred_formation")
+  staff_secondary_formations staff[]               @relation("staff_secondary_formation")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1309,6 +1320,7 @@ model players {
   scouting_reports                                     scouting_reports[]
   transfer_offers                                      transfer_offers[]
   transfers                                            transfers[]
+  staff                                                staff[]
 
   @@index([current_club_id], map: "idx_players_current_club_id")
   @@index([market_value], map: "idx_players_market_value")
@@ -1464,22 +1476,33 @@ model stadiums {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model staff {
-  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
-  world_id             BigInt                 @db.UnsignedBigInt
-  name                 String                 @default("") @db.VarChar(150)
-  staff_type           staff_staff_type       @default(HEAD_COACH)
-  nationality_id       BigInt                 @db.UnsignedBigInt
-  reputation           Int                    @default(0)
-  photo_url            String?                @db.VarChar(255)
-  scouting_assignments scouting_assignments[]
-  countries            countries              @relation(fields: [nationality_id], references: [id], onDelete: Cascade, map: "fk_staff_nationality_id")
-  game_worlds          game_worlds            @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_staff_world_id")
-  staff_attributes     staff_attributes[]
-  staff_contracts      staff_contracts[]
-  training_sessions    training_sessions[]
+  id                     BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  world_id               BigInt                 @db.UnsignedBigInt
+  name                   String                 @default("") @db.VarChar(150)
+  staff_type             staff_staff_type       @default(HEAD_COACH)
+  nationality_id         BigInt                 @db.UnsignedBigInt
+  reputation             Int                    @default(0)
+  coaching_license       staff_coaching_license @default(C)
+  preferred_formation_id BigInt?                @db.UnsignedBigInt
+  secondary_formation_id BigInt?                @db.UnsignedBigInt
+  tactical_style         String                 @default("BALANCED") @db.VarChar(50)
+  player_id              BigInt?                @db.UnsignedBigInt
+  photo_url              String?                @db.VarChar(255)
+  scouting_assignments   scouting_assignments[]
+  countries              countries              @relation(fields: [nationality_id], references: [id], onDelete: Cascade, map: "fk_staff_nationality_id")
+  game_worlds            game_worlds            @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_staff_world_id")
+  preferred_formation    formations?            @relation("staff_preferred_formation", fields: [preferred_formation_id], references: [id], onDelete: SetNull, map: "fk_staff_preferred_formation_id")
+  secondary_formation    formations?            @relation("staff_secondary_formation", fields: [secondary_formation_id], references: [id], onDelete: SetNull, map: "fk_staff_secondary_formation_id")
+  players                players?               @relation(fields: [player_id], references: [id], onDelete: SetNull, map: "fk_staff_player_id")
+  staff_attributes       staff_attributes[]
+  staff_contracts        staff_contracts[]
+  training_sessions      training_sessions[]
 
   @@index([nationality_id], map: "idx_staff_nationality_id")
   @@index([world_id], map: "idx_staff_world_id")
+  @@index([preferred_formation_id], map: "idx_staff_preferred_formation_id")
+  @@index([secondary_formation_id], map: "idx_staff_secondary_formation_id")
+  @@index([player_id], map: "idx_staff_player_id")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

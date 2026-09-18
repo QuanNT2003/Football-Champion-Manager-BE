@@ -27,6 +27,22 @@ export class CompetitionsController {
     return this.competitionsService.getCompetitionById(BigInt(id));
   }
 
+  @Get(':id/knockout-bracket')
+  @ApiOperation({ summary: 'Lấy cây nhánh đấu / các trận loại trực tiếp (Knockout Bracket)' })
+  @ApiQuery({ name: 'seasonId', required: false })
+  @ApiQuery({ name: 'countryId', required: false })
+  async getKnockoutBracket(
+    @Param('id') id: string,
+    @Query('seasonId') seasonId?: string,
+    @Query('countryId') countryId?: string,
+  ) {
+    return this.competitionsService.getKnockoutBracket(
+      BigInt(id),
+      seasonId ? BigInt(seasonId) : undefined,
+      countryId,
+    );
+  }
+
   @Get(':id/standings')
   @ApiOperation({ summary: 'Lấy Bảng xếp hạng giải đấu (Standings table)' })
   @ApiQuery({ name: 'seasonId', required: false })

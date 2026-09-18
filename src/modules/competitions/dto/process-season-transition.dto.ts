@@ -31,4 +31,25 @@ export class ProcessSeasonTransitionDto {
   @IsOptional()
   @IsString()
   countryId?: string;
+
+  @ApiProperty({ description: 'Xử lý hợp đồng hết hạn, trả cầu thủ mượn, giải nghệ cầu thủ cao tuổi', example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  processContracts?: boolean;
+
+  @ApiProperty({ description: 'Xử lý xóa / đóng lịch sử án phạt thẻ mùa cũ (player_suspensions)', example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  processSuspensions?: boolean;
+
+  @ApiProperty({ description: 'Phát thưởng thành tích thứ hạng cho CLB và tổng kết mục tiêu', example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  distributeFinances?: boolean;
+
+  @ApiProperty({ description: 'Trao giải thưởng cá nhân Day 39 (Chiếc giày vàng, Vua kiến tạo, Găng tay vàng, Cầu thủ xuất sắc nhất)', example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  processAwards?: boolean;
 }
+
