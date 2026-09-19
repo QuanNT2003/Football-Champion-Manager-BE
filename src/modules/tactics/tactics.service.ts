@@ -76,6 +76,11 @@ export class TacticsService {
                 last_name: true,
                 squad_number: true,
                 photo_url: true,
+                age: true,
+                preferred_foot: true,
+                player_positions: {
+                  include: { positions: true },
+                },
               },
             },
             formation_positions: {
@@ -192,8 +197,30 @@ export class TacticsService {
       }
     }
 
+    const formattedPositions = tactic?.club_tactic_positions?.map((pos) => {
+      const p = pos.players as any;
+      const naturalPos = p?.player_positions?.find((pp: any) => pp.is_natural)?.positions?.code;
+      return {
+        ...pos,
+        players: p
+          ? {
+              id: p.id.toString(),
+              name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Cầu thủ',
+              first_name: p.first_name,
+              last_name: p.last_name,
+              squad_number: p.squad_number,
+              photo_url: p.photo_url || '/assets/players/default.png',
+              age: p.age,
+              preferred_foot: p.preferred_foot,
+              position: naturalPos || pos.formation_positions?.slot_code || 'MID',
+            }
+          : null,
+      };
+    }) || [];
+
     return {
       ...tactic,
+      club_tactic_positions: formattedPositions,
       headCoach: headCoachContract?.staff
         ? {
             id: headCoachContract.staff.id.toString(),
