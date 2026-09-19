@@ -4,26 +4,74 @@ import {
   Get,
   Param,
   Put,
-  UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsArray, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { TacticsService } from './tactics.service';
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
-class UpdateTacticDto {
+export class TacticPositionDto {
+  @ApiPropertyOptional()
+  @IsString()
+  formationPositionId: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  playerId: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  duty?: string;
+}
+
+export class UpdateTacticDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   formationId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   mentality?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   tempo?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   passingStyle?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   pressingIntensity?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   defensiveLine?: number;
-  positions?: Array<{
-    formationPositionId: string;
-    playerId: string;
-    role?: string;
-    duty?: string;
-  }>;
+
+  @ApiPropertyOptional({ type: [TacticPositionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TacticPositionDto)
+  positions?: TacticPositionDto[];
 }
 
 @ApiTags('Chiến Thuật & Sơ Đồ Thi Đấu')
@@ -50,8 +98,6 @@ export class TacticsController {
   }
 
   @Put('club/:clubId')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Cập nhật chiến thuật, phong cách chơi và vị trí ra sân' })
   async updateClubTactic(
     @Param('clubId') clubId: string,
