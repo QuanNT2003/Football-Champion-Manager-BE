@@ -1,6 +1,52 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
+/**
+ * Tính OVR động 100% từ CSDL:
+ * 1. Ưu tiên trung bình các chỉ số cốt lõi của vị trí (is_key = true trong position_attributes)
+ * 2. Tính trung bình trọng số theo multiplier của position_attributes
+ * 3. Fallback trung bình toàn bộ chỉ số nếu chưa cấu hình
+ */
+export function calculateDynamicOvr(
+  playerAttributes: { attribute_id: bigint | number; value: number }[],
+  positionAttributes: { attribute_id: bigint | number; multiplier?: any; is_key?: boolean }[]
+): number {
+  if (!playerAttributes || playerAttributes.length === 0) return 50;
+
+  const keyAttrs = positionAttributes.filter((pa) => pa.is_key);
+  if (keyAttrs.length > 0) {
+    let sumKey = 0;
+    let countKey = 0;
+    for (const ka of keyAttrs) {
+      const pAttr = playerAttributes.find(
+        (pa) => pa.attribute_id.toString() === ka.attribute_id.toString()
+      );
+      if (pAttr) {
+        sumKey += pAttr.value;
+        countKey++;
+      }
+    }
+    if (countKey > 0) return Math.round(sumKey / countKey);
+  }
+
+  let sumWeighted = 0;
+  let sumMultiplier = 0;
+  for (const pa of playerAttributes) {
+    const posAttr = positionAttributes.find(
+      (item) => item.attribute_id.toString() === pa.attribute_id.toString()
+    );
+    const mult = posAttr ? Number(posAttr.multiplier) : 1;
+    if (mult > 0) {
+      sumWeighted += pa.value * mult;
+      sumMultiplier += mult;
+    }
+  }
+  if (sumMultiplier > 0) return Math.round(sumWeighted / sumMultiplier);
+
+  const total = playerAttributes.reduce((acc, a) => acc + a.value, 0);
+  return Math.round(total / (playerAttributes.length || 1));
+}
+
 @Injectable()
 export class PlayersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -60,16 +106,6 @@ export class PlayersService {
       limit: l,
       totalPages: Math.ceil(total / l),
       items: players.map((p) => {
-        let attrSummary: any = null;
-        if (p.attributes_summary) {
-          try {
-            attrSummary = typeof p.attributes_summary === 'string'
-              ? JSON.parse(p.attributes_summary)
-              : p.attributes_summary;
-          } catch (e) {
-            attrSummary = p.attributes_summary;
-          }
-        }
 
         const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
 
@@ -107,7 +143,6 @@ export class PlayersService {
             is_loan_listed: Boolean(p.player_status.is_loan_listed),
             asking_price: p.player_status.asking_price,
           } : null,
-          attributes_summary: attrSummary,
         };
       }),
     };
@@ -192,16 +227,6 @@ export class PlayersService {
       throw new NotFoundException('Không tìm thấy cầu thủ');
     }
 
-    let attrSummary: any = null;
-    if (player.attributes_summary) {
-      try {
-        attrSummary = typeof player.attributes_summary === 'string'
-          ? JSON.parse(player.attributes_summary)
-          : player.attributes_summary;
-      } catch (e) {
-        attrSummary = player.attributes_summary;
-      }
-    }
 
     // Positions & position_attributes mapping from DB
     const primaryPos = player.player_positions.find((pos) => pos.is_preferred) || player.player_positions[0];
@@ -250,12 +275,8 @@ export class PlayersService {
     const leftColumnKey = keyAttributes.slice(0, Math.ceil(keyAttributes.length / 2));
     const rightColumnKey = keyAttributes.slice(Math.ceil(keyAttributes.length / 2));
 
-    // Calculate OVR from attributes_summary or weighted key attributes
-    const ovr = attrSummary?.ovr || attrSummary?.overall || (
-      keyAttributes.length > 0
-        ? Math.round(keyAttributes.reduce((acc, a) => acc + a.value, 0) / keyAttributes.length)
-        : Math.round(allAttributes.reduce((acc, a) => acc + a.value, 0) / (allAttributes.length || 1))
-    );
+    // Calculate OVR dynamically from CSDL position attributes
+    const ovr = calculateDynamicOvr(player.player_attributes, posAttributes);
 
     // Total of key skills and total of all skills
     const totalKeySkills = keyAttributes.reduce((acc, a) => acc + a.value, 0);
@@ -451,7 +472,6 @@ export class PlayersService {
         days_remaining: player.injuries[0].days_remaining,
         expected_return_date: player.injuries[0].expected_return_date,
       } : null,
-      attributes_summary: attrSummary,
       play_styles: player.player_play_styles.map((ps) => ps.play_styles.name),
 
       // 5 TABS DATA (100% PURE DATABASE ACCORDING TO SEED DATA)
@@ -516,25 +536,28 @@ export class PlayersService {
       include: {
         countries_players_nationality_idTocountries: { select: { name: true, flag_url: true } },
         player_status: true,
+        player_attributes: {
+          select: { attribute_id: true, value: true },
+        },
         player_positions: {
-          include: { positions: true },
+          include: {
+            positions: {
+              include: {
+                position_attributes: {
+                  select: { attribute_id: true, multiplier: true, is_key: true, order_no: true },
+                },
+              },
+            },
+          },
         },
       },
     });
 
     return squad.map((p) => {
-      let attrSummary: any = null;
-      if (p.attributes_summary) {
-        try {
-          attrSummary = typeof p.attributes_summary === 'string'
-            ? JSON.parse(p.attributes_summary)
-            : p.attributes_summary;
-        } catch (e) {
-          attrSummary = p.attributes_summary;
-        }
-      }
 
       const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
+      const posAttrs = primaryPos?.positions?.position_attributes || [];
+      const ovr = calculateDynamicOvr(p.player_attributes, posAttrs);
 
       return {
         id: p.id.toString(),
@@ -561,7 +584,7 @@ export class PlayersService {
           is_transfer_listed: Boolean(p.player_status.is_transfer_listed),
           is_loan_listed: Boolean(p.player_status.is_loan_listed),
         } : null,
-        attributes_summary: attrSummary,
+        overall_rating: ovr,
       };
     });
   }

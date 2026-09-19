@@ -1323,7 +1323,6 @@ model players {
   squad_number                                         Int?
   trained_club_id                                      BigInt?                      @db.UnsignedBigInt
   youth_intake_id                                      BigInt?                      @db.UnsignedBigInt
-  attributes_summary                                   Json?
   photo_url                                            String?                      @db.VarChar(255)
   award_nominees                                       award_nominees[]
   club_tactic_positions                                club_tactic_positions[]
