@@ -1,3 +1,15 @@
+enum injuries_severity {
+  MILD
+  MODERATE
+  SEVERE
+}
+
+enum injuries_status {
+  ACTIVE
+  RECOVERING
+  HEALED
+}
+
 enum staff_coaching_license {
   E
   D
@@ -753,23 +765,46 @@ model gold_exchange_shop {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model injury_types {
+  id                BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  code              String     @unique(map: "uq_injury_types_code") @db.VarChar(50)
+  name              String     @db.VarChar(150)
+  category          String     @default("MUSCLE") @db.VarChar(50)
+  body_part         String     @default("KNEE") @db.VarChar(50)
+  description       String?    @db.Text
+  min_days_mild     Int        @default(3)
+  max_days_mild     Int        @default(7)
+  min_days_moderate Int        @default(14)
+  max_days_moderate Int        @default(28)
+  min_days_severe   Int        @default(60)
+  max_days_severe   Int        @default(180)
+  recurrence_rate   Decimal    @default(0.10) @db.Decimal(4, 2)
+  injuries          injuries[]
+
+  @@index([category], map: "idx_injury_types_category")
+  @@index([body_part], map: "idx_injury_types_body_part")
+}
+
 model injuries {
-  id                         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  player_id                  BigInt    @db.UnsignedBigInt
-  type                       String    @default("") @db.VarChar(100)
-  severity                   Int       @default(0)
-  start_season_id            BigInt?   @db.UnsignedBigInt
-  start_season_day           Int       @default(1)
-  days_injured               Int       @default(0)
-  days_remaining             Int       @default(0)
+  id                         BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id                  BigInt             @db.UnsignedBigInt
+  injury_type_id             BigInt             @db.UnsignedBigInt
+  severity                   injuries_severity  @default(MILD)
+  start_season_id            BigInt?            @db.UnsignedBigInt
+  start_season_day           Int                @default(1)
+  days_injured               Int                @default(0)
+  days_remaining             Int                @default(0)
   expected_return_season_day Int?
-  start_date                 DateTime  @db.Date
-  expected_return_date       DateTime  @db.Date
-  actual_return_date         DateTime? @db.Date
-  status                     String    @default("") @db.VarChar(30)
-  players                    players   @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_injuries_player_id")
+  start_date                 DateTime           @db.Date
+  expected_return_date       DateTime           @db.Date
+  actual_return_date         DateTime?          @db.Date
+  status                     injuries_status    @default(ACTIVE)
+  players                    players            @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_injuries_player_id")
+  injury_types               injury_types       @relation(fields: [injury_type_id], references: [id], onDelete: Cascade, map: "fk_injuries_injury_type_id")
 
   @@index([player_id], map: "idx_injuries_player_id")
+  @@index([injury_type_id], map: "idx_injuries_injury_type_id")
+  @@index([status], map: "idx_injuries_status")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
