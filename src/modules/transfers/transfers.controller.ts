@@ -31,22 +31,28 @@ export class TransfersController {
   constructor(private readonly transfersService: TransfersService) {}
 
   @Get('market')
-  @ApiOperation({ summary: 'Xem danh sách cầu thủ trên thị trường chuyển nhượng/cho mượn' })
+  @ApiOperation({ summary: 'Xem danh sách cầu thủ trên thị trường chuyển nhượng/cho mượn/tự do' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'isLoan', required: false, type: Boolean })
   @ApiQuery({ name: 'maxPrice', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'position', required: false })
   async getMarket(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
     @Query('isLoan') isLoan?: boolean,
     @Query('maxPrice') maxPrice?: number,
+    @Query('search') search?: string,
+    @Query('position') position?: string,
   ) {
     return this.transfersService.getMarket(
       Number(page),
       Number(limit),
-      Boolean(isLoan),
+      isLoan !== undefined ? Boolean(isLoan) : undefined,
       maxPrice ? Number(maxPrice) : undefined,
+      search,
+      position,
     );
   }
 
@@ -81,5 +87,33 @@ export class TransfersController {
     @Body() dto: RespondOfferDto,
   ) {
     return this.transfersService.respondOffer(BigInt(id), BigInt(dto.clubId), dto.response);
+  }
+
+  @Get('staff-market')
+  @ApiOperation({ summary: 'Xem danh sách nhân viên tự do trên thị trường (HLV, Trợ lý, Thể lực...)' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'role', required: false, example: 'HEAD_COACH' })
+  @ApiQuery({ name: 'search', required: false })
+  async getStaffMarket(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('role') role?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.transfersService.getStaffMarket(
+      Number(page),
+      Number(limit),
+      role,
+      search,
+    );
+  }
+
+  @Post('hire-staff')
+  @ApiOperation({ summary: 'Ký hợp đồng tuyển dụng nhân viên tự do cho CLB' })
+  async hireStaff(
+    @Body() body: { clubId: string; staffId: string },
+  ) {
+    return this.transfersService.hireStaff(BigInt(body.clubId), BigInt(body.staffId));
   }
 }

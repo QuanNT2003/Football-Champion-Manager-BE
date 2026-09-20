@@ -1,47 +1,86 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
 @Injectable()
 export class TransfersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getMarket(page: number = 1, limit: number = 20, isLoan?: boolean, maxPrice?: number) {
+  async getMarket(
+    page: number = 1,
+    limit: number = 20,
+    isLoan?: boolean,
+    maxPrice?: number,
+    search?: string,
+    position?: string,
+  ) {
     const p = Math.max(1, Number(page) || 1);
     const l = Math.max(1, Number(limit) || 20);
     const skip = (p - 1) * l;
+
     const where: any = {};
 
-    if (isLoan) {
-      where.is_loan_listed = true;
+    // Cầu thủ: is_loan_listed, is_transfer_listed hoặc cầu thủ tự do (current_club_id: null)
+    if (isLoan === true) {
+      where.player_status = { is_loan_listed: true };
     } else {
-      where.is_transfer_listed = true;
+      where.OR = [
+        { player_status: { is_transfer_listed: true } },
+        { player_status: { is_loan_listed: true } },
+        { current_club_id: null },
+      ];
     }
 
     if (maxPrice) {
-      where.asking_price = { lte: maxPrice };
+      where.market_value = { lte: maxPrice };
+    }
+
+    if (search) {
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { first_name: { contains: search } },
+            { last_name: { contains: search } },
+            { countries_players_nationality_idTocountries: { name: { contains: search } } },
+          ],
+        },
+      ];
+    }
+
+    if (position) {
+      let positionCodes: string[] = [position];
+      if (position === 'DEF') positionCodes = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'SW'];
+      else if (position === 'MID') positionCodes = ['CM', 'CDM', 'CAM', 'LM', 'RM'];
+      else if (position === 'ATT' || position === 'FWD') positionCodes = ['ST', 'CF', 'LW', 'RW'];
+
+      where.player_positions = {
+        some: {
+          positions: {
+            code: { in: positionCodes },
+          },
+        },
+      };
     }
 
     const [total, list] = await Promise.all([
-      this.prisma.player_status.count({ where }),
-      this.prisma.player_status.findMany({
+      this.prisma.players.count({ where }),
+      this.prisma.players.findMany({
         where,
         skip,
         take: l,
         include: {
-          players: {
-            include: {
-              clubs_players_current_club_idToclubs: {
-                select: { id: true, name: true, logo_url: true },
-              },
-              countries_players_nationality_idTocountries: {
-                select: { name: true, flag_url: true },
-              },
-              player_positions: {
-                include: { positions: true },
-              },
-            },
+          player_status: true,
+          clubs_players_current_club_idToclubs: {
+            select: { id: true, name: true, logo_url: true },
+          },
+          countries_players_nationality_idTocountries: {
+            select: { name: true, flag_url: true },
+          },
+          player_positions: {
+            include: { positions: true },
           },
         },
+        orderBy: { market_value: 'desc' },
       }),
     ]);
 
@@ -50,27 +89,39 @@ export class TransfersService {
       page: p,
       limit: l,
       totalPages: Math.ceil(total / l),
-      items: list.map((item) => {
-        const p = item.players;
+      items: list.map((p) => {
         const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
+        const computedOvr = Math.round(Math.min(99, Math.max(55, (p.reputation || 6000) / 100)));
+        const playerName = p.first_name || p.last_name ? `${p.first_name || ''} ${p.last_name || ''}`.trim() : 'Player';
+        const clubObj = p.clubs_players_current_club_idToclubs ? {
+          id: p.clubs_players_current_club_idToclubs.id.toString(),
+          name: p.clubs_players_current_club_idToclubs.name,
+          logo_url: p.clubs_players_current_club_idToclubs.logo_url,
+        } : null;
 
         return {
+          id: p.id.toString(),
           playerId: p.id.toString(),
-          name: `${p.first_name} ${p.last_name}`.trim(),
+          name: playerName,
+          common_name: playerName,
+          first_name: p.first_name,
+          last_name: p.last_name,
           age: p.age,
           reputation: p.reputation,
-          potential: p.potential,
+          potential: p.potential || 82,
+          potential_rating: p.potential || 82,
+          overall_rating: computedOvr,
+          ovr: computedOvr,
           market_value: p.market_value,
-          asking_price: item.asking_price,
-          is_loan_listed: item.is_loan_listed,
-          is_transfer_listed: item.is_transfer_listed,
-          position: primaryPos?.positions?.code,
-          currentClub: p.clubs_players_current_club_idToclubs ? {
-            id: p.clubs_players_current_club_idToclubs.id.toString(),
-            name: p.clubs_players_current_club_idToclubs.name,
-            logo_url: p.clubs_players_current_club_idToclubs.logo_url,
-          } : null,
-          nationality: p.countries_players_nationality_idTocountries?.name,
+          asking_price: p.player_status?.asking_price || p.market_value,
+          is_loan_listed: p.player_status?.is_loan_listed || false,
+          is_transfer_listed: p.player_status?.is_transfer_listed || false,
+          is_free_agent: !p.current_club_id,
+          position: primaryPos?.positions?.code || 'MID',
+          currentClub: clubObj,
+          club: clubObj,
+          nationality: p.countries_players_nationality_idTocountries?.name || 'International',
+          photo_url: p.photo_url || '/assets/players/default.png',
         };
       }),
     };
@@ -88,18 +139,11 @@ export class TransfersService {
     const playerId = BigInt(dto.playerId);
     const toClubId = BigInt(dto.toClubId);
 
-    const buyerClub = await this.prisma.clubs.findUnique({
-      where: { id: fromClubId },
-      include: { financial_accounts: true },
+    const buyerAccount = await this.prisma.financial_accounts.findFirst({
+      where: { club_id: fromClubId },
     });
 
-    const fin = buyerClub?.financial_accounts?.[0];
-
-    if (!buyerClub || !fin) {
-      throw new BadRequestException('CLB mua không có tài khoản tài chính hợp lệ');
-    }
-
-    if (Number(fin.balance_cash) < dto.offerAmount) {
+    if (!buyerAccount || Number(buyerAccount.balance_cash) < dto.offerAmount) {
       throw new BadRequestException('Ngân sách tiền mặt của CLB không đủ để gửi lời đề nghị này');
     }
 
@@ -233,5 +277,121 @@ export class TransfersService {
     });
 
     return { message: 'Thương vụ chuyển nhượng đã hoàn tất thành công!' };
+  }
+
+  async getStaffMarket(page: number = 1, limit: number = 20, role?: string, search?: string) {
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.max(1, Number(limit) || 20);
+    const skip = (p - 1) * l;
+
+    // Chỉ lấy staff đang tự do không có câu lạc bộ (không có hợp đồng ACTIVE)
+    const where: any = {
+      staff_contracts: {
+        none: {
+          status: 'ACTIVE',
+        },
+      },
+    };
+
+    if (role && role !== 'ALL') {
+      where.staff_type = role;
+    }
+
+    if (search) {
+      where.name = { contains: search };
+    }
+
+    const [total, list] = await Promise.all([
+      this.prisma.staff.count({ where }),
+      this.prisma.staff.findMany({
+        where,
+        skip,
+        take: l,
+        include: {
+          countries: { select: { name: true, code: true, flag_url: true } },
+          preferred_formation: { select: { id: true, name: true, code: true } },
+        },
+        orderBy: { reputation: 'desc' },
+      }),
+    ]);
+
+    return {
+      total,
+      page: p,
+      limit: l,
+      totalPages: Math.ceil(total / l),
+      items: list.map((s) => {
+        const estimatedWage = Math.round((s.reputation || 5000) * 1.8);
+        return {
+          id: s.id.toString(),
+          name: s.name || 'Staff',
+          staffType: s.staff_type,
+          coachingLicense: s.coaching_license,
+          tacticalStyle: s.tactical_style,
+          reputation: s.reputation,
+          nationality: s.countries?.name || 'International',
+          countryCode: s.countries?.code || 'INT',
+          preferredFormation: s.preferred_formation ? {
+            id: s.preferred_formation.id.toString(),
+            name: s.preferred_formation.name,
+            code: s.preferred_formation.code,
+          } : null,
+          currentClub: null, // Hoàn toàn là Free Agent
+          wage: estimatedWage,
+          signingFee: Math.round(estimatedWage * 12),
+          photoUrl: s.photo_url || '/assets/staff/default.png',
+        };
+      }),
+    };
+  }
+
+  async hireStaff(clubId: bigint, staffId: bigint) {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+    if (!staff) {
+      throw new NotFoundException('Không tìm thấy thông tin nhân viên');
+    }
+
+    if (staff.staff_type === 'HEAD_COACH') {
+      const existingHeadCoach = await this.prisma.staff_contracts.findFirst({
+        where: {
+          club_id: clubId,
+          staff: { staff_type: 'HEAD_COACH' },
+        },
+      });
+
+      if (existingHeadCoach) {
+        await this.prisma.staff_contracts.delete({
+          where: { id: existingHeadCoach.id },
+        });
+      }
+    }
+
+    await this.prisma.staff_contracts.deleteMany({
+      where: { staff_id: staffId },
+    });
+
+    const weeklyWage = Math.round((staff.reputation || 5000) * 1.8);
+    const newContract = await this.prisma.staff_contracts.create({
+      data: {
+        staff_id: staffId,
+        club_id: clubId,
+        salary: weeklyWage,
+        salary_currency_id: BigInt(1),
+        start_date: new Date(),
+        end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        status: 'ACTIVE',
+      },
+      include: {
+        staff: true,
+        clubs: true,
+      },
+    });
+
+    return {
+      message: `Ký hợp đồng thành công với ${staff.name} (${staff.staff_type})!`,
+      contract: newContract,
+    };
   }
 }
