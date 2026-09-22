@@ -177,6 +177,16 @@ export class GameWorldService implements OnApplicationBootstrap {
             updated_at = NOW()
         WHERE world_id = ${worldId}
       `;
+
+      // Tự động kiểm tra và tiến vòng Knockout Cúp Quốc Gia & Cúp Châu Lục cho ngày mới
+      try {
+        const progressRes = await this.competitionsService.progressKnockoutStages(season.id, nextDay);
+        if (progressRes.progressedCount > 0) {
+          this.logger.log(`🏆 [KNOCKOUT PROGRESS] Ngày ${nextDay}: Đã tự động sinh thêm ${progressRes.progressedCount} trận đấu Knockout cho các Cúp.`);
+        }
+      } catch (err) {
+        this.logger.error(`Lỗi khi tiến vòng Knockout Ngày ${nextDay}:`, err);
+      }
     }
 
     // Các tác vụ hồi phục & tài chính hàng ngày:

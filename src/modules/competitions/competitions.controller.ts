@@ -21,6 +21,14 @@ export class CompetitionsController {
     return this.competitionsService.getCompetitions(countryId, tier);
   }
 
+  
+  @Get('countries')
+  @ApiOperation({ summary: 'Lấy danh sách các quốc gia tinh hoa có giải đấu' })
+  @ApiQuery({ name: 'search', required: false })
+  async getCountries(@Query('search') search?: string) {
+    return this.competitionsService.getCountries(search);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Lấy thông tin chi tiết giải đấu' })
   async getCompetitionById(@Param('id') id: string) {

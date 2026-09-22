@@ -174,7 +174,7 @@ export class ClubsService {
       FROM countries c
       JOIN clubs cl ON cl.country_id = c.id
       JOIN competitions comp ON cl.current_competition_id = comp.id
-      WHERE comp.tier IN (3, 4, 5) AND cl.owner_user_id IS NULL AND c.name LIKE ${s}
+      WHERE comp.tier IN (3, 4) AND cl.owner_user_id IS NULL AND c.name LIKE ${s}
       GROUP BY c.id, c.name, c.code, c.flag_url
       ORDER BY c.name ASC
     `;
@@ -194,7 +194,7 @@ export class ClubsService {
       SELECT comp.tier, comp.name as competition_name, COUNT(cl.id) as unclaimed_count
       FROM competitions comp
       JOIN clubs cl ON cl.current_competition_id = comp.id
-      WHERE cl.country_id = ${cId} AND comp.tier IN (3, 4, 5) AND cl.owner_user_id IS NULL
+      WHERE cl.country_id = ${cId} AND comp.tier IN (3, 4) AND cl.owner_user_id IS NULL
       GROUP BY comp.tier, comp.name
       ORDER BY comp.tier ASC
     `;
@@ -216,8 +216,8 @@ export class ClubsService {
     }
 
     const t = Number(tier);
-    if (![3, 4, 5].includes(t)) {
-      throw new BadRequestException('Chỉ được chọn câu lạc bộ khởi nghiệp ở giải Hạng 3, 4 hoặc 5');
+    if (![3, 4].includes(t)) {
+      throw new BadRequestException('Chỉ được chọn câu lạc bộ khởi nghiệp ở giải Hạng 3 hoặc 4');
     }
 
     const cId = BigInt(countryId);
