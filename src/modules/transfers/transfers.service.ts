@@ -274,23 +274,55 @@ export class TransfersService {
   async makeOffer(
     fromClubId: bigint,
     dto: {
-      playerId: string;
-      toClubId: string;
-      offerAmount: number;
-      isLoan?: boolean;
-      proposedWage?: number;
-      contractYears?: number;
+      player_id: string;
+      to_club_id?: string;
+      offer_amount?: number;
+      is_loan?: boolean;
+      proposed_wage?: number;
+      contract_years?: number;
     },
   ) {
-    const playerId = BigInt(dto.playerId);
-    const toClubId = BigInt(dto.toClubId);
+    if (!dto.player_id || dto.player_id === 'undefined' || dto.player_id === 'null') {
+      throw new BadRequestException('Thiếu thông tin player_id của cầu thủ');
+    }
+
+    const playerId = BigInt(dto.player_id);
+
+    const player = await this.prisma.players.findUnique({
+      where: { id: playerId },
+    });
+
+    if (!player) {
+      throw new NotFoundException('Không tìm thấy cầu thủ');
+    }
+
+    let toClubId: bigint | null = null;
+    if (dto.to_club_id && dto.to_club_id !== 'undefined' && dto.to_club_id !== 'null' && dto.to_club_id !== '') {
+      try {
+        toClubId = BigInt(dto.to_club_id);
+      } catch {
+        toClubId = null;
+      }
+    }
+
+    if (!toClubId && player.current_club_id) {
+      toClubId = player.current_club_id;
+    }
+
+    if (!toClubId) {
+      throw new BadRequestException('Cầu thủ này hiện là cầu thủ tự do, không thuộc CLB nào để gửi đề nghị');
+    }
+
+    if (toClubId === fromClubId) {
+      throw new BadRequestException('Bạn không thể gửi đề nghị mua cầu thủ thuộc chính CLB của mình');
+    }
 
     const buyerAccount = await this.prisma.financial_accounts.findFirst({
       where: { club_id: fromClubId },
     });
 
-    const isLoan = Boolean(dto.isLoan);
-    const finalOfferAmount = isLoan ? 0 : Number(dto.offerAmount || 0);
+    const isLoan = Boolean(dto.is_loan);
+    const finalOfferAmount = isLoan ? 0 : Number(dto.offer_amount || 0);
 
     if (!buyerAccount || Number(buyerAccount.balance_cash) < finalOfferAmount) {
       throw new BadRequestException('Ngân sách tiền mặt của CLB không đủ để gửi lời đề nghị này');
@@ -306,8 +338,8 @@ export class TransfersService {
         currency_type: 'CASH',
         status: 'PENDING',
         is_loan: isLoan,
-        proposed_wage: dto.proposedWage ? Number(dto.proposedWage) : 0,
-        contract_years: dto.contractYears ? Number(dto.contractYears) : 3,
+        proposed_wage: dto.proposed_wage ? Number(dto.proposed_wage) : 0,
+        contract_years: dto.contract_years ? Number(dto.contract_years) : 3,
       },
     });
 
@@ -484,6 +516,7 @@ export class TransfersService {
     const offer = await this.prisma.transfer_offers.findUnique({
       where: { id: offerId },
       include: {
+        players: true,
         clubs_transfer_offers_from_club_idToclubs: { include: { financial_accounts: true } },
         clubs_transfer_offers_to_club_idToclubs: { include: { financial_accounts: true } },
       },
@@ -501,6 +534,7 @@ export class TransfersService {
       throw new BadRequestException('Lời đề nghị này đã được xử lý trước đó');
     }
 
+    // 1. Trường hợp TỪ CHỐI (REJECTED)
     if (response === 'REJECTED') {
       await this.prisma.transfer_offers.update({
         where: { id: offerId },
@@ -509,65 +543,242 @@ export class TransfersService {
       return { message: 'Đã từ chối lời đề nghị chuyển nhượng' };
     }
 
-    // ACCEPTED: Execute transfer
-    const amount = Number(offer.offer_amount);
-    const buyerFin = offer.clubs_transfer_offers_from_club_idToclubs?.financial_accounts?.[0];
-    const sellerFin = offer.clubs_transfer_offers_to_club_idToclubs?.financial_accounts?.[0];
+    // 2. Trường hợp ĐỒNG Ý (ACCEPTED): Thực thi toàn bộ quy trình chuyển nhượng / cho mượn
+    const isLoan = Boolean(offer.is_loan);
+    const amount = isLoan ? 0 : Number(offer.offer_amount);
+    const buyerClub = offer.clubs_transfer_offers_from_club_idToclubs;
+    const sellerClub = offer.clubs_transfer_offers_to_club_idToclubs;
+    const buyerFin = buyerClub?.financial_accounts?.[0];
+    const sellerFin = sellerClub?.financial_accounts?.[0];
 
     if (!buyerFin || !sellerFin) {
       throw new BadRequestException('Tài khoản tài chính của một trong hai CLB không tồn tại');
     }
 
-    if (Number(buyerFin.balance_cash) < amount) {
-      throw new BadRequestException('CLB mua không còn đủ số dư để hoàn tất thương vụ');
+    if (amount > 0 && Number(buyerFin.balance_cash) < amount) {
+      throw new BadRequestException('CLB mua không còn đủ số dư ngân sách để hoàn tất thương vụ');
     }
 
+    // Lấy thông tin mùa giải & timeline hiện tại
+    const timeline = await this.prisma.server_timeline.findFirst();
+    const seasonId = timeline?.season_id;
+    const seasonDay = timeline?.season_day || 1;
+
+    // Lấy đơn vị tiền tệ mặc định
+    const defaultCurrency =
+      (await this.prisma.currencies.findFirst({ where: { is_active: true } })) ||
+      (await this.prisma.currencies.findFirst());
+    const currencyId = defaultCurrency ? defaultCurrency.id : BigInt(1);
+
+    const playerName = `${offer.players?.first_name || ''} ${offer.players?.last_name || ''}`.trim() || 'Cầu thủ';
+
     await this.prisma.$transaction(async (tx) => {
-      // 1. Debit buyer, credit seller
-      await tx.financial_accounts.update({
-        where: { id: buyerFin.id },
-        data: { balance_cash: { decrement: amount } },
+      // BƯỚC 1: Xử lý giao dịch tài chính nếu có phí chuyển nhượng
+      if (amount > 0) {
+        // Trừ tiền bên mua, cộng tiền bên bán
+        await tx.financial_accounts.update({
+          where: { id: buyerFin.id },
+          data: { balance_cash: { decrement: amount } },
+        });
+
+        await tx.financial_accounts.update({
+          where: { id: sellerFin.id },
+          data: { balance_cash: { increment: amount } },
+        });
+      }
+
+      // BƯỚC 2: Tạo bản ghi lịch sử chuyển nhượng chính thức (transfers)
+      const transferRecord = await tx.transfers.create({
+        data: {
+          player_id: offer.player_id,
+          from_club_id: offer.to_club_id,
+          to_club_id: offer.from_club_id,
+          transfer_type: offer.transfer_type || 'DOMESTIC',
+          transfer_fee: amount,
+          currency_type: 'CASH',
+          transfer_date: new Date(),
+          is_loan: isLoan,
+          loan_end_date: isLoan ? offer.loan_end_date : null,
+        },
       });
 
-      await tx.financial_accounts.update({
-        where: { id: sellerFin.id },
-        data: { balance_cash: { increment: amount } },
-      });
+      // Ghi sổ nhật ký kế toán (financial_transactions)
+      if (amount > 0) {
+        // Log bên mua (EXPENSE)
+        await tx.financial_transactions.create({
+          data: {
+            club_id: offer.from_club_id,
+            financial_account_id: buyerFin.id,
+            type: 'EXPENSE',
+            category: 'TRANSFER_FEE',
+            amount: amount,
+            currency_type: 'CASH',
+            reference_type: 'transfers',
+            reference_id: transferRecord.id,
+            description: `Chi phí chuyển nhượng mua cầu thủ ${playerName}`,
+            season_id: seasonId,
+            season_day: seasonDay,
+            transaction_date: new Date(),
+          },
+        });
 
-      // 2. Transfer player club
+        // Log bên bán (INCOME)
+        await tx.financial_transactions.create({
+          data: {
+            club_id: offer.to_club_id,
+            financial_account_id: sellerFin.id,
+            type: 'INCOME',
+            category: 'TRANSFER_FEE',
+            amount: amount,
+            currency_type: 'CASH',
+            reference_type: 'transfers',
+            reference_id: transferRecord.id,
+            description: `Thu về phí chuyển nhượng bán cầu thủ ${playerName}`,
+            season_id: seasonId,
+            season_day: seasonDay,
+            transaction_date: new Date(),
+          },
+        });
+      }
+
+      // BƯỚC 3: Cập nhật CLB hiện tại của cầu thủ
       await tx.players.update({
         where: { id: offer.player_id },
         data: { current_club_id: offer.from_club_id },
       });
 
-      // 3. Remove transfer listing
-      await tx.player_status.update({
+      // BƯỚC 4: Gỡ cầu thủ khỏi danh sách rao bán / cho mượn
+      await tx.player_status.upsert({
         where: { player_id: offer.player_id },
-        data: { is_transfer_listed: false, is_loan_listed: false },
+        update: {
+          is_transfer_listed: false,
+          is_loan_listed: false,
+          asking_price: null,
+        },
+        create: {
+          player_id: offer.player_id,
+          is_transfer_listed: false,
+          is_loan_listed: false,
+        },
       });
 
-      // 4. Update offer status
+      // BƯỚC 5: Gỡ cầu thủ khỏi đội hình chiến thuật của CLB cũ (nếu có)
+      const oldClubTactics = await tx.club_tactics.findMany({
+        where: { club_id: offer.to_club_id },
+        select: { id: true },
+      });
+      if (oldClubTactics.length > 0) {
+        const tacticIds = oldClubTactics.map((t) => t.id);
+        await tx.club_tactic_positions.updateMany({
+          where: {
+            tactic_id: { in: tacticIds },
+            player_id: offer.player_id,
+          },
+          data: {
+            player_id: null,
+          },
+        });
+      }
+
+      // BƯỚC 6: Xử lý Hợp đồng cầu thủ (player_contracts)
+      const proposedWage = offer.proposed_wage ? Number(offer.proposed_wage) : 1000;
+      const contractYears = offer.contract_years || 3;
+
+      if (isLoan) {
+        // Hợp đồng cho mượn: tạo mới hợp đồng mượn với parent_club_id là CLB cũ
+        await tx.player_contracts.create({
+          data: {
+            player_id: offer.player_id,
+            club_id: offer.from_club_id,
+            parent_club_id: offer.to_club_id,
+            salary: proposedWage,
+            salary_currency_id: currencyId,
+            start_date: new Date(),
+            status: 'ACTIVE',
+            is_loan_contract: true,
+            start_season_id: seasonId || BigInt(1),
+            start_season_day: seasonDay,
+            end_season_id: seasonId || BigInt(1),
+            end_season_day: 40,
+          },
+        });
+      } else {
+        // Hợp đồng mua đứt: Đóng các hợp đồng cũ
+        await tx.player_contracts.updateMany({
+          where: {
+            player_id: offer.player_id,
+            status: 'ACTIVE',
+          },
+          data: {
+            status: 'TERMINATED',
+            end_date: new Date(),
+          },
+        });
+
+        // Tạo hợp đồng mới với CLB mua
+        await tx.player_contracts.create({
+          data: {
+            player_id: offer.player_id,
+            club_id: offer.from_club_id,
+            salary: proposedWage,
+            salary_currency_id: currencyId,
+            start_date: new Date(),
+            status: 'ACTIVE',
+            is_loan_contract: false,
+            start_season_id: seasonId || BigInt(1),
+            start_season_day: seasonDay,
+            end_season_id: seasonId ? BigInt(Number(seasonId) + contractYears) : BigInt(1 + contractYears),
+            end_season_day: 40,
+          },
+        });
+      }
+
+      // BƯỚC 7: Cập nhật lịch sử CLB của cầu thủ (player_club_history)
+      await tx.player_club_history.updateMany({
+        where: {
+          player_id: offer.player_id,
+          club_id: offer.to_club_id,
+          end_date: null,
+        },
+        data: {
+          end_date: new Date(),
+        },
+      });
+
+      await tx.player_club_history.create({
+        data: {
+          player_id: offer.player_id,
+          club_id: offer.from_club_id,
+          start_date: new Date(),
+          transfer_id: transferRecord.id,
+          appearances: 0,
+          goals: 0,
+          assists: 0,
+        },
+      });
+
+      // BƯỚC 8: Cập nhật trạng thái đề nghị này thành ACCEPTED
       await tx.transfer_offers.update({
         where: { id: offerId },
         data: { status: 'ACCEPTED' },
       });
 
-      // 5. Create transfer history record
-      await tx.transfers.create({
-        data: {
+      // BƯỚC 9: Tự động từ chối (REJECTED) tất cả các lời đề nghị PENDING khác cho cùng cầu thủ này
+      await tx.transfer_offers.updateMany({
+        where: {
           player_id: offer.player_id,
-          from_club_id: offer.to_club_id,
-          to_club_id: offer.from_club_id,
-          transfer_type: offer.transfer_type,
-          transfer_fee: amount,
-          currency_type: 'CASH',
-          transfer_date: new Date(),
-          is_loan: offer.is_loan,
+          status: 'PENDING',
+          id: { not: offerId },
         },
+        data: { status: 'REJECTED' },
       });
     });
 
-    return { message: 'Thương vụ chuyển nhượng đã hoàn tất thành công!' };
+    return {
+      message: isLoan
+        ? `Đã chấp thuận cho mượn cầu thủ ${playerName} thành công!`
+        : `Thương vụ chuyển nhượng mua đứt cầu thủ ${playerName} đã hoàn tất thành công!`,
+    };
   }
 
   async getStaffMarket(page: number = 1, limit: number = 20, role?: string, search?: string) {

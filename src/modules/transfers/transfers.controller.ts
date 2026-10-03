@@ -12,6 +12,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { TransfersService } from './transfers.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '@/common/decorators/current-user.decorator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 function parseOptionalNumber(val: any): number | undefined {
   if (val === undefined || val === null || val === '') return undefined;
@@ -20,16 +21,34 @@ function parseOptionalNumber(val: any): number | undefined {
 }
 
 class MakeOfferDto {
-  playerId: string;
-  toClubId: string;
-  offerAmount: number;
-  isLoan?: boolean;
-  proposedWage?: number;
-  contractYears?: number;
+  @IsNotEmpty({ message: 'Thiếu thông tin player_id của cầu thủ' })
+  @IsString()
+  player_id: string;
+
+  @IsOptional()
+  @IsString()
+  to_club_id?: string;
+
+  @IsOptional()
+  offer_amount?: any;
+
+  @IsOptional()
+  is_loan?: any;
+
+  @IsOptional()
+  proposed_wage?: any;
+
+  @IsOptional()
+  contract_years?: any;
 }
 
 class RespondOfferDto {
-  clubId: string;
+  @IsOptional()
+  @IsString()
+  club_id?: string;
+
+  @IsNotEmpty({ message: 'Thiếu thông tin response (ACCEPTED hoặc REJECTED)' })
+  @IsString()
   response: 'ACCEPTED' | 'REJECTED';
 }
 
@@ -141,9 +160,9 @@ export class TransfersController {
   async cancelOffer(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body?: { clubId?: string },
+    @Body() body?: { club_id?: string; clubId?: string },
   ) {
-    const clubId = body?.clubId ? BigInt(body.clubId) : (user?.clubId ? BigInt(user.clubId) : undefined);
+    const clubId = body?.club_id ? BigInt(body.club_id) : (body?.clubId ? BigInt(body.clubId) : (user?.clubId ? BigInt(user.clubId) : undefined));
     return this.transfersService.cancelOffer(BigInt(id), clubId);
   }
 
@@ -155,14 +174,13 @@ export class TransfersController {
   async respondOffer(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: any,
+    @Body() dto: RespondOfferDto,
   ) {
-    const responseType = (dto.response || dto.action) as 'ACCEPTED' | 'REJECTED';
-    const clubId = dto.clubId ? BigInt(dto.clubId) : (user?.clubId ? BigInt(user.clubId) : undefined);
+    const clubId = dto.club_id ? BigInt(dto.club_id) : (user?.clubId ? BigInt(user.clubId) : undefined);
     if (!clubId) {
-      throw new Error('Thiếu thông tin CLB quyết định đề nghị');
+      throw new Error('Thiếu thông tin CLB quyết định đề nghị (club_id)');
     }
-    return this.transfersService.respondOffer(BigInt(id), clubId, responseType);
+    return this.transfersService.respondOffer(BigInt(id), clubId, dto.response);
   }
 
   @Get('staff-market')
