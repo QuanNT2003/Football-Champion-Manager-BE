@@ -1774,6 +1774,8 @@ model transfer_offers {
   to_club_id                                BigInt                        @db.UnsignedBigInt
   transfer_type                             transfer_offers_transfer_type @default(DOMESTIC)
   offer_amount                              Decimal                       @default(0.00) @db.Decimal(18, 2)
+  proposed_wage                             Decimal?                      @default(0.00) @db.Decimal(18, 2)
+  contract_years                            Int?                          @default(3)
   currency_type                             transfer_offers_currency_type @default(CASH)
   status                                    String                        @default("") @db.VarChar(30)
   created_at                                DateTime                      @default(now()) @db.DateTime(0)

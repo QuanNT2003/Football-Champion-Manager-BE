@@ -24,6 +24,8 @@ class MakeOfferDto {
   toClubId: string;
   offerAmount: number;
   isLoan?: boolean;
+  proposedWage?: number;
+  contractYears?: number;
 }
 
 class RespondOfferDto {
@@ -106,6 +108,15 @@ export class TransfersController {
     return this.transfersService.makeOffer(BigInt(user.clubId), dto);
   }
 
+  @Get('offers/club/:clubId/player/:playerId')
+  @ApiOperation({ summary: 'Lấy đề nghị chuyển nhượng gần nhất của CLB cho cầu thủ' })
+  async getPlayerOffer(
+    @Param('clubId') clubId: string,
+    @Param('playerId') playerId: string,
+  ) {
+    return this.transfersService.getPlayerOffer(BigInt(clubId), BigInt(playerId));
+  }
+
   @Get('offers/club/:clubId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -114,15 +125,44 @@ export class TransfersController {
     return this.transfersService.getOffersForClub(BigInt(clubId));
   }
 
+  @Get('club/:clubId/offers')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy danh sách các đề nghị chuyển nhượng đến và đi của CLB (alias)' })
+  async getClubOffersAlias(@Param('clubId') clubId: string) {
+    return this.transfersService.getOffersForClub(BigInt(clubId));
+  }
+
+  @Put('offers/:id/cancel')
+  @Post('offers/:id/cancel')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Hủy lời đề nghị chuyển nhượng đã gửi' })
+  async cancelOffer(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body?: { clubId?: string },
+  ) {
+    const clubId = body?.clubId ? BigInt(body.clubId) : (user?.clubId ? BigInt(user.clubId) : undefined);
+    return this.transfersService.cancelOffer(BigInt(id), clubId);
+  }
+
   @Put('offers/:id/respond')
+  @Post('offers/:id/respond')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Chấp nhận hoặc từ chối đề nghị chuyển nhượng' })
   async respondOffer(
+    @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: RespondOfferDto,
+    @Body() dto: any,
   ) {
-    return this.transfersService.respondOffer(BigInt(id), BigInt(dto.clubId), dto.response);
+    const responseType = (dto.response || dto.action) as 'ACCEPTED' | 'REJECTED';
+    const clubId = dto.clubId ? BigInt(dto.clubId) : (user?.clubId ? BigInt(user.clubId) : undefined);
+    if (!clubId) {
+      throw new Error('Thiếu thông tin CLB quyết định đề nghị');
+    }
+    return this.transfersService.respondOffer(BigInt(id), clubId, responseType);
   }
 
   @Get('staff-market')

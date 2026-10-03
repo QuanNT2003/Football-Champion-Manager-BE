@@ -278,6 +278,8 @@ export class TransfersService {
       toClubId: string;
       offerAmount: number;
       isLoan?: boolean;
+      proposedWage?: number;
+      contractYears?: number;
     },
   ) {
     const playerId = BigInt(dto.playerId);
@@ -287,50 +289,195 @@ export class TransfersService {
       where: { club_id: fromClubId },
     });
 
-    if (!buyerAccount || Number(buyerAccount.balance_cash) < dto.offerAmount) {
+    const isLoan = Boolean(dto.isLoan);
+    const finalOfferAmount = isLoan ? 0 : Number(dto.offerAmount || 0);
+
+    if (!buyerAccount || Number(buyerAccount.balance_cash) < finalOfferAmount) {
       throw new BadRequestException('Ngân sách tiền mặt của CLB không đủ để gửi lời đề nghị này');
     }
 
-    const offer = await this.prisma.transfer_offers.create({
+    const offer = await (this.prisma.transfer_offers as any).create({
       data: {
         player_id: playerId,
         from_club_id: fromClubId,
         to_club_id: toClubId,
         transfer_type: 'DOMESTIC',
-        offer_amount: dto.offerAmount,
+        offer_amount: finalOfferAmount,
         currency_type: 'CASH',
         status: 'PENDING',
-        is_loan: Boolean(dto.isLoan),
+        is_loan: isLoan,
+        proposed_wage: dto.proposedWage ? Number(dto.proposedWage) : 0,
+        contract_years: dto.contractYears ? Number(dto.contractYears) : 3,
       },
     });
 
     return {
-      message: 'Đã gửi đề nghị chuyển nhượng thành công!',
+      message: isLoan
+        ? 'Đã gửi đề nghị mượn cầu thủ thành công!'
+        : 'Đã gửi đề nghị chuyển nhượng thành công!',
       offerId: offer.id.toString(),
     };
   }
 
+  async getPlayerOffer(clubId: bigint, playerId: bigint) {
+    const offer = await this.prisma.transfer_offers.findFirst({
+      where: {
+        from_club_id: clubId,
+        player_id: playerId,
+      },
+      orderBy: { created_at: 'desc' },
+      include: {
+        clubs_transfer_offers_to_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
+      },
+    });
+
+    if (!offer) return null;
+
+    return {
+      id: offer.id.toString(),
+      player_id: offer.player_id.toString(),
+      from_club_id: offer.from_club_id.toString(),
+      to_club_id: offer.to_club_id.toString(),
+      offer_amount: Number(offer.offer_amount),
+      proposed_wage: Number((offer as any).proposed_wage || 0),
+      contract_years: Number((offer as any).contract_years || 3),
+      is_loan: Boolean(offer.is_loan),
+      status: offer.status,
+      created_at: offer.created_at,
+      to_club: offer.clubs_transfer_offers_to_club_idToclubs ? {
+        id: offer.clubs_transfer_offers_to_club_idToclubs.id.toString(),
+        name: offer.clubs_transfer_offers_to_club_idToclubs.name,
+        logo_url: offer.clubs_transfer_offers_to_club_idToclubs.logo_url,
+      } : null,
+    };
+  }
+
+  async cancelOffer(offerId: bigint, clubId?: bigint) {
+    const offer = await this.prisma.transfer_offers.findUnique({
+      where: { id: offerId },
+    });
+
+    if (!offer) {
+      throw new NotFoundException('Không tìm thấy lời đề nghị chuyển nhượng');
+    }
+
+    if (clubId && offer.from_club_id !== clubId) {
+      throw new BadRequestException('Bạn không có quyền hủy lời đề nghị này');
+    }
+
+    if (offer.status !== 'PENDING') {
+      throw new BadRequestException(`Không thể hủy đề nghị vì trạng thái hiện tại là ${offer.status}`);
+    }
+
+    await this.prisma.transfer_offers.update({
+      where: { id: offerId },
+      data: { status: 'CANCELLED' },
+    });
+
+    return { message: 'Đã hủy lời đề nghị chuyển nhượng thành công!' };
+  }
+
   async getOffersForClub(clubId: bigint) {
-    const [incoming, outgoing] = await Promise.all([
+    const playerInclude = {
+      select: {
+        id: true,
+        first_name: true,
+        last_name: true,
+        age: true,
+        photo_url: true,
+        market_value: true,
+        reputation: true,
+        player_positions: {
+          include: {
+            positions: {
+              select: { id: true, code: true, name: true, category: true },
+            },
+          },
+        },
+        countries_players_nationality_idTocountries: {
+          select: { name: true, flag_url: true, code: true },
+        },
+      },
+    };
+
+    const [incomingRaw, outgoingRaw] = await Promise.all([
       this.prisma.transfer_offers.findMany({
         where: { to_club_id: clubId },
         include: {
-          players: { select: { id: true, first_name: true, last_name: true, market_value: true } },
+          players: playerInclude,
           clubs_transfer_offers_from_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
+          clubs_transfer_offers_to_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
         },
         orderBy: { created_at: 'desc' },
       }),
       this.prisma.transfer_offers.findMany({
         where: { from_club_id: clubId },
         include: {
-          players: { select: { id: true, first_name: true, last_name: true, market_value: true } },
+          players: playerInclude,
+          clubs_transfer_offers_from_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
           clubs_transfer_offers_to_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
         },
         orderBy: { created_at: 'desc' },
       }),
     ]);
 
-    return { incoming, outgoing };
+    const formatOffer = (o: any) => {
+      const p = o.players;
+      const posCode = p?.player_positions?.[0]?.positions?.code || 'ST';
+      return {
+        id: o.id.toString(),
+        player_id: o.player_id.toString(),
+        from_club_id: o.from_club_id.toString(),
+        to_club_id: o.to_club_id.toString(),
+        transfer_type: o.transfer_type,
+        offer_amount: Number(o.offer_amount),
+        proposed_wage: Number(o.proposed_wage || 0),
+        contract_years: Number(o.contract_years || 3),
+        currency_type: o.currency_type,
+        status: o.status,
+        created_at: o.created_at,
+        is_loan: Boolean(o.is_loan),
+        player: p ? {
+          id: p.id.toString(),
+          first_name: p.first_name,
+          last_name: p.last_name,
+          common_name: `${p.first_name} ${p.last_name}`.trim(),
+          age: p.age,
+          reputation: p.reputation,
+          ovr: p.reputation || 70,
+          photo_url: p.photo_url,
+          market_value: Number(p.market_value),
+          position: posCode,
+          nationality: p.countries_players_nationality_idTocountries?.name || '',
+          flag_url: p.countries_players_nationality_idTocountries?.flag_url || null,
+        } : null,
+        buyer_club: o.clubs_transfer_offers_from_club_idToclubs ? {
+          id: o.clubs_transfer_offers_from_club_idToclubs.id.toString(),
+          name: o.clubs_transfer_offers_from_club_idToclubs.name,
+          logo_url: o.clubs_transfer_offers_from_club_idToclubs.logo_url,
+        } : null,
+        seller_club: o.clubs_transfer_offers_to_club_idToclubs ? {
+          id: o.clubs_transfer_offers_to_club_idToclubs.id.toString(),
+          name: o.clubs_transfer_offers_to_club_idToclubs.name,
+          logo_url: o.clubs_transfer_offers_to_club_idToclubs.logo_url,
+        } : null,
+        from_club: o.clubs_transfer_offers_from_club_idToclubs ? {
+          id: o.clubs_transfer_offers_from_club_idToclubs.id.toString(),
+          name: o.clubs_transfer_offers_from_club_idToclubs.name,
+          logo_url: o.clubs_transfer_offers_from_club_idToclubs.logo_url,
+        } : null,
+        to_club: o.clubs_transfer_offers_to_club_idToclubs ? {
+          id: o.clubs_transfer_offers_to_club_idToclubs.id.toString(),
+          name: o.clubs_transfer_offers_to_club_idToclubs.name,
+          logo_url: o.clubs_transfer_offers_to_club_idToclubs.logo_url,
+        } : null,
+      };
+    };
+
+    return {
+      incoming: incomingRaw.map(formatOffer),
+      outgoing: outgoingRaw.map(formatOffer),
+    };
   }
 
   async respondOffer(offerId: bigint, clubId: bigint, response: 'ACCEPTED' | 'REJECTED') {
