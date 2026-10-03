@@ -13,6 +13,12 @@ import { TransfersService } from './transfers.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '@/common/decorators/current-user.decorator';
 
+function parseOptionalNumber(val: any): number | undefined {
+  if (val === undefined || val === null || val === '') return undefined;
+  const num = Number(val);
+  return isNaN(num) ? undefined : num;
+}
+
 class MakeOfferDto {
   playerId: string;
   toClubId: string;
@@ -30,30 +36,60 @@ class RespondOfferDto {
 export class TransfersController {
   constructor(private readonly transfersService: TransfersService) {}
 
+  @Get('filter-options')
+  @ApiOperation({ summary: 'Lấy danh sách các tùy chọn lọc (Quốc gia, 40 Kỹ năng thuộc 4 nhóm)' })
+  async getFilterOptions() {
+    return this.transfersService.getFilterOptions();
+  }
+
   @Get('market')
   @ApiOperation({ summary: 'Xem danh sách cầu thủ trên thị trường chuyển nhượng/cho mượn/tự do' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'status', required: false, enum: ['ALL', 'FREE', 'LOAN', 'TRANSFER'] })
   @ApiQuery({ name: 'isLoan', required: false, type: Boolean })
+  @ApiQuery({ name: 'minPrice', required: false })
   @ApiQuery({ name: 'maxPrice', required: false })
+  @ApiQuery({ name: 'minAge', required: false })
+  @ApiQuery({ name: 'maxAge', required: false })
+  @ApiQuery({ name: 'nationalityId', required: false })
+  @ApiQuery({ name: 'minOvr', required: false })
+  @ApiQuery({ name: 'maxOvr', required: false })
+  @ApiQuery({ name: 'attributes', required: false, description: 'JSON string of { attributeId: minValue }' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'position', required: false })
   async getMarket(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
+    @Query('status') status?: 'ALL' | 'FREE' | 'LOAN' | 'TRANSFER',
     @Query('isLoan') isLoan?: boolean,
-    @Query('maxPrice') maxPrice?: number,
+    @Query('minPrice') minPrice?: any,
+    @Query('maxPrice') maxPrice?: any,
+    @Query('minAge') minAge?: any,
+    @Query('maxAge') maxAge?: any,
+    @Query('nationalityId') nationalityId?: string,
+    @Query('minOvr') minOvr?: any,
+    @Query('maxOvr') maxOvr?: any,
+    @Query('attributes') attributes?: string,
     @Query('search') search?: string,
     @Query('position') position?: string,
   ) {
-    return this.transfersService.getMarket(
-      Number(page),
-      Number(limit),
-      isLoan !== undefined ? Boolean(isLoan) : undefined,
-      maxPrice ? Number(maxPrice) : undefined,
-      search,
-      position,
-    );
+    return this.transfersService.getMarket({
+      page: parseOptionalNumber(page) || 1,
+      limit: parseOptionalNumber(limit) || 20,
+      status,
+      isLoan: isLoan !== undefined ? Boolean(isLoan) : undefined,
+      minPrice: parseOptionalNumber(minPrice),
+      maxPrice: parseOptionalNumber(maxPrice),
+      minAge: parseOptionalNumber(minAge),
+      maxAge: parseOptionalNumber(maxAge),
+      nationalityId: nationalityId && nationalityId !== '' ? nationalityId : undefined,
+      minOvr: parseOptionalNumber(minOvr),
+      maxOvr: parseOptionalNumber(maxOvr),
+      attributes,
+      search: search && search.trim() ? search.trim() : undefined,
+      position: position && position !== 'ALL' ? position : undefined,
+    });
   }
 
   @Post('offers')

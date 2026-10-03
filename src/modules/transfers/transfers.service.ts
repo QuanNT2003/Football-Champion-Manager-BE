@@ -1,57 +1,186 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
+export interface GetMarketFilterDto {
+  page?: number;
+  limit?: number;
+  status?: 'ALL' | 'FREE' | 'LOAN' | 'TRANSFER';
+  isLoan?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
+  minAge?: number;
+  maxAge?: number;
+  nationalityId?: string;
+  minOvr?: number;
+  maxOvr?: number;
+  attributes?: string;
+  search?: string;
+  position?: string;
+}
+
 @Injectable()
 export class TransfersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getFilterOptions() {
+    const [countries, attributes] = await Promise.all([
+      this.prisma.countries.findMany({
+        select: { id: true, code: true, name: true, flag_url: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.attributes.findMany({
+        select: { id: true, code: true, name: true, category: true },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+
+    return {
+      countries: countries.map((c) => ({
+        id: c.id.toString(),
+        code: c.code,
+        name: c.name,
+        flag_url: c.flag_url,
+      })),
+      attributes: attributes.map((a) => ({
+        id: a.id.toString(),
+        code: a.code,
+        name: a.name,
+        category: a.category,
+      })),
+    };
+  }
+
   async getMarket(
-    page: number = 1,
-    limit: number = 20,
-    isLoan?: boolean,
-    maxPrice?: number,
-    search?: string,
-    position?: string,
+    pageOrParams: number | GetMarketFilterDto = 1,
+    limitParam: number = 20,
+    isLoanParam?: boolean,
+    maxPriceParam?: number,
+    searchParam?: string,
+    positionParam?: string,
   ) {
-    const p = Math.max(1, Number(page) || 1);
-    const l = Math.max(1, Number(limit) || 20);
+    let params: GetMarketFilterDto = {};
+    if (typeof pageOrParams === 'object' && pageOrParams !== null) {
+      params = pageOrParams;
+    } else {
+      params = {
+        page: Number(pageOrParams) || 1,
+        limit: limitParam,
+        isLoan: isLoanParam,
+        maxPrice: maxPriceParam,
+        search: searchParam,
+        position: positionParam,
+      };
+    }
+
+    const p = Math.max(1, Number(params.page) || 1);
+    const l = Math.max(1, Number(params.limit) || 20);
     const skip = (p - 1) * l;
 
     const where: any = {};
 
-    // Cầu thủ: is_loan_listed, is_transfer_listed hoặc cầu thủ tự do (current_club_id: null)
-    if (isLoan === true) {
+    // 1. Lọc theo Tình trạng (status)
+    if (params.status === 'FREE') {
+      where.current_club_id = null;
+    } else if (params.status === 'LOAN') {
       where.player_status = { is_loan_listed: true };
+    } else if (params.status === 'TRANSFER') {
+      where.player_status = { is_transfer_listed: true };
     } else {
-      where.OR = [
-        { player_status: { is_transfer_listed: true } },
-        { player_status: { is_loan_listed: true } },
-        { current_club_id: null },
-      ];
+      // Mặc định 'ALL': cầu thủ niêm yết bán, mượn hoặc tự do
+      if (params.isLoan === true) {
+        where.player_status = { is_loan_listed: true };
+      } else {
+        where.OR = [
+          { player_status: { is_transfer_listed: true } },
+          { player_status: { is_loan_listed: true } },
+          { current_club_id: null },
+        ];
+      }
     }
 
-    if (maxPrice) {
-      where.market_value = { lte: maxPrice };
+    // 2. Lọc theo Tuổi (Age)
+    const hasMinAge = params.minAge != null && !isNaN(Number(params.minAge));
+    const hasMaxAge = params.maxAge != null && !isNaN(Number(params.maxAge));
+    if (hasMinAge || hasMaxAge) {
+      where.age = {
+        ...(hasMinAge ? { gte: Number(params.minAge) } : {}),
+        ...(hasMaxAge ? { lte: Number(params.maxAge) } : {}),
+      };
     }
 
-    if (search) {
+    // 3. Lọc theo Giá (Price)
+    const hasMinPrice = params.minPrice != null && !isNaN(Number(params.minPrice));
+    const hasMaxPrice = params.maxPrice != null && !isNaN(Number(params.maxPrice));
+    if (hasMinPrice || hasMaxPrice) {
+      where.market_value = {
+        ...(hasMinPrice ? { gte: Number(params.minPrice) } : {}),
+        ...(hasMaxPrice ? { lte: Number(params.maxPrice) } : {}),
+      };
+    }
+
+    // 4. Lọc theo Quốc tịch (Nationality)
+    if (params.nationalityId && params.nationalityId !== '' && params.nationalityId !== 'null' && params.nationalityId !== 'undefined') {
+      try {
+        where.nationality_id = BigInt(params.nationalityId);
+      } catch (e) {}
+    }
+
+    // 5. Lọc theo OVR (Overall rating tính từ reputation)
+    const hasMinOvr = params.minOvr != null && !isNaN(Number(params.minOvr));
+    const hasMaxOvr = params.maxOvr != null && !isNaN(Number(params.maxOvr));
+    if (hasMinOvr || hasMaxOvr) {
+      where.reputation = {
+        ...(hasMinOvr ? { gte: Number(params.minOvr) * 100 } : {}),
+        ...(hasMaxOvr ? { lte: Number(params.maxOvr) * 100 } : {}),
+      };
+    }
+
+    // 6. Lọc theo Kỹ năng (Attributes - 40 chỉ số FM)
+    if (params.attributes) {
+      try {
+        const parsed = typeof params.attributes === 'string' ? JSON.parse(params.attributes) : params.attributes;
+        const attrConditions: any[] = [];
+        for (const [attrId, minVal] of Object.entries(parsed)) {
+          const val = Number(minVal);
+          if (val > 0) {
+            attrConditions.push({
+              player_attributes: {
+                some: {
+                  attribute_id: BigInt(attrId),
+                  value: { gte: val },
+                },
+              },
+            });
+          }
+        }
+        if (attrConditions.length > 0) {
+          where.AND = [...(where.AND || []), ...attrConditions];
+        }
+      } catch (e) {
+        console.error('Lỗi phân giải attributes filter:', e);
+      }
+    }
+
+    // 7. Tìm kiếm theo tên / quốc gia
+    if (params.search) {
       where.AND = [
         ...(where.AND || []),
         {
           OR: [
-            { first_name: { contains: search } },
-            { last_name: { contains: search } },
-            { countries_players_nationality_idTocountries: { name: { contains: search } } },
+            { first_name: { contains: params.search } },
+            { last_name: { contains: params.search } },
+            { countries_players_nationality_idTocountries: { name: { contains: params.search } } },
           ],
         },
       ];
     }
 
-    if (position) {
-      let positionCodes: string[] = [position];
-      if (position === 'DEF') positionCodes = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'SW'];
-      else if (position === 'MID') positionCodes = ['CM', 'CDM', 'CAM', 'LM', 'RM'];
-      else if (position === 'ATT' || position === 'FWD') positionCodes = ['ST', 'CF', 'LW', 'RW'];
+    // 8. Lọc theo Vị trí
+    if (params.position && params.position !== 'ALL') {
+      let positionCodes: string[] = [params.position];
+      if (params.position === 'DEF') positionCodes = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'SW'];
+      else if (params.position === 'MID') positionCodes = ['CM', 'CDM', 'CAM', 'LM', 'RM'];
+      else if (params.position === 'ATT' || params.position === 'FWD') positionCodes = ['ST', 'CF', 'LW', 'RW'];
 
       where.player_positions = {
         some: {
@@ -74,10 +203,13 @@ export class TransfersService {
             select: { id: true, name: true, logo_url: true },
           },
           countries_players_nationality_idTocountries: {
-            select: { name: true, flag_url: true },
+            select: { id: true, name: true, flag_url: true },
           },
           player_positions: {
             include: { positions: true },
+          },
+          player_attributes: {
+            include: { attributes: true },
           },
         },
         orderBy: { market_value: 'desc' },
@@ -99,6 +231,16 @@ export class TransfersService {
           logo_url: p.clubs_players_current_club_idToclubs.logo_url,
         } : null;
 
+        // Map kỹ năng dạng map { [code]: value }
+        const attributesMap: Record<string, number> = {};
+        if (p.player_attributes) {
+          for (const pa of p.player_attributes) {
+            if (pa.attributes?.code) {
+              attributesMap[pa.attributes.code] = pa.value;
+            }
+          }
+        }
+
         return {
           id: p.id.toString(),
           playerId: p.id.toString(),
@@ -112,8 +254,8 @@ export class TransfersService {
           potential_rating: p.potential || 82,
           overall_rating: computedOvr,
           ovr: computedOvr,
-          market_value: p.market_value,
-          asking_price: p.player_status?.asking_price || p.market_value,
+          market_value: p.market_value ? Number(p.market_value) : 2500000,
+          asking_price: p.player_status?.asking_price ? Number(p.player_status.asking_price) : (p.market_value ? Number(p.market_value) : 2500000),
           is_loan_listed: p.player_status?.is_loan_listed || false,
           is_transfer_listed: p.player_status?.is_transfer_listed || false,
           is_free_agent: !p.current_club_id,
@@ -121,7 +263,9 @@ export class TransfersService {
           currentClub: clubObj,
           club: clubObj,
           nationality: p.countries_players_nationality_idTocountries?.name || 'International',
+          nationality_id: p.nationality_id ? p.nationality_id.toString() : null,
           photo_url: p.photo_url || '/assets/players/default.png',
+          attributes: attributesMap,
         };
       }),
     };

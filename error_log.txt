@@ -1,0 +1,51 @@
+PrismaClientValidationError: 
+Invalid `prisma.players.count()` invocation:
+
+{
+  select: {
+    _count: {
+      select: {
+        _all: true
+      }
+    }
+  },
+  where: {
+    OR: [
+      {
+        player_status: {
+          is_transfer_listed: true
+        }
+      },
+      {
+        player_status: {
+          is_loan_listed: true
+        }
+      },
+      {
+        current_club_id: null
+      }
+    ],
+    age: {
+      lte: NaN,
++     gte: Int
+    },
+    market_value: {
+      gte: NaN,
+      lte: NaN
+    },
+    reputation: {
+      gte: NaN,
+      lte: NaN
+    }
+  }
+}
+
+Argument `gte` is missing.
+    at wn (D:\backend\footballChampion\footballChampion_BE\node_modules\@prisma\client\runtime\library.js:29:1363)
+    at $n.handleRequestError (D:\backend\footballChampion\footballChampion_BE\node_modules\@prisma\client\runtime\library.js:121:6958)
+    at $n.handleAndLogRequestError (D:\backend\footballChampion\footballChampion_BE\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (D:\backend\footballChampion\footballChampion_BE\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (D:\backend\footballChampion\footballChampion_BE\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async Promise.all (index 0)
+    at async TransfersService.getMarket (D:\backend\footballChampion\footballChampion_BE\src\modules\transfers\transfers.service.ts:186:27)
+    at async TransfersController.getMarket (D:\backend\footballChampion\footballChampion_BE\src\modules\transfers\transfers.controller.ts:75:19)
