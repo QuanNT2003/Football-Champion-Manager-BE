@@ -896,4 +896,367 @@ export class TransfersService {
       contract: newContract,
     };
   }
+
+  async getStaffDetail(staffId: bigint, clubId?: bigint) {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      include: {
+        countries: { select: { id: true, name: true, code: true, flag_url: true } },
+        preferred_formation: { select: { id: true, name: true, code: true } },
+        secondary_formation: { select: { id: true, name: true, code: true } },
+        staff_contracts: {
+          include: {
+            clubs: {
+              select: { id: true, name: true, logo_url: true },
+            },
+          },
+          orderBy: { start_date: 'desc' },
+        },
+      },
+    });
+
+    if (!staff) {
+      throw new NotFoundException('Không tìm thấy thông tin nhân viên');
+    }
+
+    const [staffAttributes, roleAttributes] = await Promise.all([
+      this.prisma.staff_attributes.findMany({
+        where: { staff_id: staffId },
+        include: { staff_attribute_types: true },
+      }),
+      this.prisma.staff_role_attributes.findMany({
+        where: { staff_type: staff.staff_type },
+      }),
+    ]);
+
+    const roleAttrMap = new Map<string, { multiplier: number; is_key: boolean }>();
+    roleAttributes.forEach((ra) => {
+      roleAttrMap.set(ra.attribute_type_id.toString(), {
+        multiplier: Number(ra.multiplier),
+        is_key: Boolean(ra.is_key),
+      });
+    });
+
+    const attributes = staffAttributes.map((sa) => {
+      const type = sa.staff_attribute_types;
+      const roleConfig = roleAttrMap.get(sa.attribute_id.toString());
+      return {
+        id: sa.attribute_id.toString(),
+        code: type?.code || '',
+        name: type?.name || '',
+        category: type?.category || 'COACHING',
+        description: type?.description || '',
+        value: sa.value ?? 50,
+        is_key: roleConfig?.is_key ?? false,
+        multiplier: roleConfig?.multiplier ?? 1.0,
+      };
+    });
+
+    const groupedAttributes = {
+      coaching: attributes.filter((a) => a.category === 'COACHING'),
+      mental: attributes.filter((a) => a.category === 'MENTAL'),
+      scouting: attributes.filter((a) => a.category === 'SCOUTING'),
+      medical: attributes.filter((a) => a.category === 'MEDICAL'),
+    };
+
+    const currentContract = staff.staff_contracts.find((c) => c.status === 'ACTIVE') || null;
+    const contractHistory = staff.staff_contracts.map((c) => ({
+      id: c.id.toString(),
+      club: c.clubs
+        ? {
+            id: c.clubs.id.toString(),
+            name: c.clubs.name,
+            logo_url: c.clubs.logo_url,
+          }
+        : null,
+      salary: Number(c.salary),
+      startDate: c.start_date,
+      endDate: c.end_date,
+      status: c.status,
+    }));
+
+    let existingOffer: any = null;
+    if (clubId) {
+      existingOffer = await this.prisma.staff_offers.findFirst({
+        where: {
+          staff_id: staffId,
+          club_id: clubId,
+          status: 'PENDING',
+        },
+      });
+    }
+
+    const estimatedWage = Math.round((staff.reputation || 5000) * 1.8);
+
+    return {
+      id: staff.id.toString(),
+      name: staff.name || 'Staff',
+      staffType: staff.staff_type,
+      coachingLicense: staff.coaching_license,
+      tacticalStyle: staff.tactical_style,
+      reputation: staff.reputation,
+      photoUrl: staff.photo_url,
+      nationality: staff.countries
+        ? {
+            id: staff.countries.id.toString(),
+            name: staff.countries.name,
+            code: staff.countries.code,
+            flag_url: staff.countries.flag_url,
+          }
+        : null,
+      preferredFormation: staff.preferred_formation
+        ? {
+            id: staff.preferred_formation.id.toString(),
+            name: staff.preferred_formation.name,
+            code: staff.preferred_formation.code,
+          }
+        : null,
+      secondaryFormation: staff.secondary_formation
+        ? {
+            id: staff.secondary_formation.id.toString(),
+            name: staff.secondary_formation.name,
+            code: staff.secondary_formation.code,
+          }
+        : null,
+      estimatedWage,
+      attributes,
+      groupedAttributes,
+      currentContract: currentContract
+        ? {
+            id: currentContract.id.toString(),
+            club: currentContract.clubs
+              ? {
+                  id: currentContract.clubs.id.toString(),
+                  name: currentContract.clubs.name,
+                  logo_url: currentContract.clubs.logo_url,
+                }
+              : null,
+            salary: Number(currentContract.salary),
+            startDate: currentContract.start_date,
+            endDate: currentContract.end_date,
+            status: currentContract.status,
+          }
+        : null,
+      contractHistory,
+      existingOffer: existingOffer
+        ? {
+            id: existingOffer.id.toString(),
+            role_offered: existingOffer.role_offered,
+            proposed_wage: Number(existingOffer.proposed_wage),
+            contract_years: existingOffer.contract_years,
+            signing_bonus: Number(existingOffer.signing_bonus),
+            status: existingOffer.status,
+            createdAt: existingOffer.created_at,
+          }
+        : null,
+    };
+  }
+
+  async makeStaffOffer(data: {
+    staff_id: string;
+    club_id: string;
+    role_offered?: string;
+    proposed_wage?: number;
+    contract_years?: number;
+    signing_bonus?: number;
+  }) {
+    const staffId = BigInt(data.staff_id);
+    const clubId = BigInt(data.club_id);
+
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      include: {
+        staff_contracts: {
+          where: { status: 'ACTIVE' },
+        },
+      },
+    });
+
+    if (!staff) {
+      throw new NotFoundException('Không tìm thấy thông tin nhân viên');
+    }
+
+    const currentClubId = staff.staff_contracts[0]?.club_id || null;
+    if (currentClubId && currentClubId === clubId) {
+      throw new BadRequestException('Nhân sự này đã và đang làm việc tại CLB của bạn!');
+    }
+
+    const proposedWage = Number(data.proposed_wage) || Math.round((staff.reputation || 5000) * 1.8);
+    const contractYears = Math.min(5, Math.max(1, Number(data.contract_years) || 2));
+    const signingBonus = Number(data.signing_bonus) || 0;
+    const roleOffered = (data.role_offered as any) || staff.staff_type;
+
+    const existing = await this.prisma.staff_offers.findFirst({
+      where: {
+        staff_id: staffId,
+        club_id: clubId,
+        status: 'PENDING',
+      },
+    });
+
+    if (existing) {
+      const updated = await this.prisma.staff_offers.update({
+        where: { id: existing.id },
+        data: {
+          role_offered: roleOffered,
+          proposed_wage: proposedWage,
+          contract_years: contractYears,
+          signing_bonus: signingBonus,
+          updated_at: new Date(),
+        },
+      });
+      return {
+        message: 'Đã cập nhật lại lời đề nghị tuyển mộ nhân sự!',
+        offer: {
+          id: updated.id.toString(),
+          role_offered: updated.role_offered,
+          proposed_wage: Number(updated.proposed_wage),
+          contract_years: updated.contract_years,
+          status: updated.status,
+        },
+      };
+    }
+
+    const offer = await this.prisma.staff_offers.create({
+      data: {
+        staff_id: staffId,
+        club_id: clubId,
+        current_club_id: currentClubId,
+        role_offered: roleOffered,
+        proposed_wage: proposedWage,
+        contract_years: contractYears,
+        signing_bonus: signingBonus,
+        status: 'PENDING',
+      },
+    });
+
+    return {
+      message: 'Đã gửi lời đề nghị tuyển mộ nhân sự thành công!',
+      offer: {
+        id: offer.id.toString(),
+        role_offered: offer.role_offered,
+        proposed_wage: Number(offer.proposed_wage),
+        contract_years: offer.contract_years,
+        status: offer.status,
+      },
+    };
+  }
+
+  async cancelStaffOffer(offerId: bigint, clubId?: bigint) {
+    const offer = await this.prisma.staff_offers.findUnique({
+      where: { id: offerId },
+    });
+
+    if (!offer) {
+      throw new NotFoundException('Không tìm thấy lời đề nghị');
+    }
+
+    if (clubId && offer.club_id !== clubId) {
+      throw new BadRequestException('Bạn không có quyền hủy lời đề nghị này');
+    }
+
+    if (offer.status !== 'PENDING') {
+      throw new BadRequestException('Lời đề nghị này đã được xử lý trước đó');
+    }
+
+    await this.prisma.staff_offers.update({
+      where: { id: offerId },
+      data: { status: 'CANCELLED' },
+    });
+
+    return { message: 'Đã hủy lời đề nghị tuyển mộ nhân sự thành công!' };
+  }
+
+  async getStaffOffers(clubId: bigint) {
+    const offers = await this.prisma.staff_offers.findMany({
+      where: { club_id: clubId },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            staff_type: true,
+            coaching_license: true,
+            photo_url: true,
+            countries: { select: { name: true, code: true, flag_url: true } },
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return offers.map((o) => ({
+      id: o.id.toString(),
+      staff_id: o.staff_id.toString(),
+      staff_name: o.staff.name,
+      staff_type: o.staff.staff_type,
+      coaching_license: o.staff.coaching_license,
+      role_offered: o.role_offered,
+      proposed_wage: Number(o.proposed_wage),
+      contract_years: o.contract_years,
+      signing_bonus: Number(o.signing_bonus),
+      status: o.status,
+      created_at: o.created_at,
+      country: o.staff.countries,
+      photo_url: o.staff.photo_url,
+    }));
+  }
+
+
+  async getClubStaff(clubId: bigint) {
+    const contracts = await this.prisma.staff_contracts.findMany({
+      where: {
+        club_id: clubId,
+        status: 'ACTIVE',
+      },
+      include: {
+        staff: {
+          include: {
+            countries: { select: { id: true, name: true, code: true, flag_url: true } },
+            preferred_formation: { select: { id: true, name: true, code: true } },
+            secondary_formation: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+      orderBy: {
+        staff: { staff_type: 'asc' },
+      },
+    });
+
+    return contracts.map((c) => {
+      const s = c.staff;
+      return {
+        id: s.id.toString(),
+        contractId: c.id.toString(),
+        name: s.name || 'Staff',
+        staffType: s.staff_type,
+        coachingLicense: s.coaching_license,
+        tacticalStyle: s.tactical_style,
+        reputation: s.reputation,
+        photoUrl: s.photo_url,
+        nationality: s.countries?.name || 'Quốc tế',
+        countryCode: s.countries?.code || 'INT',
+        countryFlag: s.countries?.flag_url || null,
+        preferredFormation: s.preferred_formation
+          ? {
+              id: s.preferred_formation.id.toString(),
+              name: s.preferred_formation.name,
+              code: s.preferred_formation.code,
+            }
+          : null,
+        secondaryFormation: s.secondary_formation
+          ? {
+              id: s.secondary_formation.id.toString(),
+              name: s.secondary_formation.name,
+              code: s.secondary_formation.code,
+            }
+          : null,
+        wage: Number(c.salary),
+        startDate: c.start_date,
+        endDate: c.end_date,
+        status: c.status,
+      };
+    });
+  }
+
 }

@@ -13,7 +13,28 @@ import { TransfersService } from './transfers.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '@/common/decorators/current-user.decorator';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+class MakeStaffOfferDto {
+  @IsNotEmpty({ message: 'Thiếu thông tin staff_id của nhân sự' })
+  @IsString()
+  staff_id: string;
 
+  @IsNotEmpty({ message: 'Thiếu thông tin club_id của câu lạc bộ' })
+  @IsString()
+  club_id: string;
+
+  @IsOptional()
+  @IsString()
+  role_offered?: string;
+
+  @IsOptional()
+  proposed_wage?: any;
+
+  @IsOptional()
+  contract_years?: any;
+
+  @IsOptional()
+  signing_bonus?: any;
+}
 function parseOptionalNumber(val: any): number | undefined {
   if (val === undefined || val === null || val === '') return undefined;
   const num = Number(val);
@@ -210,4 +231,50 @@ export class TransfersController {
   ) {
     return this.transfersService.hireStaff(BigInt(body.clubId), BigInt(body.staffId));
   }
+
+  @Get('staff/:id')
+  @ApiOperation({ summary: 'Lấy chi tiết hồ sơ & chỉ số năng lực của nhân sự' })
+  @ApiQuery({ name: 'clubId', required: false, description: 'ID CLB của người dùng để check đề nghị hiện tại' })
+  async getStaffDetail(
+    @Param('id') id: string,
+    @Query('clubId') clubId?: string,
+  ) {
+    return this.transfersService.getStaffDetail(BigInt(id), clubId ? BigInt(clubId) : undefined);
+  }
+
+  @Post('staff-offers')
+  @ApiOperation({ summary: 'Gửi hoặc cập nhật lời đề nghị tuyển mộ nhân sự' })
+  async makeStaffOffer(@Body() body: MakeStaffOfferDto) {
+    return this.transfersService.makeStaffOffer({
+      staff_id: body.staff_id,
+      club_id: body.club_id,
+      role_offered: body.role_offered,
+      proposed_wage: body.proposed_wage !== undefined ? Number(body.proposed_wage) : undefined,
+      contract_years: body.contract_years !== undefined ? Number(body.contract_years) : undefined,
+      signing_bonus: body.signing_bonus !== undefined ? Number(body.signing_bonus) : undefined,
+    });
+  }
+
+  @Get('staff-offers/club/:clubId')
+  @ApiOperation({ summary: 'Lấy danh sách các đề nghị tuyển mộ staff của CLB' })
+  async getStaffOffers(@Param('clubId') clubId: string) {
+    return this.transfersService.getStaffOffers(BigInt(clubId));
+  }
+
+  @Put('staff-offers/:id/cancel')
+  @ApiOperation({ summary: 'Hủy lời đề nghị tuyển mộ nhân sự' })
+  async cancelStaffOffer(
+    @Param('id') id: string,
+    @Body() body: { clubId?: string },
+  ) {
+    return this.transfersService.cancelStaffOffer(BigInt(id), body?.clubId ? BigInt(body.clubId) : undefined);
+  }
+
+
+  @Get('club/:clubId/staff')
+  @ApiOperation({ summary: 'Lấy danh sách ban huấn luyện và nhân sự của CLB' })
+  async getClubStaff(@Param('clubId') clubId: string) {
+    return this.transfersService.getClubStaff(BigInt(clubId));
+  }
+
 }
