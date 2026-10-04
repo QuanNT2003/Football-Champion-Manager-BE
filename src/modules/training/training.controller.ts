@@ -3,10 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TrainingService } from './training.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
-class ScheduleTrainingDto {
-  trainingTypeId: string;
-  intensity?: number;
-}
+import { ScheduleTrainingDto } from './dto';
 
 @ApiTags('Tập Luyện & Phát Triển Cầu Thủ')
 @Controller('training')

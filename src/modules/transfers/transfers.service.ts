@@ -1,22 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
-export interface GetMarketFilterDto {
-  page?: number;
-  limit?: number;
-  status?: 'ALL' | 'FREE' | 'LOAN' | 'TRANSFER';
-  isLoan?: boolean;
-  minPrice?: number;
-  maxPrice?: number;
-  minAge?: number;
-  maxAge?: number;
-  nationalityId?: string;
-  minOvr?: number;
-  maxOvr?: number;
-  attributes?: string;
-  search?: string;
-  position?: string;
-}
+import { GetMarketFilterDto } from './dto';
 
 @Injectable()
 export class TransfersService {

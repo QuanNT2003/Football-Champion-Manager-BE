@@ -11,11 +11,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { PlayersService } from './players.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
-class UpdateListingDto {
-  isTransferListed: boolean;
-  isLoanListed: boolean;
-  askingPrice?: number;
-}
+import { UpdateListingDto, QueryPlayerDto } from './dto';
 
 @ApiTags('Cầu Thủ & Đội Hình')
 @Controller('players')
@@ -30,21 +26,14 @@ export class PlayersController {
   @ApiQuery({ name: 'clubId', required: false })
   @ApiQuery({ name: 'nationalityId', required: false })
   @ApiQuery({ name: 'squadType', required: false, example: 'FIRST_TEAM' })
-  async getPlayers(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
-    @Query('search') search?: string,
-    @Query('clubId') clubId?: string,
-    @Query('nationalityId') nationalityId?: string,
-    @Query('squadType') squadType?: string,
-  ) {
+  async getPlayers(@Query() query: QueryPlayerDto) {
     return this.playersService.getPlayers(
-      Number(page),
-      Number(limit),
-      search,
-      clubId,
-      nationalityId,
-      squadType,
+      query.page || 1,
+      query.limit || 20,
+      query.search,
+      query.clubId,
+      query.nationalityId,
+      query.squadType,
     );
   }
 

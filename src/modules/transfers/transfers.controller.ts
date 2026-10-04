@@ -12,65 +12,19 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { TransfersService } from './transfers.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser, AuthUser } from '@/common/decorators/current-user.decorator';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
-class MakeStaffOfferDto {
-  @IsNotEmpty({ message: 'Thiếu thông tin staff_id của nhân sự' })
-  @IsString()
-  staff_id: string;
+import {
+  MakeOfferDto,
+  RespondOfferDto,
+  CancelOfferDto,
+  MakeStaffOfferDto,
+  HireStaffDto,
+  GetMarketFilterDto,
+} from './dto';
 
-  @IsNotEmpty({ message: 'Thiếu thông tin club_id của câu lạc bộ' })
-  @IsString()
-  club_id: string;
-
-  @IsOptional()
-  @IsString()
-  role_offered?: string;
-
-  @IsOptional()
-  proposed_wage?: any;
-
-  @IsOptional()
-  contract_years?: any;
-
-  @IsOptional()
-  signing_bonus?: any;
-}
 function parseOptionalNumber(val: any): number | undefined {
   if (val === undefined || val === null || val === '') return undefined;
   const num = Number(val);
   return isNaN(num) ? undefined : num;
-}
-
-class MakeOfferDto {
-  @IsNotEmpty({ message: 'Thiếu thông tin player_id của cầu thủ' })
-  @IsString()
-  player_id: string;
-
-  @IsOptional()
-  @IsString()
-  to_club_id?: string;
-
-  @IsOptional()
-  offer_amount?: any;
-
-  @IsOptional()
-  is_loan?: any;
-
-  @IsOptional()
-  proposed_wage?: any;
-
-  @IsOptional()
-  contract_years?: any;
-}
-
-class RespondOfferDto {
-  @IsOptional()
-  @IsString()
-  club_id?: string;
-
-  @IsNotEmpty({ message: 'Thiếu thông tin response (ACCEPTED hoặc REJECTED)' })
-  @IsString()
-  response: 'ACCEPTED' | 'REJECTED';
 }
 
 @ApiTags('Thị Trường Chuyển Nhượng')
@@ -174,24 +128,34 @@ export class TransfersController {
   }
 
   @Put('offers/:id/cancel')
-  @Post('offers/:id/cancel')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Hủy lời đề nghị chuyển nhượng đã gửi' })
+  @ApiOperation({ summary: 'Hủy lời đề nghị chuyển nhượng đã gửi (PUT)' })
   async cancelOffer(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body?: { club_id?: string; clubId?: string },
+    @Body() body?: CancelOfferDto,
   ) {
     const clubId = body?.club_id ? BigInt(body.club_id) : (body?.clubId ? BigInt(body.clubId) : (user?.clubId ? BigInt(user.clubId) : undefined));
     return this.transfersService.cancelOffer(BigInt(id), clubId);
   }
 
-  @Put('offers/:id/respond')
-  @Post('offers/:id/respond')
+  @Post('offers/:id/cancel')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Chấp nhận hoặc từ chối đề nghị chuyển nhượng' })
+  @ApiOperation({ summary: 'Hủy lời đề nghị chuyển nhượng đã gửi (POST alias)' })
+  async cancelOfferPost(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body?: CancelOfferDto,
+  ) {
+    return this.cancelOffer(user, id, body);
+  }
+
+  @Put('offers/:id/respond')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Chấp nhận hoặc từ chối đề nghị chuyển nhượng (PUT)' })
   async respondOffer(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -202,6 +166,18 @@ export class TransfersController {
       throw new Error('Thiếu thông tin CLB quyết định đề nghị (club_id)');
     }
     return this.transfersService.respondOffer(BigInt(id), clubId, dto.response);
+  }
+
+  @Post('offers/:id/respond')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Chấp nhận hoặc từ chối đề nghị chuyển nhượng (POST alias)' })
+  async respondOfferPost(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: RespondOfferDto,
+  ) {
+    return this.respondOffer(user, id, dto);
   }
 
   @Get('staff-market')
@@ -227,7 +203,7 @@ export class TransfersController {
   @Post('hire-staff')
   @ApiOperation({ summary: 'Ký hợp đồng tuyển dụng nhân viên tự do cho CLB' })
   async hireStaff(
-    @Body() body: { clubId: string; staffId: string },
+    @Body() body: HireStaffDto,
   ) {
     return this.transfersService.hireStaff(BigInt(body.clubId), BigInt(body.staffId));
   }
@@ -265,16 +241,15 @@ export class TransfersController {
   @ApiOperation({ summary: 'Hủy lời đề nghị tuyển mộ nhân sự' })
   async cancelStaffOffer(
     @Param('id') id: string,
-    @Body() body: { clubId?: string },
+    @Body() body: CancelOfferDto,
   ) {
-    return this.transfersService.cancelStaffOffer(BigInt(id), body?.clubId ? BigInt(body.clubId) : undefined);
+    const targetClubId = body?.club_id || body?.clubId;
+    return this.transfersService.cancelStaffOffer(BigInt(id), targetClubId ? BigInt(targetClubId) : undefined);
   }
-
 
   @Get('club/:clubId/staff')
   @ApiOperation({ summary: 'Lấy danh sách ban huấn luyện và nhân sự của CLB' })
   async getClubStaff(@Param('clubId') clubId: string) {
     return this.transfersService.getClubStaff(BigInt(clubId));
   }
-
 }

@@ -6,9 +6,10 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { MatchesService } from './matches.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { QueryMatchDto } from './dto';
 
 @ApiTags('Trận Đấu & Match Engine')
 @Controller('matches')
@@ -17,27 +18,14 @@ export class MatchesController {
 
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách lịch thi đấu & kết quả' })
-  @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 20 })
-  @ApiQuery({ name: 'clubId', required: false })
-  @ApiQuery({ name: 'seasonId', required: false })
-  @ApiQuery({ name: 'seasonDay', required: false, example: 1 })
-  @ApiQuery({ name: 'status', required: false, enum: ['SCHEDULED', 'FINISHED'] })
-  async getMatches(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
-    @Query('clubId') clubId?: string,
-    @Query('seasonId') seasonId?: string,
-    @Query('seasonDay') seasonDay?: number,
-    @Query('status') status?: string,
-  ) {
+  async getMatches(@Query() query: QueryMatchDto) {
     return this.matchesService.getMatches(
-      Number(page),
-      Number(limit),
-      clubId,
-      seasonId,
-      seasonDay,
-      status,
+      query.page || 1,
+      query.limit || 20,
+      query.clubId,
+      query.seasonId,
+      query.seasonDay,
+      query.status,
     );
   }
 
