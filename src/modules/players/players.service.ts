@@ -568,6 +568,7 @@ export class PlayersService {
         reputation: p.reputation,
         potential: p.potential,
         market_value: p.market_value,
+        photo_url: p.photo_url,
         position: primaryPos?.positions ? {
           code: primaryPos.positions.code,
           name: primaryPos.positions.name,
