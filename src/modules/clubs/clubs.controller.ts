@@ -66,6 +66,12 @@ export class ClubsController {
     return this.clubsService.claimRandomStarterClub(BigInt(user.id), dto.countryId, Number(dto.tier));
   }
 
+  @Get(':id/dashboard')
+  @ApiOperation({ summary: 'Lấy dữ liệu tổng quan cho trang Dashboard của CLB (Trận đấu tiếp theo, BXH, Chỉ số OVR, v.v.)' })
+  async getClubDashboard(@Param('id') id: string) {
+    return this.clubsService.getClubDashboard(BigInt(id));
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Lấy thông tin chi tiết một CLB theo ID' })
   async getClubById(@Param('id') id: string) {

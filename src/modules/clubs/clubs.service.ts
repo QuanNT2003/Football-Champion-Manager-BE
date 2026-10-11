@@ -425,4 +425,245 @@ export class ClubsService {
       remaining_cash: currentCash - costCash,
     };
   }
+
+  async getClubDashboard(clubId: bigint) {
+    const club = await this.prisma.clubs.findUnique({
+      where: { id: clubId },
+      include: {
+        countries: true,
+        cities: true,
+        financial_accounts: true,
+        stadiums: true,
+      },
+    });
+
+    if (!club) {
+      throw new NotFoundException('Không tìm thấy câu lạc bộ');
+    }
+
+    // 1. Squad metrics (OVR, Morale, Players Count)
+    const players = await this.prisma.players.findMany({
+      where: { current_club_id: clubId },
+      include: {
+        player_status: true,
+      },
+    });
+
+    const playersCount = players.length;
+    const avgOvr = playersCount > 0
+      ? Math.round((players.reduce((sum, p) => {
+          const rating = p.reputation ? Math.min(99, Math.max(40, p.reputation / 100)) : (p.potential || 50);
+          return sum + rating;
+        }, 0) / playersCount) * 10) / 10
+      : 50.0;
+
+    const avgMorale = playersCount > 0
+      ? Math.round(players.reduce((sum, p) => sum + (p.player_status?.morale ?? 90), 0) / playersCount)
+      : 90;
+
+    // 2. Standing in Domestic League (chính xác theo giải VĐQG mà CLB thi đấu)
+    const leagueStanding = await this.prisma.stage_standings.findFirst({
+      where: {
+        club_id: clubId,
+        competition_stages: {
+          competition_seasons: {
+            competitions: {
+              competition_type: 'DOMESTIC_LEAGUE',
+            },
+          },
+        },
+      },
+      include: {
+        competition_stages: {
+          include: {
+            competition_seasons: {
+              include: {
+                competitions: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    const comp = leagueStanding?.competition_stages?.competition_seasons?.competitions;
+    const compName = comp?.name || 'Giải Hạng Nhì (Tier 3)';
+    const compTier = comp?.tier ?? 3;
+
+    // 3. Next Match
+    const nextMatch = await this.prisma.matches.findFirst({
+      where: {
+        OR: [
+          { home_club_id: clubId },
+          { away_club_id: clubId },
+        ],
+        status: { in: ['SCHEDULED', 'NOT_STARTED', 'WAITING', ''] },
+      },
+      include: {
+        clubs_matches_home_club_idToclubs: true,
+        clubs_matches_away_club_idToclubs: true,
+        competition_seasons: {
+          include: {
+            competitions: true,
+          },
+        },
+      },
+      orderBy: [
+        { match_date: 'asc' },
+        { kickoff_time: 'asc' },
+        { id: 'asc' },
+      ],
+    });
+
+    // 4. Last Match (chỉ lấy trận đã hoàn thành trong DB, không có fallback giả)
+    const lastMatch = await this.prisma.matches.findFirst({
+      where: {
+        OR: [
+          { home_club_id: clubId },
+          { away_club_id: clubId },
+        ],
+        status: { in: ['FINISHED', 'COMPLETED'] },
+      },
+      include: {
+        clubs_matches_home_club_idToclubs: true,
+        clubs_matches_away_club_idToclubs: true,
+        competition_seasons: {
+          include: {
+            competitions: true,
+          },
+        },
+      },
+      orderBy: [
+        { match_date: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    // 5. Danh sách giải đấu thật mà CLB đang tham gia từ DB
+    const allStandings = await this.prisma.stage_standings.findMany({
+      where: { club_id: clubId },
+      include: {
+        competition_stages: {
+          include: {
+            competition_seasons: {
+              include: {
+                competitions: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    const competitionsList = allStandings.map((s, idx) => {
+      const c = s.competition_stages?.competition_seasons?.competitions;
+      const isLeague = c?.competition_type === 'DOMESTIC_LEAGUE';
+      const isCup = c?.competition_type === 'DOMESTIC_CUP';
+      return {
+        id: c?.id?.toString() || (idx + 1).toString(),
+        name: c?.name || (isLeague ? compName : 'Cúp Quốc Gia'),
+        type: isLeague ? 'LEAGUE' : isCup ? 'CUP' : 'CONTINENTAL',
+        color: isLeague ? 'gold' : isCup ? 'amber' : 'blue',
+        icon: isLeague ? '🏆' : isCup ? '🥇' : '🌍',
+        sub_title: isLeague ? (club.countries?.name || 'Việt Nam') : 'Knockout',
+        rank: isLeague ? s.position : undefined,
+        points: isLeague ? s.points : undefined,
+        round_label: isCup ? 'Vòng 1/32' : undefined,
+        status_label: isLeague ? `Hạng ${s.position} • ${s.points} Điểm` : 'Vòng 1/32 Knockout',
+      };
+    });
+
+    // Timeline context
+    const timeline = await this.prisma.competition_seasons.findFirst({
+      orderBy: { id: 'desc' },
+    });
+
+    const fin = club.financial_accounts?.[0] || null;
+    const isHomeNext = nextMatch ? nextMatch.home_club_id === clubId : true;
+
+    return {
+      club: {
+        id: club.id.toString(),
+        name: club.name,
+        short_name: club.short_name,
+        logo_url: club.logo_url,
+        country: club.countries?.name || 'Việt Nam',
+        country_code: club.countries?.code || 'VN',
+        flag_url: club.countries?.flag_url,
+        reputation: club.reputation || 3000,
+        popularity: Number(((club.reputation ? Math.min(99, Math.max(10, club.reputation / 100)) : 30.0)).toFixed(1)),
+        team_morale: avgMorale,
+        avg_ovr: avgOvr,
+        players_count: playersCount,
+        cash: fin ? Number(fin.balance_cash) : 0,
+        gold: fin ? Number(fin.balance_gold) : 0,
+        league_rank: leagueStanding ? leagueStanding.position : 1,
+        league_points: leagueStanding ? leagueStanding.points : 0,
+        tier_label: `Tier ${compTier}`,
+        competition_name: compName,
+      },
+      next_match: nextMatch ? (() => {
+        let kickoffFormatted = '20:00';
+        if (nextMatch.kickoff_time) {
+          const ko = new Date(nextMatch.kickoff_time);
+          const hh = String(ko.getUTCHours()).padStart(2, '0');
+          const mm = String(ko.getUTCMinutes()).padStart(2, '0');
+          kickoffFormatted = `${hh}:${mm}`;
+        }
+        return {
+        id: nextMatch.id.toString(),
+        competition_name: nextMatch.competition_seasons?.competitions?.name || compName,
+        season_day: nextMatch.season_day,
+        match_date: nextMatch.match_date,
+        kickoff_time: kickoffFormatted,
+        status: nextMatch.status,
+        is_home: isHomeNext,
+        schedule_label: `${kickoffFormatted} • Ngày ${nextMatch.season_day}`,
+        opponent: isHomeNext ? {
+          id: nextMatch.clubs_matches_away_club_idToclubs?.id.toString(),
+          name: nextMatch.clubs_matches_away_club_idToclubs?.name || 'Đối thủ',
+          short_name: nextMatch.clubs_matches_away_club_idToclubs?.short_name,
+          logo_url: nextMatch.clubs_matches_away_club_idToclubs?.logo_url,
+          is_home: false,
+        } : {
+          id: nextMatch.clubs_matches_home_club_idToclubs?.id.toString(),
+          name: nextMatch.clubs_matches_home_club_idToclubs?.name || 'Đối thủ',
+          short_name: nextMatch.clubs_matches_home_club_idToclubs?.short_name,
+          logo_url: nextMatch.clubs_matches_home_club_idToclubs?.logo_url,
+          is_home: true,
+        },
+        home_club: {
+          id: nextMatch.clubs_matches_home_club_idToclubs?.id.toString(),
+          name: nextMatch.clubs_matches_home_club_idToclubs?.name || club.name,
+          logo_url: nextMatch.clubs_matches_home_club_idToclubs?.logo_url,
+        },
+        away_club: {
+          id: nextMatch.clubs_matches_away_club_idToclubs?.id.toString(),
+          name: nextMatch.clubs_matches_away_club_idToclubs?.name || 'Đối thủ',
+          logo_url: nextMatch.clubs_matches_away_club_idToclubs?.logo_url,
+        },
+      })() : null,
+      last_match: lastMatch ? {
+        id: lastMatch.id.toString(),
+        competition_name: lastMatch.competition_seasons?.competitions?.name || 'VĐQG',
+        home_club_name: lastMatch.clubs_matches_home_club_idToclubs?.name || '',
+        away_club_name: lastMatch.clubs_matches_away_club_idToclubs?.name || '',
+        home_score: lastMatch.home_score ?? 0,
+        away_score: lastMatch.away_score ?? 0,
+      } : null,
+      competitions: competitionsList,
+      metrics: {
+        avg_ovr: avgOvr,
+        players_count: playersCount,
+        team_morale: avgMorale,
+      },
+      timeline: {
+        season_number: timeline ? Number(timeline.season_id) || 1 : 1,
+        current_day: nextMatch ? nextMatch.season_day : 3,
+        total_days: 34,
+      },
+    };
+  }
 }
