@@ -910,7 +910,7 @@ export class TransfersService {
         include: { staff_attribute_types: true },
       }),
       this.prisma.staff_role_attributes.findMany({
-        where: { staff_type: staff.staff_type },
+        where: { staff_type: staff.staff_type as any },
       }),
     ]);
 

@@ -39,13 +39,50 @@ export class TacticsService {
     };
   }
 
-  async getClubTactic(clubId: bigint) {
-    // 1. Tìm thông tin HLV trưởng của CLB
-    const headCoachContract = await this.prisma.staff_contracts.findFirst({
-      where: {
-        club_id: clubId,
-        staff: { staff_type: 'HEAD_COACH' },
-      },
+  async getClubTactic(clubId: bigint, squadType: string = 'FIRST_TEAM') {
+    // 1. Tìm thông tin HLV trưởng của CLB (ưu tiên HLV đội trẻ nếu truy vấn tuyến trẻ)
+    let headCoachContract = null;
+    if (squadType === 'YOUTH_U21' || squadType === 'YOUTH_U19') {
+      headCoachContract = await this.prisma.staff_contracts.findFirst({
+        where: {
+          club_id: clubId,
+          OR: [
+            { squad_type: (squadType as any) },
+            { staff: { staff_type: 'HEAD_COACH_YOUTH' } },
+          ],
+        },
+        include: {
+          staff: {
+            include: {
+              preferred_formation: {
+                include: {
+                  formation_positions: {
+                    include: { positions: true },
+                    orderBy: { order_no: 'asc' },
+                  },
+                },
+              },
+              secondary_formation: {
+                include: {
+                  formation_positions: {
+                    include: { positions: true },
+                    orderBy: { order_no: 'asc' },
+                  },
+                },
+              },
+              countries: true,
+            },
+          },
+        },
+      });
+    }
+
+    if (!headCoachContract) {
+      headCoachContract = await this.prisma.staff_contracts.findFirst({
+        where: {
+          club_id: clubId,
+          staff: { staff_type: 'HEAD_COACH' },
+        },
       include: {
         staff: {
           include: {
@@ -70,10 +107,14 @@ export class TacticsService {
         },
       },
     });
+    }
 
-    // 2. Tìm tactic đã lưu của CLB
+    // 2. Tìm tactic đã lưu của CLB theo tuyến đội
     let tactic: any = await this.prisma.club_tactics.findFirst({
-      where: { club_id: clubId },
+      where: {
+        club_id: clubId,
+        squad_type: (squadType as any) || 'FIRST_TEAM',
+      },
       include: {
         formations: {
           include: {
@@ -118,7 +159,8 @@ export class TacticsService {
         const createdTactic = await this.prisma.club_tactics.create({
           data: {
             club_id: clubId,
-            name: 'Đội hình chính',
+            squad_type: (squadType as any) || 'FIRST_TEAM',
+            name: squadType === 'YOUTH_U21' ? 'Đội hình trẻ U21' : 'Đội hình chính',
             formation_id: defaultFormationId,
             mentality: headCoachContract?.staff?.tactical_style === 'TIKI_TAKA' ? 'ATTACKING' : 'BALANCED',
             tempo: 55,
@@ -129,10 +171,17 @@ export class TacticsService {
         });
 
         // Lấy 20 cầu thủ đầu tiên của CLB để xếp 11 đá chính và 9 ghế dự bị
+        const playerWhere: any = { current_club_id: clubId };
+        if (squadType === 'YOUTH_U21') {
+          playerWhere.OR = [
+            { squad_type: 'YOUTH_U21' },
+            { age: { lte: 21 } },
+          ];
+        }
         const clubPlayers = await this.prisma.players.findMany({
-          where: { current_club_id: clubId },
+          where: playerWhere,
           take: 20,
-          orderBy: { squad_number: 'asc' },
+          orderBy: [{ squad_type: 'asc' }, { squad_number: 'asc' }],
         });
 
         const targetFormation = await this.prisma.formations.findUnique({
@@ -289,35 +338,23 @@ export class TacticsService {
 
   async updateClubTactic(
     clubId: bigint,
-    dto: {
-      formationId?: string;
-      name?: string;
-      mentality?: string;
-      tempo?: number;
-      passingStyle?: string;
-      pressingIntensity?: number;
-      defensiveLine?: number;
-      positions?: Array<{
-        formationPositionId: string;
-        playerId?: string | null;
-        role?: string;
-        duty?: string;
-      }>;
-      substitutes?: Array<{
-        playerId?: string | null;
-        orderNo?: number;
-      }>;
-    },
+    dto: any,
+    squadType: string = 'FIRST_TEAM',
   ) {
+    const finalSquadType = dto.squadType || squadType || 'FIRST_TEAM';
     let tactic = await this.prisma.club_tactics.findFirst({
-      where: { club_id: clubId },
+      where: {
+        club_id: clubId,
+        squad_type: (finalSquadType as any),
+      },
     });
 
     if (!tactic) {
       tactic = await this.prisma.club_tactics.create({
         data: {
           club_id: clubId,
-          name: dto.name || 'Đội hình thi đấu',
+          squad_type: (finalSquadType as any),
+          name: dto.name || (finalSquadType === 'YOUTH_U21' ? 'Đội hình trẻ U21' : 'Đội hình thi đấu'),
           formation_id: BigInt(dto.formationId || '1'),
           mentality: dto.mentality || 'BALANCED',
           tempo: dto.tempo ?? 50,
@@ -462,7 +499,7 @@ export class TacticsService {
 
     return {
       message: 'Cập nhật chiến thuật, đội hình xuất phát và danh sách dự bị thành công!',
-      tactic: await this.getClubTactic(clubId),
+      tactic: await this.getClubTactic(clubId, finalSquadType),
     };
   }
 }

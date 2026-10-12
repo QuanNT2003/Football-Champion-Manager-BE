@@ -421,9 +421,11 @@ export class PlayersService {
         label: `${staminaCondition}% Thể Lực`,
       },
       experience: {
+        points: (player as any).experience ?? 0,
         percentage: experiencePct,
-        label: `${experiencePct}%`,
+        label: `${(player as any).experience ?? 0} EXP`,
       },
+      experience_points: (player as any).experience ?? 0,
       average_quality: Number(ovr),
       nationality: player.countries_players_nationality_idTocountries?.name || null,
       nationality_detail: player.countries_players_nationality_idTocountries ? {
@@ -567,6 +569,7 @@ export class PlayersService {
         age: p.age,
         reputation: p.reputation,
         potential: p.potential,
+        experience: (p as any).experience ?? 0,
         market_value: p.market_value,
         photo_url: p.photo_url,
         position: primaryPos?.positions ? {

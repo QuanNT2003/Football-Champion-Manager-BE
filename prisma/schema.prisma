@@ -222,6 +222,7 @@ model club_tactic_positions {
 model club_tactics {
   id                    BigInt                  @id @default(autoincrement()) @db.UnsignedBigInt
   club_id               BigInt                  @db.UnsignedBigInt
+  squad_type            club_tactics_squad_type @default(FIRST_TEAM)
   name                  String                  @default("") @db.VarChar(100)
   formation_id          BigInt                  @db.UnsignedBigInt
   mentality             String                  @default("") @db.VarChar(30)
@@ -238,6 +239,7 @@ model club_tactics {
 
   @@index([club_id], map: "idx_club_tactics_club_id")
   @@index([formation_id], map: "idx_club_tactics_formation_id")
+  @@index([club_id, squad_type], map: "idx_club_tactics_club_squad")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1304,6 +1306,7 @@ model players {
   weight                                               Decimal                      @default(0.00) @db.Decimal(5, 2)
   reputation                                           Int                          @default(0)
   potential                                            Int                          @default(0)
+  experience                                           Int                          @default(0)
   market_value                                         Decimal                      @default(0.00) @db.Decimal(18, 2)
   current_club_id                                      BigInt?                      @db.UnsignedBigInt
   squad_type                                           players_squad_type           @default(FIRST_TEAM)
@@ -1434,6 +1437,7 @@ model seasons {
   end_date                   DateTime?                    @db.Date
   status                     String                       @default("") @db.VarChar(30)
   is_transfer_window_open    Boolean                      @default(true)
+  is_trophies_awarded        Boolean                      @default(false)
   award_editions             award_editions[]
   club_bonuses               club_bonuses[]
   club_news                  club_news[]
@@ -1556,25 +1560,27 @@ model staff_attributes {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model staff_contracts {
-  id                 BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
-  staff_id           BigInt     @db.UnsignedBigInt
-  club_id            BigInt     @db.UnsignedBigInt
-  start_season_id    BigInt     @default(1) @db.UnsignedBigInt
-  start_season_day   Int        @default(1)
-  end_season_id      BigInt     @default(1) @db.UnsignedBigInt
-  end_season_day     Int        @default(40)
-  start_date         DateTime   @db.Date
-  end_date           DateTime?  @db.Date
-  salary             Decimal    @default(0.0000) @db.Decimal(10, 4)
-  salary_currency_id BigInt     @db.UnsignedBigInt
-  status             String     @default("") @db.VarChar(30)
-  clubs              clubs      @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_club_id")
-  currencies         currencies @relation(fields: [salary_currency_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_salary_currency_id")
-  staff              staff      @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_staff_id")
+  id                 BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  staff_id           BigInt                     @db.UnsignedBigInt
+  club_id            BigInt                     @db.UnsignedBigInt
+  squad_type         staff_contracts_squad_type @default(FIRST_TEAM)
+  start_season_id    BigInt                     @default(1) @db.UnsignedBigInt
+  start_season_day   Int                        @default(1)
+  end_season_id      BigInt                     @default(1) @db.UnsignedBigInt
+  end_season_day     Int                        @default(40)
+  start_date         DateTime                   @db.Date
+  end_date           DateTime?                  @db.Date
+  salary             Decimal                    @default(0.0000) @db.Decimal(10, 4)
+  salary_currency_id BigInt                     @db.UnsignedBigInt
+  status             String                     @default("") @db.VarChar(30)
+  clubs              clubs                      @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_club_id")
+  currencies         currencies                 @relation(fields: [salary_currency_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_salary_currency_id")
+  staff              staff                      @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_staff_contracts_staff_id")
 
   @@index([club_id], map: "idx_staff_contracts_club_id")
   @@index([salary_currency_id], map: "idx_staff_contracts_salary_currency_id")
   @@index([staff_id], map: "idx_staff_contracts_staff_id")
+  @@index([club_id, squad_type], map: "idx_staff_contracts_squad")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1909,6 +1915,9 @@ enum staff_role_attributes_staff_type {
   SCOUT
   PHYSIO
   YOUTH_DIRECTOR
+  HEAD_COACH_YOUTH
+  ASSISTANT_COACH_YOUTH
+  YOUTH_COACH
 }
 
 enum competition_ranking_rules_ranking_type {
@@ -1934,15 +1943,6 @@ enum country_rankings_ranking_type {
   LEAGUE_COEFFICIENT
 }
 
-enum staff_staff_type {
-  HEAD_COACH
-  ASSISTANT_COACH
-  FITNESS_COACH
-  GOALKEEPING_COACH
-  SCOUT
-  PHYSIO
-  YOUTH_DIRECTOR
-}
 
 enum currencies_type {
   SOFT
@@ -2040,4 +2040,31 @@ enum club_tactic_positions_lineup_role {
   STARTING
   SUBSTITUTE
   RESERVE
+}
+
+enum club_tactics_squad_type {
+  FIRST_TEAM
+  RESERVES
+  YOUTH_U19
+  YOUTH_U21
+}
+
+enum staff_staff_type {
+  HEAD_COACH
+  ASSISTANT_COACH
+  FITNESS_COACH
+  GOALKEEPING_COACH
+  SCOUT
+  PHYSIO
+  YOUTH_DIRECTOR
+  HEAD_COACH_YOUTH
+  ASSISTANT_COACH_YOUTH
+  YOUTH_COACH
+}
+
+enum staff_contracts_squad_type {
+  FIRST_TEAM
+  RESERVES
+  YOUTH_U19
+  YOUTH_U21
 }

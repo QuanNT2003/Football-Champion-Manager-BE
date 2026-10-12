@@ -4,8 +4,9 @@ import {
   Get,
   Param,
   Put,
+  Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiPropertyOptional, ApiQuery } from '@nestjs/swagger';
 import { IsArray, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TacticsService } from './tactics.service';
@@ -43,6 +44,10 @@ export class TacticSubstituteDto {
 }
 
 export class UpdateTacticDto {
+  @ApiPropertyOptional({ enum: ['FIRST_TEAM', 'RESERVES', 'YOUTH_U19', 'YOUTH_U21'] })
+  @IsOptional()
+  @IsString()
+  squadType?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -111,17 +116,24 @@ export class TacticsController {
   }
 
   @Get('club/:clubId')
-  @ApiOperation({ summary: 'Lấy chiến thuật hiện tại và đội hình chính của CLB' })
-  async getClubTactic(@Param('clubId') clubId: string) {
-    return this.tacticsService.getClubTactic(BigInt(clubId));
+  @ApiOperation({ summary: 'Lấy chiến thuật hiện tại và đội hình theo tuyến đội (Đội 1 / U21) của CLB' })
+  @ApiQuery({ name: 'squad_type', required: false, enum: ['FIRST_TEAM', 'RESERVES', 'YOUTH_U19', 'YOUTH_U21'] })
+  async getClubTactic(
+    @Param('clubId') clubId: string,
+    @Query('squad_type') squadType?: string,
+  ) {
+    return this.tacticsService.getClubTactic(BigInt(clubId), squadType || 'FIRST_TEAM');
   }
 
   @Put('club/:clubId')
   @ApiOperation({ summary: 'Cập nhật chiến thuật, phong cách chơi và vị trí ra sân' })
+  @ApiQuery({ name: 'squad_type', required: false, enum: ['FIRST_TEAM', 'RESERVES', 'YOUTH_U19', 'YOUTH_U21'] })
   async updateClubTactic(
     @Param('clubId') clubId: string,
     @Body() dto: UpdateTacticDto,
+    @Query('squad_type') squadType?: string,
   ) {
-    return this.tacticsService.updateClubTactic(BigInt(clubId), dto);
+    const finalSquadType = squadType || dto.squadType || 'FIRST_TEAM';
+    return this.tacticsService.updateClubTactic(BigInt(clubId), dto, finalSquadType);
   }
 }
