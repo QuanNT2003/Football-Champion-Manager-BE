@@ -30,6 +30,17 @@ export class TacticPositionDto {
   duty?: string;
 }
 
+export class TacticSubstituteDto {
+  @ApiPropertyOptional()
+  @IsString()
+  playerId: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  orderNo?: number;
+}
+
 export class UpdateTacticDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -65,6 +76,13 @@ export class UpdateTacticDto {
   @IsOptional()
   @IsNumber()
   defensiveLine?: number;
+
+  @ApiPropertyOptional({ type: [TacticSubstituteDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TacticSubstituteDto)
+  substitutes?: TacticSubstituteDto[];
 
   @ApiPropertyOptional({ type: [TacticPositionDto] })
   @IsOptional()
