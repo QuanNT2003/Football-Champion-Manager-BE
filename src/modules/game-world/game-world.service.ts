@@ -187,6 +187,16 @@ export class GameWorldService implements OnApplicationBootstrap {
       } catch (err) {
         this.logger.error(`Lỗi khi tiến vòng Knockout Ngày ${nextDay}:`, err);
       }
+
+      // Tự động kiểm tra và trao cúp tức thì cho các giải đấu vừa hạ màn trong ngày (Siêu cúp Day 3, Cúp QG, VĐQG...)
+      try {
+        const awardRes = await this.competitionsService.checkAndAwardCompletedCompetitions(season.id);
+        if (awardRes.awardedCount > 0) {
+          this.logger.log(`🏆 [TROPHIES AWARDED] Ngày ${nextDay}: Đã tự động trao cúp cho ${awardRes.awardedCount} giải đấu vừa khép lại!`);
+        }
+      } catch (err) {
+        this.logger.error(`Lỗi khi tự động trao cúp ngày ${nextDay}:`, err);
+      }
     }
 
     // Các tác vụ hồi phục & tài chính hàng ngày:

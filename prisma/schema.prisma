@@ -1,24 +1,3 @@
-enum injuries_severity {
-  MILD
-  MODERATE
-  SEVERE
-}
-
-enum injuries_status {
-  ACTIVE
-  RECOVERING
-  HEALED
-}
-
-enum staff_coaching_license {
-  E
-  D
-  C
-  B
-  A
-  PRO
-}
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -220,20 +199,23 @@ model club_sponsorships {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model club_tactic_positions {
-  id                           BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
-  tactic_id                    BigInt                         @db.UnsignedBigInt
-  formation_position_id        BigInt                         @db.UnsignedBigInt
-  player_id                    BigInt?                        @db.UnsignedBigInt
-  role                         String                         @default("") @db.VarChar(50)
-  duty                         String                         @default("") @db.VarChar(30)
-  formation_positions          formation_positions            @relation(fields: [formation_position_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_formation_position_id")
-  players                      players?                       @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_player_id")
-  club_tactics                 club_tactics                   @relation(fields: [tactic_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_tactic_id")
+  id                           BigInt                            @id @default(autoincrement()) @db.UnsignedBigInt
+  tactic_id                    BigInt                            @db.UnsignedBigInt
+  formation_position_id        BigInt?                           @db.UnsignedBigInt
+  player_id                    BigInt?                           @db.UnsignedBigInt
+  role                         String                            @default("") @db.VarChar(50)
+  duty                         String                            @default("") @db.VarChar(30)
+  lineup_role                  club_tactic_positions_lineup_role @default(STARTING)
+  order_no                     Int                               @default(0)
+  formation_positions          formation_positions?              @relation(fields: [formation_position_id], references: [id], map: "fk_club_tactic_positions_formation_position_id")
+  players                      players?                          @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_player_id")
+  club_tactics                 club_tactics                      @relation(fields: [tactic_id], references: [id], onDelete: Cascade, map: "fk_club_tactic_positions_tactic_id")
   tactic_position_instructions tactic_position_instructions[]
 
   @@index([formation_position_id], map: "idx_club_tactic_positions_formation_position_id")
   @@index([player_id], map: "idx_club_tactic_positions_player_id")
   @@index([tactic_id], map: "idx_club_tactic_positions_tactic_id")
+  @@index([tactic_id, lineup_role, order_no], map: "idx_club_tactic_positions_role")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -285,6 +267,7 @@ model clubs {
   club_rankings                                           club_rankings[]
   club_sponsorships                                       club_sponsorships[]
   club_tactics                                            club_tactics[]
+  club_trophies                                           club_trophies[]
   cities                                                  cities                   @relation(fields: [city_id], references: [id], onDelete: Cascade, map: "fk_clubs_city_id")
   countries                                               countries                @relation(fields: [country_id], references: [id], onDelete: Cascade, map: "fk_clubs_country_id")
   competitions                                            competitions?            @relation(fields: [current_competition_id], references: [id], map: "fk_clubs_current_competition_id")
@@ -310,8 +293,8 @@ model clubs {
   scouting_assignments                                    scouting_assignments[]
   stadiums                                                stadiums[]
   staff_contracts                                         staff_contracts[]
-  staff_offers_staff_offers_club_idToclubs         staff_offers[]           @relation("staff_offers_club_idToclubs")
-  staff_offers_staff_offers_current_club_idToclubs staff_offers[]           @relation("staff_offers_current_club_idToclubs")
+  staff_offers_staff_offers_club_idToclubs                staff_offers[]           @relation("staff_offers_club_idToclubs")
+  staff_offers_staff_offers_current_club_idToclubs        staff_offers[]           @relation("staff_offers_current_club_idToclubs")
   stage_standings                                         stage_standings[]
   stage_teams                                             stage_teams[]
   training_sessions                                       training_sessions[]
@@ -328,7 +311,6 @@ model clubs {
   @@index([world_id, ranking_points(sort: Desc)], map: "idx_clubs_points")
   @@index([world_id], map: "idx_clubs_world_id")
   @@index([world_id, world_rank], map: "idx_clubs_world_ranking")
-  club_trophies                                           club_trophies[]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -411,6 +393,7 @@ model competition_seasons {
   confederation_id                       BigInt?                                  @db.UnsignedBigInt
   name                                   String                                   @default("") @db.VarChar(150)
   status                                 String                                   @default("") @db.VarChar(30)
+  is_trophies_awarded                    Boolean                                  @default(false)
   competition_prizes                     competition_prizes[]
   competition_season_qualification_rules competition_season_qualification_rules[]
   competitions                           competitions                             @relation(fields: [competition_id], references: [id], onDelete: Cascade, map: "fk_competition_seasons_competition_id")
@@ -466,6 +449,7 @@ model competitions {
   age_limit                                                                                           Int?                              @db.UnsignedTinyInt
   logo_url                                                                                            String?                           @db.VarChar(255)
   trophy_url                                                                                          String?                           @db.VarChar(255)
+  club_trophies                                                                                       club_trophies[]
   clubs                                                                                               clubs[]
   competition_qualification_rules_competition_qualification_rules_competition_idTocompetitions        competition_qualification_rules[] @relation("competition_qualification_rules_competition_idTocompetitions")
   competition_qualification_rules_competition_qualification_rules_target_competition_idTocompetitions competition_qualification_rules[] @relation("competition_qualification_rules_target_competition_idTocompetitions")
@@ -479,7 +463,6 @@ model competitions {
   @@index([country_id], map: "idx_competitions_country_id")
   @@index([tier, competition_type], map: "idx_competitions_tier_type")
   @@index([is_youth, age_limit], map: "idx_competitions_youth")
-  club_trophies                                           club_trophies[]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -711,14 +694,14 @@ model formation_positions {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model formations {
-  id                  BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  code                String                @unique(map: "uq_formations_code") @default("") @db.VarChar(50)
-  name                String                @default("") @db.VarChar(100)
-  description         String?               @db.Text
-  logo_url            String?               @db.VarChar(255)
-  club_tactics        club_tactics[]
-  formation_positions formation_positions[]
-  match_lineups       match_lineups[]
+  id                         BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  code                       String                @unique(map: "uq_formations_code") @default("") @db.VarChar(50)
+  name                       String                @default("") @db.VarChar(100)
+  description                String?               @db.Text
+  logo_url                   String?               @db.VarChar(255)
+  club_tactics               club_tactics[]
+  formation_positions        formation_positions[]
+  match_lineups              match_lineups[]
   staff_preferred_formations staff[]               @relation("staff_preferred_formation")
   staff_secondary_formations staff[]               @relation("staff_secondary_formation")
 }
@@ -790,21 +773,21 @@ model injury_types {
 }
 
 model injuries {
-  id                         BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
-  player_id                  BigInt             @db.UnsignedBigInt
-  injury_type_id             BigInt             @db.UnsignedBigInt
-  severity                   injuries_severity  @default(MILD)
-  start_season_id            BigInt?            @db.UnsignedBigInt
-  start_season_day           Int                @default(1)
-  days_injured               Int                @default(0)
-  days_remaining             Int                @default(0)
+  id                         BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  player_id                  BigInt            @db.UnsignedBigInt
+  injury_type_id             BigInt            @db.UnsignedBigInt
+  severity                   injuries_severity @default(MILD)
+  start_season_id            BigInt?           @db.UnsignedBigInt
+  start_season_day           Int               @default(1)
+  days_injured               Int               @default(0)
+  days_remaining             Int               @default(0)
   expected_return_season_day Int?
-  start_date                 DateTime           @db.Date
-  expected_return_date       DateTime           @db.Date
-  actual_return_date         DateTime?          @db.Date
-  status                     injuries_status    @default(ACTIVE)
-  players                    players            @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_injuries_player_id")
-  injury_types               injury_types       @relation(fields: [injury_type_id], references: [id], onDelete: Cascade, map: "fk_injuries_injury_type_id")
+  start_date                 DateTime          @db.Date
+  expected_return_date       DateTime          @db.Date
+  actual_return_date         DateTime?         @db.Date
+  status                     injuries_status   @default(ACTIVE)
+  injury_types               injury_types      @relation(fields: [injury_type_id], references: [id], onDelete: Cascade, map: "fk_injuries_injury_type_id")
+  players                    players           @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_injuries_player_id")
 
   @@index([player_id], map: "idx_injuries_player_id")
   @@index([injury_type_id], map: "idx_injuries_injury_type_id")
@@ -1356,9 +1339,9 @@ model players {
   game_worlds                                          game_worlds                  @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_players_world_id")
   youth_intakes                                        youth_intakes?               @relation(fields: [youth_intake_id], references: [id], onDelete: Cascade, map: "fk_players_youth_intake_id")
   scouting_reports                                     scouting_reports[]
+  staff                                                staff[]
   transfer_offers                                      transfer_offers[]
   transfers                                            transfers[]
-  staff                                                staff[]
 
   @@index([current_club_id], map: "idx_players_current_club_id")
   @@index([market_value], map: "idx_players_market_value")
@@ -1455,6 +1438,7 @@ model seasons {
   club_bonuses               club_bonuses[]
   club_news                  club_news[]
   club_objectives            club_objectives[]
+  club_trophies              club_trophies[]
   competition_seasons        competition_seasons[]
   player_performance_bonuses player_performance_bonuses[]
   player_statistics          player_statistics[]
@@ -1463,7 +1447,6 @@ model seasons {
   youth_intakes              youth_intakes[]
 
   @@index([world_id], map: "idx_seasons_world_id")
-  club_trophies              club_trophies[]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1529,10 +1512,10 @@ model staff {
   photo_url              String?                @db.VarChar(255)
   scouting_assignments   scouting_assignments[]
   countries              countries              @relation(fields: [nationality_id], references: [id], onDelete: Cascade, map: "fk_staff_nationality_id")
+  players                players?               @relation(fields: [player_id], references: [id], map: "fk_staff_player_id")
+  preferred_formation    formations?            @relation("staff_preferred_formation", fields: [preferred_formation_id], references: [id], map: "fk_staff_preferred_formation_id")
+  secondary_formation    formations?            @relation("staff_secondary_formation", fields: [secondary_formation_id], references: [id], map: "fk_staff_secondary_formation_id")
   game_worlds            game_worlds            @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_staff_world_id")
-  preferred_formation    formations?            @relation("staff_preferred_formation", fields: [preferred_formation_id], references: [id], onDelete: SetNull, map: "fk_staff_preferred_formation_id")
-  secondary_formation    formations?            @relation("staff_secondary_formation", fields: [secondary_formation_id], references: [id], onDelete: SetNull, map: "fk_staff_secondary_formation_id")
-  players                players?               @relation(fields: [player_id], references: [id], onDelete: SetNull, map: "fk_staff_player_id")
   staff_attributes       staff_attributes[]
   staff_contracts        staff_contracts[]
   staff_offers           staff_offers[]
@@ -1854,6 +1837,70 @@ model youth_intakes {
   @@index([season_id], map: "idx_youth_intakes_season_id")
 }
 
+model staff_offers {
+  id                                        BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  staff_id                                  BigInt           @db.UnsignedBigInt
+  club_id                                   BigInt           @db.UnsignedBigInt
+  current_club_id                           BigInt?          @db.UnsignedBigInt
+  role_offered                              staff_staff_type @default(HEAD_COACH)
+  proposed_wage                             Decimal          @default(0.00) @db.Decimal(18, 2)
+  contract_years                            Int              @default(1)
+  signing_bonus                             Decimal          @default(0.00) @db.Decimal(18, 2)
+  compensation_fee                          Decimal          @default(0.00) @db.Decimal(18, 2)
+  status                                    String           @default("PENDING") @db.VarChar(30)
+  created_at                                DateTime         @default(now()) @db.DateTime(0)
+  updated_at                                DateTime         @default(now()) @db.DateTime(0)
+  clubs_staff_offers_club_idToclubs         clubs            @relation("staff_offers_club_idToclubs", fields: [club_id], references: [id], onDelete: Cascade, map: "fk_staff_offers_club_id")
+  clubs_staff_offers_current_club_idToclubs clubs?           @relation("staff_offers_current_club_idToclubs", fields: [current_club_id], references: [id], map: "fk_staff_offers_current_club_id")
+  staff                                     staff            @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_staff_offers_staff_id")
+
+  @@index([club_id], map: "idx_staff_offers_club_id")
+  @@index([current_club_id], map: "idx_staff_offers_current_club_id")
+  @@index([staff_id], map: "idx_staff_offers_staff_id")
+}
+
+model club_trophies {
+  id             BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id        BigInt       @db.UnsignedBigInt
+  competition_id BigInt       @db.UnsignedBigInt
+  season_id      BigInt       @db.UnsignedBigInt
+  season_number  Int          @default(1)
+  title_type     String       @default("CHAMPION") @db.VarChar(30)
+  trophy_name    String       @default("") @db.VarChar(150)
+  trophy_url     String?      @db.VarChar(255)
+  rank_position  Int          @default(1)
+  achieved_at    DateTime     @default(now()) @db.DateTime(0)
+  clubs          clubs        @relation(fields: [club_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_club_trophies_club_id")
+  competitions   competitions @relation(fields: [competition_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_club_trophies_competition_id")
+  seasons        seasons      @relation(fields: [season_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_club_trophies_season_id")
+
+  @@unique([competition_id, season_id, title_type], map: "uq_comp_season_title")
+  @@index([club_id], map: "idx_club_trophies_club_id")
+  @@index([competition_id], map: "idx_club_trophies_competition_id")
+  @@index([season_id], map: "idx_club_trophies_season_id")
+}
+
+enum injuries_severity {
+  MILD
+  MODERATE
+  SEVERE
+}
+
+enum injuries_status {
+  ACTIVE
+  RECOVERING
+  HEALED
+}
+
+enum staff_coaching_license {
+  E
+  D
+  C
+  B
+  A
+  PRO
+}
+
 enum staff_role_attributes_staff_type {
   HEAD_COACH
   ASSISTANT_COACH
@@ -1989,46 +2036,8 @@ enum matches_result_type {
   WALKOVER
 }
 
-
-model staff_offers {
-  id                                            BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
-  staff_id                                      BigInt           @db.UnsignedBigInt
-  club_id                                       BigInt           @db.UnsignedBigInt
-  current_club_id                               BigInt?          @db.UnsignedBigInt
-  role_offered                                  staff_staff_type @default(HEAD_COACH)
-  proposed_wage                                 Decimal          @default(0.00) @db.Decimal(18, 2)
-  contract_years                                Int              @default(1)
-  signing_bonus                                 Decimal          @default(0.00) @db.Decimal(18, 2)
-  compensation_fee                              Decimal          @default(0.00) @db.Decimal(18, 2)
-  status                                        String           @default("PENDING") @db.VarChar(30)
-  created_at                                    DateTime         @default(now()) @db.DateTime(0)
-  updated_at                                    DateTime         @default(now()) @db.DateTime(0)
-  clubs_staff_offers_club_idToclubs             clubs            @relation("staff_offers_club_idToclubs", fields: [club_id], references: [id], onDelete: Cascade, map: "fk_staff_offers_club_id")
-  clubs_staff_offers_current_club_idToclubs     clubs?           @relation("staff_offers_current_club_idToclubs", fields: [current_club_id], references: [id], onDelete: SetNull, map: "fk_staff_offers_current_club_id")
-  staff                                         staff            @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_staff_offers_staff_id")
-
-  @@index([club_id], map: "idx_staff_offers_club_id")
-  @@index([current_club_id], map: "idx_staff_offers_current_club_id")
-  @@index([staff_id], map: "idx_staff_offers_staff_id")
-}
-
-
-model club_trophies {
-  id             BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
-  club_id        BigInt       @db.UnsignedBigInt
-  competition_id BigInt       @db.UnsignedBigInt
-  season_id      BigInt       @db.UnsignedBigInt
-  season_number  Int          @default(1)
-  title_type     String       @default("CHAMPION") @db.VarChar(30)
-  trophy_name    String       @default("") @db.VarChar(150)
-  trophy_url     String?      @db.VarChar(255)
-  rank_position  Int          @default(1)
-  achieved_at    DateTime     @default(now()) @db.DateTime(0)
-  clubs          clubs        @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_trophies_club_id")
-  competitions   competitions @relation(fields: [competition_id], references: [id], onDelete: Cascade, map: "fk_club_trophies_competition_id")
-  seasons        seasons      @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_club_trophies_season_id")
-
-  @@index([club_id], map: "idx_club_trophies_club_id")
-  @@index([competition_id], map: "idx_club_trophies_competition_id")
-  @@index([season_id], map: "idx_club_trophies_season_id")
+enum club_tactic_positions_lineup_role {
+  STARTING
+  SUBSTITUTE
+  RESERVE
 }

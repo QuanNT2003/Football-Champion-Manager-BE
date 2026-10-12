@@ -1,3 +1,4 @@
+import { SeasonTrophiesService } from './season-trophies.service';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
@@ -10,6 +11,7 @@ export class CompetitionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly continentalCoefficientService: ContinentalCoefficientService,
+    private readonly seasonTrophiesService: SeasonTrophiesService,
   ) {}
 
 
@@ -1582,11 +1584,8 @@ export class CompetitionsService {
     if (!dto.competitionSeasonId || dto.competitionId === '13') {
       const youthMatches: any[] = [];
       for (const c of countries) {
-        const clubs32 = await this.prisma.clubs.findMany({
-          where: { country_id: c.id },
-          take: 32,
-          orderBy: { id: 'asc' },
-        });
+        // Lấy Top 32 CLB tham gia theo Cấp độ Học viện trẻ (Youth Academy) + Danh tiếng CLB (Reputation)
+        const clubs32 = await this.getTopYouthClubsByCountry(c.id, 32);
 
         if (clubs32.length >= 32) {
           let cs = await this.prisma.competition_seasons.findFirst({
@@ -1920,12 +1919,8 @@ export class CompetitionsService {
             await this.ensureStageRound(stage.id, targetSeason, 1, 3, 'Chung kết');
           }
         } else if (comp.competition_type === 'DOMESTIC_YOUTH_CUP') {
-          const clubs = await this.prisma.clubs.findMany({
-            where: { country_id: country.id },
-            take: 32,
-            select: { id: true, country_id: true, reputation: true },
-            orderBy: { id: 'asc' },
-          });
+          // Lấy Top 32 CLB tham gia theo Cấp độ Học viện trẻ (Youth Academy) + Danh tiếng CLB (Reputation)
+          const clubs = await this.getTopYouthClubsByCountry(country.id, 32);
           if (clubs.length > 0) {
             enrolledClubsCount += await this.ensureStageParticipants(stage.id, clubs, group.id, 'Youth Cup Entry');
             await this.ensureStageRound(stage.id, targetSeason, 1, 7, 'Vòng 1 (Vòng 32 Đội)');
@@ -3095,6 +3090,17 @@ export class CompetitionsService {
       awardResult = await this.processSeasonIndividualAwards(worldId, completedSeason);
     }
 
+    // 6.5. Khâu Trao Cúp & Danh hiệu Tập thể cho các CLB (VĐQG, Cúp QG, Siêu Cúp, Cúp Châu Lục)
+    let trophyAwardsResult: any = { newlyCreatedCount: 0, awards: [] };
+    try {
+      trophyAwardsResult = await this.seasonTrophiesService.awardSeasonTrophies(
+        completedSeason.id,
+        completedSeason.season_number,
+      );
+    } catch (err) {
+      console.warn('[processSeasonTransition] Lỗi tự động trao cúp mùa giải:', err);
+    }
+
     // 7. Đóng mùa giải cũ
     await this.prisma.seasons.update({
       where: { id: completedSeason.id },
@@ -3149,6 +3155,7 @@ export class CompetitionsService {
       suspensionResult,
       financeResult,
       awardResult,
+      trophyAwardsResult,
       newSeasonResult,
     };
   }
@@ -3973,4 +3980,64 @@ export class CompetitionsService {
       rounds,
     };
   }
+
+  /**
+   * Tự động quét và trao cúp mùa giải cho các CLB
+   */
+  async awardSeasonTrophies(seasonId: bigint) {
+    return this.seasonTrophiesService.awardSeasonTrophies(seasonId);
+  }
+
+
+  /**
+   * Tự động quét và trao cúp ngay cho các giải đấu vừa kết thúc trong ngày (ví dụ Siêu Cúp Day 3, Cúp QG, VĐQG...)
+   */
+  async checkAndAwardCompletedCompetitions(seasonId: bigint) {
+    return this.seasonTrophiesService.checkAndAwardCompletedCompetitions(seasonId);
+  }
+
+  /**
+   * Trao cúp tức thì sau trận chung kết
+   */
+  async awardCupFinalTrophyImmediate(matchId: bigint) {
+    return this.seasonTrophiesService.awardCupFinalTrophyImmediate(matchId);
+  }
+
+
+  /**
+   * Lấy Top 32 CLB tham gia Cúp Trẻ U21 theo Cấp độ Học Viện Trẻ (Youth Academy) + Danh Tiếng CLB (Reputation)
+   */
+  async getTopYouthClubsByCountry(countryId: bigint, limit: number = 32) {
+    const clubs = await this.prisma.clubs.findMany({
+      where: { country_id: countryId },
+      select: {
+        id: true,
+        country_id: true,
+        name: true,
+        reputation: true,
+        facilities: {
+          where: {
+            facility_types: { code: 'YOUTH_ACADEMY' },
+          },
+          select: {
+            facility_levels: {
+              select: { level: true },
+            },
+          },
+        },
+      },
+    });
+
+    const sortedClubs = clubs.sort((a, b) => {
+      const levelA = a.facilities?.[0]?.facility_levels?.level || 1;
+      const levelB = b.facilities?.[0]?.facility_levels?.level || 1;
+      if (levelB !== levelA) {
+        return levelB - levelA; // Cấp độ Học viện trẻ cao hơn xếp trước
+      }
+      return (b.reputation || 0) - (a.reputation || 0) || Number(a.id - b.id); // Danh tiếng cao hơn xếp trước
+    });
+
+    return sortedClubs.slice(0, limit);
+  }
+
 }

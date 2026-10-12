@@ -119,4 +119,18 @@ export class CompetitionsController {
     return this.competitionsService.processSeasonTransition(dto);
   }
 
+
+  @Post('seasons/:seasonId/award-trophies')
+  @ApiOperation({ summary: 'Tự động quét và trao Cúp & Danh hiệu (club_trophies) cho các CLB cuối mùa giải' })
+  async awardSeasonTrophies(@Param('seasonId') seasonId: string) {
+    return this.competitionsService.awardSeasonTrophies(BigInt(seasonId));
+  }
+
+
+  @Post('matches/:matchId/award-cup-trophy')
+  @ApiOperation({ summary: 'Trao cúp tức thì cho Quán quân và Á quân sau trận Chung kết' })
+  async awardCupFinalTrophyImmediate(@Param('matchId') matchId: string) {
+    return this.competitionsService.awardCupFinalTrophyImmediate(BigInt(matchId));
+  }
+
 }
