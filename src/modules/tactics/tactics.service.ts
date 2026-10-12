@@ -128,7 +128,7 @@ export class TacticsService {
           },
         });
 
-        // Tự động gán 11 cầu thủ đầu tiên vào đá chính và 9 cầu thủ tiếp theo vào dự bị
+        // Lấy 20 cầu thủ đầu tiên của CLB để xếp 11 đá chính và 9 ghế dự bị
         const clubPlayers = await this.prisma.players.findMany({
           where: { current_club_id: clubId },
           take: 20,
@@ -149,30 +149,28 @@ export class TacticsService {
         for (let i = 0; i < formationPositions.length; i++) {
           const formPos = formationPositions[i];
           const player = clubPlayers[i];
-          if (player) {
-            await this.prisma.club_tactic_positions.create({
-              data: {
-                tactic_id: createdTactic.id,
-                formation_position_id: formPos.id,
-                player_id: player.id,
-                role: 'STANDARD',
-                duty: 'SUPPORT',
-                lineup_role: 'STARTING',
-                order_no: i + 1,
-              },
-            });
-          }
+          await this.prisma.club_tactic_positions.create({
+            data: {
+              tactic_id: createdTactic.id,
+              formation_position_id: formPos.id,
+              player_id: player ? player.id : null,
+              role: 'STANDARD',
+              duty: 'SUPPORT',
+              lineup_role: 'STARTING',
+              order_no: i + 1,
+            },
+          });
         }
 
-        // 9 cầu thủ dự bị
+        // Tạo sẵn 9 ghế dự bị (SUBSTITUTE): nếu có cầu thủ thì lưu player_id, nếu không thì null
         const benchPlayers = clubPlayers.slice(formationPositions.length, formationPositions.length + 9);
-        for (let j = 0; j < benchPlayers.length; j++) {
+        for (let j = 0; j < 9; j++) {
           const benchPlayer = benchPlayers[j];
           await this.prisma.club_tactic_positions.create({
             data: {
               tactic_id: createdTactic.id,
               formation_position_id: null,
-              player_id: benchPlayer.id,
+              player_id: benchPlayer ? benchPlayer.id : null,
               role: 'BENCH',
               duty: 'SUPPORT',
               lineup_role: 'SUBSTITUTE',
@@ -181,7 +179,7 @@ export class TacticsService {
           });
         }
 
-        // Tải lại tactic kèm positions
+        // Tải lại tactic
         tactic = await this.prisma.club_tactics.findUnique({
           where: { id: createdTactic.id },
           include: {
@@ -235,47 +233,25 @@ export class TacticsService {
       players: this.formatPlayerData(pos.players, pos.formation_positions?.slot_code),
     }));
 
-    let formattedSubstitutes = subPositionsRaw.map((sub, idx) => ({
-      id: sub.id.toString(),
-      order_no: sub.order_no || idx + 1,
-      lineup_role: 'SUBSTITUTE',
-      players: this.formatPlayerData(sub.players),
-    }));
-
-    // 5. Nếu chưa có danh sách dự bị nào trong CSDL, tự động gợi ý 9 cầu thủ dự bị từ CLB
-    if (formattedSubstitutes.length === 0) {
-      const assignedPlayerIds = formattedStartingPositions
-        .map((p) => p.players?.id)
-        .filter(Boolean)
-        .map((id) => BigInt(id));
-
-      const availableClubPlayers = await this.prisma.players.findMany({
-        where: {
-          current_club_id: clubId,
-          ...(assignedPlayerIds.length > 0 ? { id: { notIn: assignedPlayerIds } } : {}),
-        },
-        take: 9,
-        orderBy: { squad_number: 'asc' },
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          squad_number: true,
-          photo_url: true,
-          age: true,
-          preferred_foot: true,
-          player_positions: {
-            include: { positions: true },
-          },
-        },
-      });
-
-      formattedSubstitutes = availableClubPlayers.map((player, idx) => ({
-        id: `temp_sub_${player.id}`,
-        order_no: idx + 1,
-        lineup_role: 'SUBSTITUTE',
-        players: this.formatPlayerData(player),
-      }));
+    // Sắp xếp 9 ghế dự bị theo order_no (1..9), nếu ghế nào chưa có cầu thủ thì players = null
+    const formattedSubstitutes = [];
+    for (let seat = 1; seat <= 9; seat++) {
+      const foundSub = subPositionsRaw.find((s) => s.order_no === seat) || subPositionsRaw[seat - 1];
+      if (foundSub) {
+        formattedSubstitutes.push({
+          id: foundSub.id.toString(),
+          order_no: seat,
+          lineup_role: 'SUBSTITUTE',
+          players: this.formatPlayerData(foundSub.players),
+        });
+      } else {
+        formattedSubstitutes.push({
+          id: `empty_sub_${seat}`,
+          order_no: seat,
+          lineup_role: 'SUBSTITUTE',
+          players: null,
+        });
+      }
     }
 
     return {
@@ -323,12 +299,12 @@ export class TacticsService {
       defensiveLine?: number;
       positions?: Array<{
         formationPositionId: string;
-        playerId: string;
+        playerId?: string | null;
         role?: string;
         duty?: string;
       }>;
       substitutes?: Array<{
-        playerId: string;
+        playerId?: string | null;
         orderNo?: number;
       }>;
     },
@@ -366,22 +342,46 @@ export class TacticsService {
       });
     }
 
-    // Xóa vị trí cũ và ghi lại cả 11 đá chính và danh sách ghế dự bị
-    if ((dto.positions && dto.positions.length > 0) || (dto.substitutes && dto.substitutes.length > 0)) {
-      await this.prisma.club_tactic_positions.deleteMany({
-        where: { tactic_id: tactic.id },
+    // 1. CẬP NHẬT HOẶC TẠO MỚI 11 VỊ TRÍ ĐÁ CHÍNH (STARTING XI)
+    if (dto.positions && dto.positions.length > 0) {
+      const existingStarters = await this.prisma.club_tactic_positions.findMany({
+        where: {
+          tactic_id: tactic.id,
+          lineup_role: 'STARTING',
+        },
       });
 
-      // 1. Lưu 11 cầu thủ đá chính
-      if (dto.positions && dto.positions.length > 0) {
-        for (let i = 0; i < dto.positions.length; i++) {
-          const pos = dto.positions[i];
-          if (pos.formationPositionId && pos.playerId) {
+      const activeFormationPosIds: bigint[] = [];
+
+      for (let i = 0; i < dto.positions.length; i++) {
+        const pos = dto.positions[i];
+        if (pos.formationPositionId) {
+          const formPosId = BigInt(pos.formationPositionId);
+          activeFormationPosIds.push(formPosId);
+          const pId = pos.playerId ? BigInt(pos.playerId) : null;
+
+          const matched = existingStarters.find(
+            (e) => e.formation_position_id !== null && e.formation_position_id === formPosId,
+          );
+
+          if (matched) {
+            // Có rồi -> CẬP NHẬT
+            await this.prisma.club_tactic_positions.update({
+              where: { id: matched.id },
+              data: {
+                player_id: pId,
+                role: pos.role || 'STANDARD',
+                duty: pos.duty || 'SUPPORT',
+                order_no: i + 1,
+              },
+            });
+          } else {
+            // Chưa có -> TẠO MỚI
             await this.prisma.club_tactic_positions.create({
               data: {
                 tactic_id: tactic.id,
-                formation_position_id: BigInt(pos.formationPositionId),
-                player_id: BigInt(pos.playerId),
+                formation_position_id: formPosId,
+                player_id: pId,
                 role: pos.role || 'STANDARD',
                 duty: pos.duty || 'SUPPORT',
                 lineup_role: 'STARTING',
@@ -392,25 +392,72 @@ export class TacticsService {
         }
       }
 
-      // 2. Lưu danh sách cầu thủ dự bị (tối đa 9-12 cầu thủ trên ghế)
-      if (dto.substitutes && dto.substitutes.length > 0) {
-        for (let j = 0; j < dto.substitutes.length; j++) {
-          const sub = dto.substitutes[j];
-          if (sub.playerId) {
-            await this.prisma.club_tactic_positions.create({
-              data: {
-                tactic_id: tactic.id,
-                formation_position_id: null,
-                player_id: BigInt(sub.playerId),
-                role: 'BENCH',
-                duty: 'SUPPORT',
-                lineup_role: 'SUBSTITUTE',
-                order_no: sub.orderNo ?? (j + 1),
-              },
-            });
-          }
-        }
+      // Nếu HLV đổi sang sơ đồ mới, dọn dẹp các vị trí của sơ đồ cũ không còn trong sơ đồ mới
+      if (activeFormationPosIds.length > 0) {
+        await this.prisma.club_tactic_positions.deleteMany({
+          where: {
+            tactic_id: tactic.id,
+            lineup_role: 'STARTING',
+            formation_position_id: { notIn: activeFormationPosIds },
+          },
+        });
       }
+    }
+
+    // 2. CẬP NHẬT HOẶC TẠO MỚI 9 GHẾ DỰ BỊ (SUBSTITUTES)
+    // Đảm bảo đủ 9 ghế (order_no = 1..9), nếu ghế chưa fill cầu thủ thì player_id = null
+    const existingSubs = await this.prisma.club_tactic_positions.findMany({
+      where: {
+        tactic_id: tactic.id,
+        lineup_role: 'SUBSTITUTE',
+      },
+      orderBy: { order_no: 'asc' },
+    });
+
+    const subInputs = dto.substitutes || [];
+
+    for (let seatNo = 1; seatNo <= 9; seatNo++) {
+      // Tìm ghế tương ứng từ DTO (theo orderNo hoặc theo index)
+      const inputSub = subInputs.find((s) => (s.orderNo || 0) === seatNo) || subInputs[seatNo - 1];
+      const pId = inputSub?.playerId ? BigInt(inputSub.playerId) : null;
+
+      // Tìm bản ghi ghế dự bị hiện có trong CSDL
+      const matchedSub = existingSubs.find((e) => e.order_no === seatNo) || existingSubs[seatNo - 1];
+
+      if (matchedSub) {
+        // Có rồi -> CẬP NHẬT (player_id có thể là null nếu ghế chưa fill)
+        await this.prisma.club_tactic_positions.update({
+          where: { id: matchedSub.id },
+          data: {
+            formation_position_id: null,
+            player_id: pId,
+            role: 'BENCH',
+            duty: 'SUPPORT',
+            order_no: seatNo,
+          },
+        });
+      } else {
+        // Chưa có -> TẠO MỚI ghế dự bị này
+        await this.prisma.club_tactic_positions.create({
+          data: {
+            tactic_id: tactic.id,
+            formation_position_id: null,
+            player_id: pId,
+            role: 'BENCH',
+            duty: 'SUPPORT',
+            lineup_role: 'SUBSTITUTE',
+            order_no: seatNo,
+          },
+        });
+      }
+    }
+
+    // Xóa các ghế thừa nếu trước đó có > 9 ghế
+    if (existingSubs.length > 9) {
+      const extraIds = existingSubs.slice(9).map((e) => e.id);
+      await this.prisma.club_tactic_positions.deleteMany({
+        where: { id: { in: extraIds } },
+      });
     }
 
     return {

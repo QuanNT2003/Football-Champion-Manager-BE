@@ -32,8 +32,9 @@ export class TacticPositionDto {
 
 export class TacticSubstituteDto {
   @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  playerId: string;
+  playerId?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
