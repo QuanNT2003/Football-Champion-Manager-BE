@@ -72,6 +72,12 @@ export class ClubsController {
     return this.clubsService.getClubDashboard(BigInt(id));
   }
 
+  @Get(':id/trophies')
+  @ApiOperation({ summary: 'Lấy danh sách cúp và danh hiệu phòng truyền thống của CLB' })
+  async getClubTrophies(@Param('id') id: string) {
+    return this.clubsService.getClubTrophies(BigInt(id));
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Lấy thông tin chi tiết một CLB theo ID' })
   async getClubById(@Param('id') id: string) {

@@ -95,6 +95,7 @@ export class ClubsService {
       where: { current_club_id: clubId },
     });
 
+    const trophiesCount = await this.prisma.club_trophies.count({ where: { club_id: clubId } });
     const fin = club.financial_accounts?.[0] || null;
     const confed = club.countries?.confederations_countries_confederation_idToconfederations;
 
@@ -426,7 +427,7 @@ export class ClubsService {
     };
   }
 
-  async getClubDashboard(clubId: bigint) {
+    async getClubDashboard(clubId: bigint) {
     const club = await this.prisma.clubs.findUnique({
       where: { id: clubId },
       include: {
@@ -461,7 +462,7 @@ export class ClubsService {
       ? Math.round(players.reduce((sum, p) => sum + (p.player_status?.morale ?? 90), 0) / playersCount)
       : 90;
 
-    // 2. Standing in Domestic League (chính xác theo giải VĐQG mà CLB thi đấu)
+    // 2. Standing in Domestic League
     const leagueStanding = await this.prisma.stage_standings.findFirst({
       where: {
         club_id: clubId,
@@ -516,7 +517,7 @@ export class ClubsService {
       ],
     });
 
-    // 4. Last Match (chỉ lấy trận đã hoàn thành trong DB, không có fallback giả)
+    // 4. Last Match
     const lastMatch = await this.prisma.matches.findFirst({
       where: {
         OR: [
@@ -540,7 +541,7 @@ export class ClubsService {
       ],
     });
 
-    // 5. Danh sách giải đấu thật mà CLB đang tham gia từ DB
+    // 5. Competitions List
     const allStandings = await this.prisma.stage_standings.findMany({
       where: { club_id: clubId },
       include: {
@@ -580,8 +581,21 @@ export class ClubsService {
       orderBy: { id: 'desc' },
     });
 
+    // Trophies count
+    const trophiesCount = await this.prisma.club_trophies.count({
+      where: { club_id: clubId },
+    });
+
     const fin = club.financial_accounts?.[0] || null;
     const isHomeNext = nextMatch ? nextMatch.home_club_id === clubId : true;
+
+    let kickoffFormatted = '20:00';
+    if (nextMatch?.kickoff_time) {
+      const ko = new Date(nextMatch.kickoff_time);
+      const hh = String(ko.getUTCHours()).padStart(2, '0');
+      const mm = String(ko.getUTCMinutes()).padStart(2, '0');
+      kickoffFormatted = `${hh}:${mm}`;
+    }
 
     return {
       club: {
@@ -601,18 +615,11 @@ export class ClubsService {
         gold: fin ? Number(fin.balance_gold) : 0,
         league_rank: leagueStanding ? leagueStanding.position : 1,
         league_points: leagueStanding ? leagueStanding.points : 0,
+        trophies_count: trophiesCount,
         tier_label: `Tier ${compTier}`,
         competition_name: compName,
       },
-      next_match: nextMatch ? (() => {
-        let kickoffFormatted = '20:00';
-        if (nextMatch.kickoff_time) {
-          const ko = new Date(nextMatch.kickoff_time);
-          const hh = String(ko.getUTCHours()).padStart(2, '0');
-          const mm = String(ko.getUTCMinutes()).padStart(2, '0');
-          kickoffFormatted = `${hh}:${mm}`;
-        }
-        return {
+      next_match: nextMatch ? {
         id: nextMatch.id.toString(),
         competition_name: nextMatch.competition_seasons?.competitions?.name || compName,
         season_day: nextMatch.season_day,
@@ -644,7 +651,7 @@ export class ClubsService {
           name: nextMatch.clubs_matches_away_club_idToclubs?.name || 'Đối thủ',
           logo_url: nextMatch.clubs_matches_away_club_idToclubs?.logo_url,
         },
-      })() : null,
+      } : null,
       last_match: lastMatch ? {
         id: lastMatch.id.toString(),
         competition_name: lastMatch.competition_seasons?.competitions?.name || 'VĐQG',
@@ -666,4 +673,33 @@ export class ClubsService {
       },
     };
   }
+
+  async getClubTrophies(clubId: bigint) {
+    const trophies = await this.prisma.club_trophies.findMany({
+      where: { club_id: clubId },
+      include: {
+        competitions: true,
+        seasons: true,
+      },
+      orderBy: [
+        { season_number: 'desc' },
+        { achieved_at: 'desc' },
+      ],
+    });
+
+    return trophies.map((t) => ({
+      id: t.id.toString(),
+      club_id: t.club_id.toString(),
+      competition_id: t.competition_id.toString(),
+      competition_name: t.competitions?.name || '',
+      season_id: t.season_id.toString(),
+      season_number: t.season_number,
+      title_type: t.title_type,
+      trophy_name: t.trophy_name,
+      trophy_url: t.trophy_url || t.competitions?.trophy_url || null,
+      rank_position: t.rank_position,
+      achieved_at: t.achieved_at,
+    }));
+  }
+
 }
