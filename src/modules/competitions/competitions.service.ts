@@ -1742,7 +1742,10 @@ export class CompetitionsService {
     });
 
     const continentalComps = await this.prisma.competitions.findMany({
-      where: { scope: 'CONTINENTAL' },
+      where: {
+        scope: 'CONTINENTAL',
+        competition_type: { in: ['CONTINENTAL_CLUB_C1', 'CONTINENTAL_CLUB_C2', 'CONTINENTAL_CLUB_C3'] },
+      },
       orderBy: { id: 'asc' },
     });
 
@@ -1972,6 +1975,15 @@ export class CompetitionsService {
       }
 
       for (const comp of continentalComps) {
+        const qualifiedClubIds = continentalQualifications
+          .filter((q) => q.targetCompetitionId === comp.id.toString())
+          .map((q) => BigInt(q.clubId));
+
+        // Phương án B: Nếu chưa có danh sách CLB đủ điều kiện vé Châu Lục (như ở Mùa 1), không tổ chức cúp Châu Lục mùa này
+        if (qualifiedClubIds.length === 0) {
+          continue;
+        }
+
         const levelName = comp.id === 8n ? 'Champions League' : comp.id === 9n ? 'Cup 2' : comp.id === 10n ? 'Cup 3' : comp.name;
         const cupName = `${confed.name} ${levelName} - ${targetSeason.name}`;
 
@@ -2024,43 +2036,20 @@ export class CompetitionsService {
           }
         }
 
-        const qualifiedClubIds = continentalQualifications
-          .filter((q) => q.targetCompetitionId === comp.id.toString())
-          .map((q) => BigInt(q.clubId));
-
-        let candidateClubs = qualifiedClubIds.length > 0
-          ? await this.prisma.clubs.findMany({
-            where: {
-              id: { in: qualifiedClubIds },
-              countries: {
-                OR: [
-                  { confederation_id: confed.id },
-                  { confederations_countries_confederation_idToconfederations: { parent_id: confed.id } },
-                ],
-              },
+        const candidateClubs = await this.prisma.clubs.findMany({
+          where: {
+            id: { in: qualifiedClubIds },
+            countries: {
+              OR: [
+                { confederation_id: confed.id },
+                { confederations_countries_confederation_idToconfederations: { parent_id: confed.id } },
+              ],
             },
-            take: comp.total_teams > 0 ? comp.total_teams : 32,
-            select: { id: true, country_id: true, reputation: true },
-            orderBy: { reputation: 'desc' },
-          })
-          : [];
-
-        if (candidateClubs.length === 0) {
-          candidateClubs = await this.prisma.clubs.findMany({
-            where: {
-              countries: {
-                OR: [
-                  { confederation_id: confed.id },
-                  { confederations_countries_confederation_idToconfederations: { parent_id: confed.id } },
-                ],
-              },
-              current_competition_id: 1n,
-            },
-            take: comp.total_teams > 0 ? comp.total_teams : 32,
-            select: { id: true, country_id: true, reputation: true },
-            orderBy: { reputation: 'desc' },
-          });
-        }
+          },
+          take: comp.total_teams > 0 ? comp.total_teams : 32,
+          select: { id: true, country_id: true, reputation: true },
+          orderBy: { reputation: 'desc' },
+        });
 
         // Gán rule vô địch Cúp Châu Lục
         await this.assignQualificationRulesForSeason(compSeason.id, comp.id, null, confed.id);

@@ -36,6 +36,7 @@ export class TacticsService {
       age: p.age,
       preferred_foot: p.preferred_foot,
       position: naturalPos || defaultPos || 'MID',
+      squad_type: p.squad_type || 'FIRST_TEAM',
     };
   }
 
@@ -135,6 +136,7 @@ export class TacticsService {
                 photo_url: true,
                 age: true,
                 preferred_foot: true,
+                squad_type: true,
                 player_positions: {
                   include: { positions: true },
                 },
