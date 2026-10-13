@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { staff_role_attributes_staff_type } from '@prisma/client';
 
 import { GetMarketFilterDto } from './dto';
 
@@ -904,13 +905,15 @@ export class TransfersService {
       throw new NotFoundException('Không tìm thấy thông tin nhân viên');
     }
 
+    const roleType = this.mapStaffTypeToRoleAttributeType(staff.staff_type);
+
     const [staffAttributes, roleAttributes] = await Promise.all([
       this.prisma.staff_attributes.findMany({
         where: { staff_id: staffId },
         include: { staff_attribute_types: true },
       }),
       this.prisma.staff_role_attributes.findMany({
-        where: { staff_type: staff.staff_type as any },
+        where: { staff_type: roleType },
       }),
     ]);
 
@@ -954,6 +957,8 @@ export class TransfersService {
             logo_url: c.clubs.logo_url,
           }
         : null,
+      role: (c as any).role || staff.staff_type,
+      squadType: c.squad_type,
       salary: Number(c.salary),
       startDate: c.start_date,
       endDate: c.end_date,
@@ -980,6 +985,7 @@ export class TransfersService {
       coachingLicense: staff.coaching_license,
       tacticalStyle: staff.tactical_style,
       reputation: staff.reputation,
+      potential: (staff as any).potential ?? Math.round(40 + ((staff.reputation || 3000) / 10000) * 45),
       photoUrl: staff.photo_url,
       nationality: staff.countries
         ? {
@@ -1244,4 +1250,26 @@ export class TransfersService {
     });
   }
 
+  private mapStaffTypeToRoleAttributeType(staffType: string): staff_role_attributes_staff_type {
+    switch (staffType) {
+      case 'HEAD_COACH':
+      case 'HEAD_COACH_YOUTH':
+        return staff_role_attributes_staff_type.HEAD_COACH;
+      case 'ASSISTANT_COACH':
+      case 'ASSISTANT_COACH_YOUTH':
+        return staff_role_attributes_staff_type.ASSISTANT_COACH;
+      case 'FITNESS_COACH':
+        return staff_role_attributes_staff_type.FITNESS_COACH;
+      case 'GOALKEEPING_COACH':
+        return staff_role_attributes_staff_type.GOALKEEPING_COACH;
+      case 'SCOUT':
+        return staff_role_attributes_staff_type.SCOUT;
+      case 'PHYSIO':
+        return staff_role_attributes_staff_type.PHYSIO;
+      case 'YOUTH_DIRECTOR':
+        return staff_role_attributes_staff_type.YOUTH_DIRECTOR;
+      default:
+        return staff_role_attributes_staff_type.HEAD_COACH;
+    }
+  }
 }

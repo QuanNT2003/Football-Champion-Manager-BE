@@ -1508,6 +1508,7 @@ model staff {
   staff_type             staff_staff_type       @default(HEAD_COACH)
   nationality_id         BigInt                 @db.UnsignedBigInt
   reputation             Int                    @default(0)
+  potential              Int                    @default(0)
   coaching_license       staff_coaching_license @default(C)
   preferred_formation_id BigInt?                @db.UnsignedBigInt
   secondary_formation_id BigInt?                @db.UnsignedBigInt
@@ -1563,6 +1564,7 @@ model staff_contracts {
   id                 BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
   staff_id           BigInt                     @db.UnsignedBigInt
   club_id            BigInt                     @db.UnsignedBigInt
+  role               staff_contracts_role       @default(HEAD_COACH)
   squad_type         staff_contracts_squad_type @default(FIRST_TEAM)
   start_season_id    BigInt                     @default(1) @db.UnsignedBigInt
   start_season_day   Int                        @default(1)
@@ -1580,7 +1582,8 @@ model staff_contracts {
   @@index([club_id], map: "idx_staff_contracts_club_id")
   @@index([salary_currency_id], map: "idx_staff_contracts_salary_currency_id")
   @@index([staff_id], map: "idx_staff_contracts_staff_id")
-  @@index([club_id, squad_type], map: "idx_staff_contracts_squad")
+  @@index([role], map: "idx_staff_contracts_role")
+  @@index([club_id, squad_type, role], map: "idx_staff_contracts_squad")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1915,9 +1918,6 @@ enum staff_role_attributes_staff_type {
   SCOUT
   PHYSIO
   YOUTH_DIRECTOR
-  HEAD_COACH_YOUTH
-  ASSISTANT_COACH_YOUTH
-  YOUTH_COACH
 }
 
 enum competition_ranking_rules_ranking_type {
@@ -2057,9 +2057,18 @@ enum staff_staff_type {
   SCOUT
   PHYSIO
   YOUTH_DIRECTOR
+}
+
+enum staff_contracts_role {
+  HEAD_COACH
+  ASSISTANT_COACH
   HEAD_COACH_YOUTH
   ASSISTANT_COACH_YOUTH
-  YOUTH_COACH
+  FITNESS_COACH
+  GOALKEEPING_COACH
+  SCOUT
+  PHYSIO
+  YOUTH_DIRECTOR
 }
 
 enum staff_contracts_squad_type {
