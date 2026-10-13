@@ -99,24 +99,49 @@ export class CompetitionsService {
     }));
   }
 
-  async getCompetitions(countryId?: string, tier?: number) {
+    async getCompetitions(countryId?: string, tier?: number) {
+    const where: any = {};
+    if (tier) where.tier = Number(tier);
+
     let country: any = null;
-    let confederation: any = null;
+    let confed: any = null;
 
     if (countryId) {
-      try {
-        country = await this.prisma.countries.findUnique({
-          where: { id: BigInt(countryId) },
-          include: { confederations_countries_confederation_idToconfederations: true },
+      country = await this.prisma.countries.findUnique({
+        where: { id: BigInt(countryId) },
+      });
+      if (country?.confederation_id) {
+        confed = await this.prisma.confederations.findUnique({
+          where: { id: country.confederation_id },
         });
-        confederation = country?.confederations_countries_confederation_idToconfederations;
-      } catch (e) {
-        // ignore error
       }
     }
 
-    const where: any = {};
-    if (tier) where.tier = Number(tier);
+    const domesticCompSeasons = country
+      ? await this.prisma.competition_seasons.findMany({
+          where: { country_id: country.id },
+          orderBy: { id: 'desc' },
+          select: { competition_id: true, name: true },
+        })
+      : [];
+
+    const continentalCompSeasons = confed
+      ? await this.prisma.competition_seasons.findMany({
+          where: { confederation_id: confed.id },
+          orderBy: { id: 'desc' },
+          select: { competition_id: true, name: true },
+        })
+      : [];
+
+    const compSeasonNameMap = new Map<string, string>();
+    for (const cs of continentalCompSeasons) {
+      if (!compSeasonNameMap.has(cs.competition_id.toString())) {
+        compSeasonNameMap.set(cs.competition_id.toString(), cs.name);
+      }
+    }
+    for (const cs of domesticCompSeasons) {
+      compSeasonNameMap.set(cs.competition_id.toString(), cs.name);
+    }
 
     const comps = await this.prisma.competitions.findMany({
       where,
@@ -128,18 +153,33 @@ export class CompetitionsService {
       const isContinental = comp.scope === 'CONTINENTAL' || comp.scope === 'REGIONAL';
       const isInternational = comp.scope === 'INTERNATIONAL';
 
-      let displayName = comp.name;
-      let groupLabel = '🏆 Đấu Trường Quốc Tế';
-      let regionName = 'Toàn Cầu';
+      const dbSavedName = compSeasonNameMap.get(comp.id.toString()) || comp.name;
+      const displayName = dbSavedName;
+      const groupLabel = isDomestic
+        ? (country ? country.name : 'Domestic')
+        : isContinental
+        ? (confed ? confed.name : 'Continental')
+        : 'International';
+      const regionName = country?.name || confed?.name || 'Global';
 
       let formatType: 'LEAGUE' | 'KNOCKOUT' | 'GROUP_KNOCKOUT' = 'LEAGUE';
       let formatLabel = 'Vòng tròn tính điểm';
       if (comp.competition_type === 'DOMESTIC_LEAGUE') {
         formatType = 'LEAGUE';
         formatLabel = 'Vòng tròn tính điểm (League)';
-      } else if (comp.competition_type === 'DOMESTIC_CUP' || comp.competition_type === 'DOMESTIC_SUPER_CUP') {
+      } else if (
+        comp.competition_type === 'DOMESTIC_CUP' ||
+        comp.competition_type === 'DOMESTIC_SUPER_CUP' ||
+        comp.competition_type === 'DOMESTIC_YOUTH_CUP' ||
+        comp.competition_type === 'INVITATIONAL_YOUTH_CUP' ||
+        comp.competition_type?.endsWith('_CUP')
+      ) {
         formatType = 'KNOCKOUT';
-        formatLabel = comp.competition_type === 'DOMESTIC_SUPER_CUP' ? 'Tranh Siêu Cúp' : 'Cúp Loại Trực Tiếp (Knockout)';
+        formatLabel = comp.competition_type === 'DOMESTIC_SUPER_CUP'
+          ? 'Tranh Siêu Cúp (Knockout)'
+          : comp.competition_type === 'DOMESTIC_YOUTH_CUP'
+          ? 'Cúp Trẻ U21 (Knockout)'
+          : 'Cúp Loại Trực Tiếp (Knockout)';
       } else if (
         comp.competition_type?.startsWith('CONTINENTAL_CLUB') ||
         comp.competition_type?.startsWith('WORLD') ||
@@ -149,48 +189,22 @@ export class CompetitionsService {
         formatLabel = 'Vòng Bảng & Loại Trực Tiếp (Knockout)';
       }
 
-      if (isDomestic && country) {
-        groupLabel = `🇻🇳 Giải Đấu Quốc Nội (${country.name})`;
-        regionName = country.name;
-        displayName = `${comp.name} - ${country.name}`;
-      } else if (isContinental && confederation) {
-        groupLabel = `🌏 Cúp Châu Lục (${confederation.code})`;
-        regionName = confederation.name;
-        const code = confederation.code;
-        if (comp.id === 8n) {
-          if (code === 'AFC') displayName = 'Cúp C1 Châu Lục (AFC Champions League Elite)';
-          else if (code === 'UEFA') displayName = 'Cúp C1 Châu Lục (UEFA Champions League)';
-          else if (code === 'CONMEBOL') displayName = 'Cúp C1 Châu Lục (Copa Libertadores)';
-          else displayName = `${comp.name} (${code})`;
-        } else if (comp.id === 9n) {
-          if (code === 'AFC') displayName = 'Cúp C2 Châu Lục (AFC Champions League Two)';
-          else if (code === 'UEFA') displayName = 'Cúp C2 Châu Lục (UEFA Europa League)';
-          else if (code === 'CONMEBOL') displayName = 'Cúp C2 Châu Lục (Copa Sudamericana)';
-          else displayName = `${comp.name} (${code})`;
-        } else if (comp.id === 10n) {
-          if (code === 'AFC') displayName = 'Cúp C3 Châu Lục (AFC Challenge League)';
-          else if (code === 'UEFA') displayName = 'Cúp C3 Châu Lục (UEFA Conference League)';
-          else displayName = `${comp.name} (${code})`;
-        } else {
-          displayName = `${comp.name} (${code})`;
-        }
-      }
-
       return {
         id: comp.id.toString(),
         code: comp.code,
-        name: comp.name,
+        name: dbSavedName,
         displayName,
         groupLabel,
         regionName,
         scope: comp.scope,
         tier: comp.tier,
+        competition_type: comp.competition_type,
         format_type: comp.format_type,
         formatType,
         formatLabel,
         total_teams: comp.total_teams,
         country_id: country ? country.id.toString() : null,
-        confederation_id: confederation ? confederation.id.toString() : null,
+        confederation_id: confed ? confed.id.toString() : null,
         country: country
           ? {
               id: country.id.toString(),
@@ -199,15 +213,130 @@ export class CompetitionsService {
               flag_url: country.flag_url,
             }
           : null,
-        confederation: confederation
+        confederation: confed
           ? {
-              id: confederation.id.toString(),
-              name: confederation.name,
-              code: confederation.code,
+              id: confed.id.toString(),
+              name: confed.name,
+              code: confed.code,
             }
           : null,
       };
     });
+  }
+
+  /**
+   * Lấy cấu trúc Menu phân cấp cho Navbar / LeftDock / Dropdown:
+   * 1. Quốc nội: League (kèm 4 tiers), Cúp QG, Siêu Cúp, Cúp Trẻ
+   * 2. Châu Lục CLB: C1, C2, C3 của confederation
+   * 3. Quốc Tế: World Cup, Cúp ĐTQG Châu Lục
+   */
+  async getCompetitionsMenu(countryId?: string) {
+    let effectiveCountryId = countryId ? BigInt(countryId) : null;
+    let country: any = null;
+    if (effectiveCountryId) {
+      country = await this.prisma.countries.findUnique({
+        where: { id: effectiveCountryId },
+      });
+    }
+    if (!country) {
+      country = await this.prisma.countries.findFirst({
+        orderBy: { id: 'asc' },
+      });
+      if (country) effectiveCountryId = country.id;
+    }
+
+    let confed: any = null;
+    if (country?.confederation_id) {
+      confed = await this.prisma.confederations.findUnique({
+        where: { id: country.confederation_id },
+      });
+    }
+
+    // 1. Domestic seasons: lọc chính xác theo country_id
+    const domesticCompSeasons = effectiveCountryId
+      ? await this.prisma.competition_seasons.findMany({
+          where: { country_id: effectiveCountryId },
+          orderBy: { id: 'desc' },
+          select: { competition_id: true, name: true },
+        })
+      : [];
+
+    // 2. Continental seasons: lọc theo confederation_id
+    const continentalCompSeasons = confed
+      ? await this.prisma.competition_seasons.findMany({
+          where: { confederation_id: confed.id },
+          orderBy: { id: 'desc' },
+          select: { competition_id: true, name: true },
+        })
+      : [];
+
+    const csMap = new Map<string, string>();
+    for (const cs of continentalCompSeasons) {
+      if (!csMap.has(cs.competition_id.toString())) {
+        csMap.set(cs.competition_id.toString(), cs.name);
+      }
+    }
+    // Ghi đè domestic lên trên để ưu tiên tuyệt đối giải quốc nội của đúng nước đó
+    for (const cs of domesticCompSeasons) {
+      csMap.set(cs.competition_id.toString(), cs.name);
+    }
+
+    const allComps = await this.prisma.competitions.findMany({
+      orderBy: { id: 'asc' },
+    });
+
+    // 1. Domestic League Tiers (1..4)
+    const leagueTiers = allComps
+      .filter((c) => c.scope === 'DOMESTIC' && c.competition_type === 'DOMESTIC_LEAGUE' && c.tier && c.tier > 0)
+      .map((c) => ({
+        id: c.id.toString(),
+        tier: c.tier,
+        name: csMap.get(c.id.toString()) || c.name,
+        code: c.code,
+      }));
+
+    // Cúp Quốc Gia, Siêu Cúp, Cúp Trẻ U21
+    const natCup = allComps.find((c) => c.competition_type === 'DOMESTIC_CUP');
+    const superCup = allComps.find((c) => c.competition_type === 'DOMESTIC_SUPER_CUP');
+    const youthCup = allComps.find((c) => c.competition_type === 'DOMESTIC_YOUTH_CUP');
+
+    // 2. Continental Club Cups (C1, C2, C3)
+    const continentalCups = allComps
+      .filter((c) => c.competition_type?.startsWith('CONTINENTAL_CLUB'))
+      .map((c) => ({
+        id: c.id.toString(),
+        name: csMap.get(c.id.toString()) || c.name,
+        code: c.code,
+        competition_type: c.competition_type,
+        confederation_code: confed?.code || 'UEFA',
+      }));
+
+    // 3. International / National Teams (World Cup, ĐTQG)
+    const internationalComps = allComps
+      .filter((c) => c.scope === 'INTERNATIONAL' || c.competition_type === 'CONTINENTAL_NATIONAL')
+      .map((c) => ({
+        id: c.id.toString(),
+        name: csMap.get(c.id.toString()) || c.name,
+        code: c.code,
+        competition_type: c.competition_type,
+      }));
+
+    return {
+      country: country ? { id: country.id.toString(), name: country.name, code: country.code, flag_url: country.flag_url } : null,
+      confederation: confed ? { id: confed.id.toString(), name: confed.name, code: confed.code } : null,
+      domestic: {
+        league: {
+          currentCompId: leagueTiers[0]?.id || '1',
+          name: leagueTiers[0]?.name?.replace(/\s+1$/, '') || `${country?.name || ''} League`,
+          tiers: leagueTiers,
+        },
+        nationalCup: natCup ? { id: natCup.id.toString(), name: csMap.get(natCup.id.toString()) || natCup.name, type: natCup.competition_type } : null,
+        superCup: superCup ? { id: superCup.id.toString(), name: csMap.get(superCup.id.toString()) || superCup.name, type: superCup.competition_type } : null,
+        youthCup: youthCup ? { id: youthCup.id.toString(), name: csMap.get(youthCup.id.toString()) || youthCup.name, type: youthCup.competition_type } : null,
+      },
+      continental: continentalCups,
+      international: internationalComps,
+    };
   }
 
   async getCompetitionById(id: bigint) {
@@ -229,7 +358,7 @@ export class CompetitionsService {
     return comp;
   }
 
-  async getStandings(competitionId: bigint, seasonId?: bigint, countryId?: string) {
+  async getStandings(competitionId: bigint, seasonId?: bigint, countryId?: string, groupId?: string) {
     const comp = await this.prisma.competitions.findUnique({
       where: { id: competitionId },
     });
@@ -329,9 +458,19 @@ export class CompetitionsService {
     if (comp?.competition_type === 'DOMESTIC_LEAGUE') {
       formatType = 'LEAGUE';
       formatLabel = 'Vòng tròn tính điểm (League)';
-    } else if (comp?.competition_type === 'DOMESTIC_CUP' || comp?.competition_type === 'DOMESTIC_SUPER_CUP') {
+    } else if (
+      comp?.competition_type === 'DOMESTIC_CUP' ||
+      comp?.competition_type === 'DOMESTIC_SUPER_CUP' ||
+      comp?.competition_type === 'DOMESTIC_YOUTH_CUP' ||
+      comp?.competition_type === 'INVITATIONAL_YOUTH_CUP' ||
+      comp?.competition_type?.endsWith('_CUP')
+    ) {
       formatType = 'KNOCKOUT';
-      formatLabel = comp?.competition_type === 'DOMESTIC_SUPER_CUP' ? 'Tranh Siêu Cúp' : 'Cúp Loại Trực Tiếp (Knockout)';
+      formatLabel = comp?.competition_type === 'DOMESTIC_SUPER_CUP'
+        ? 'Tranh Siêu Cúp (Knockout)'
+        : comp?.competition_type === 'DOMESTIC_YOUTH_CUP'
+        ? 'Cúp Trẻ U21 (Knockout)'
+        : 'Cúp Loại Trực Tiếp (Knockout)';
     } else if (
       comp?.competition_type?.startsWith('CONTINENTAL_CLUB') ||
       comp?.competition_type?.startsWith('WORLD') ||
@@ -401,69 +540,18 @@ export class CompetitionsService {
       };
     }
 
-    // Fallback if stage_standings has no records: Populate from participating clubs
-    let participatingClubs: any[] = [];
-    if (isDomestic && countryId) {
-      const cId = BigInt(countryId);
-      participatingClubs = await this.prisma.clubs.findMany({
-        where: {
-          country_id: cId,
-          ...(comp?.tier && comp.tier > 0 ? { current_competition_id: competitionId } : {}),
-        },
-        take: 20,
-        orderBy: { reputation: 'desc' },
-        select: { id: true, name: true, short_name: true, logo_url: true, reputation: true },
-      });
-    } else if (isContinental && countryId) {
-      const country = await this.prisma.countries.findUnique({
-        where: { id: BigInt(countryId) },
-        select: { confederation_id: true },
-      });
-      if (country?.confederation_id) {
-        participatingClubs = await this.prisma.clubs.findMany({
-          where: {
-            countries: { confederation_id: country.confederation_id },
-          },
-          take: 32,
-          orderBy: { reputation: 'desc' },
-          select: { id: true, name: true, short_name: true, logo_url: true, reputation: true },
-        });
-      }
-    }
-
-    if (participatingClubs.length === 0) {
-      participatingClubs = await this.prisma.clubs.findMany({
-        take: 16,
-        orderBy: { reputation: 'desc' },
-        select: { id: true, name: true, short_name: true, logo_url: true, reputation: true },
-      });
-    }
-
+    // Nếu giải đấu không tổ chức hoặc chưa có dữ liệu bảng điểm trong mùa này:
     return {
       competitionId: competitionId.toString(),
-      stageName: 'Mùa giải mới',
-      standings: participatingClubs.map((c, idx) => ({
-        id: c.id.toString(),
-        position: idx + 1,
-        club: {
-          id: c.id.toString(),
-          name: c.name,
-          short_name: c.short_name,
-          logo_url: c.logo_url,
-        },
-        played: 0,
-        wins: 0,
-        draws: 0,
-        losses: 0,
-        goals_for: 0,
-        goals_against: 0,
-        goal_difference: 0,
-        points: 0,
-      })),
+      stageName: stage?.name || 'Chưa diễn ra',
+      formatType,
+      formatLabel,
+      groups: undefined,
+      standings: [],
     };
   }
 
-  async getTopScorers(competitionId: bigint, limit: number = 10, countryId?: string) {
+  async getTopScorers(competitionId: bigint, limit: number = 10, countryId?: string, groupId?: string) {
     const l = Math.max(1, Number(limit) || 10);
     const whereCs: any = { competition_id: competitionId };
     if (countryId) whereCs.country_id = BigInt(countryId);
@@ -481,10 +569,17 @@ export class CompetitionsService {
     }
 
     if (compSeason) {
+      let groupClubIds: bigint[] = [];
+      if (groupId) {
+        const teams = await this.getCompetitionTeams(competitionId, countryId, groupId);
+        groupClubIds = teams.map((t) => BigInt(t.id));
+      }
+
       const stats = await this.prisma.player_statistics.findMany({
         where: {
           competition_season_id: compSeason.id,
           goals: { gt: 0 },
+          ...(groupClubIds.length > 0 ? { club_id: { in: groupClubIds } } : {}),
         },
         take: l,
         orderBy: [{ goals: 'desc' }, { assists: 'desc' }],
@@ -524,8 +619,8 @@ export class CompetitionsService {
     }
 
     // Fallback: Top forwards from clubs in this competition
-    const clubs = await this.getCompetitionTeams(competitionId, countryId);
-    const clubIds = clubs.slice(0, 10).map((c) => BigInt(c.id));
+    const clubs = await this.getCompetitionTeams(competitionId, countryId, groupId);
+    const clubIds = clubs.slice(0, 16).map((c) => BigInt(c.id));
     if (clubIds.length === 0) return [];
 
     const topPlayers = await this.prisma.players.findMany({
@@ -560,7 +655,7 @@ export class CompetitionsService {
     }));
   }
 
-  async getTopAssists(competitionId: bigint, limit: number = 10, countryId?: string) {
+  async getTopAssists(competitionId: bigint, limit: number = 10, countryId?: string, groupId?: string) {
     const l = Math.max(1, Number(limit) || 10);
     const whereCs: any = { competition_id: competitionId };
     if (countryId) whereCs.country_id = BigInt(countryId);
@@ -578,10 +673,17 @@ export class CompetitionsService {
     }
 
     if (compSeason) {
+      let groupClubIds: bigint[] = [];
+      if (groupId) {
+        const teams = await this.getCompetitionTeams(competitionId, countryId, groupId);
+        groupClubIds = teams.map((t) => BigInt(t.id));
+      }
+
       const stats = await this.prisma.player_statistics.findMany({
         where: {
           competition_season_id: compSeason.id,
           assists: { gt: 0 },
+          ...(groupClubIds.length > 0 ? { club_id: { in: groupClubIds } } : {}),
         },
         take: l,
         orderBy: [{ assists: 'desc' }, { goals: 'desc' }],
@@ -621,8 +723,8 @@ export class CompetitionsService {
     }
 
     // Fallback: Top midfielders/playmakers
-    const clubs = await this.getCompetitionTeams(competitionId, countryId);
-    const clubIds = clubs.slice(0, 10).map((c) => BigInt(c.id));
+    const clubs = await this.getCompetitionTeams(competitionId, countryId, groupId);
+    const clubIds = clubs.slice(0, 16).map((c) => BigInt(c.id));
     if (clubIds.length === 0) return [];
 
     const topPlayers = await this.prisma.players.findMany({
@@ -676,65 +778,16 @@ export class CompetitionsService {
     };
   }
 
-  async getCompetitionTeams(competitionId: bigint, countryId?: string) {
+  async getCompetitionTeams(competitionId: bigint, countryId?: string, groupId?: string) {
     const comp = await this.prisma.competitions.findUnique({
       where: { id: competitionId },
     });
+    if (!comp) return [];
 
-    const isDomestic = comp?.scope === 'DOMESTIC';
-    const isContinental = comp?.scope === 'CONTINENTAL' || comp?.scope === 'REGIONAL';
+    const isDomestic = comp.scope === 'DOMESTIC';
+    const isContinental = comp.scope === 'CONTINENTAL' || comp.scope === 'REGIONAL';
 
-    // 1. If domestic and countryId provided: return clubs of this country
-    if (isDomestic && countryId) {
-      const cId = BigInt(countryId);
-      const clubs = await this.prisma.clubs.findMany({
-        where: {
-          country_id: cId,
-          ...(comp?.tier && comp.tier > 0 ? { current_competition_id: competitionId } : {}),
-        },
-        include: {
-          stadiums: true,
-          cities: true,
-          countries: true,
-          users: { select: { id: true, username: true } },
-        },
-        orderBy: { reputation: 'desc' },
-      });
-
-      if (clubs.length > 0) {
-        return clubs.map((c) => this.mapClubToTeamDto(c));
-      }
-    }
-
-    // 2. If continental and countryId provided: return clubs of this confederation
-    if (isContinental && countryId) {
-      const country = await this.prisma.countries.findUnique({
-        where: { id: BigInt(countryId) },
-        select: { confederation_id: true },
-      });
-
-      if (country?.confederation_id) {
-        const clubs = await this.prisma.clubs.findMany({
-          where: {
-            countries: { confederation_id: country.confederation_id },
-          },
-          take: 32,
-          include: {
-            stadiums: true,
-            cities: true,
-            countries: true,
-            users: { select: { id: true, username: true } },
-          },
-          orderBy: { reputation: 'desc' },
-        });
-
-        if (clubs.length > 0) {
-          return clubs.map((c) => this.mapClubToTeamDto(c));
-        }
-      }
-    }
-
-    // 3. Try competition_seasons stage_teams
+    // 1. Tìm competition_seasons của giải đấu trong mùa hiện tại
     let confedIdForFilter: bigint | null = null;
     if (isContinental && countryId) {
       const country = await this.prisma.countries.findUnique({
@@ -755,6 +808,10 @@ export class CompetitionsService {
         competition_stages: {
           include: {
             stage_teams: {
+              where: {
+                status: 'ACTIVE',
+                ...(groupId ? { group_id: BigInt(groupId) } : {}),
+              },
               include: {
                 clubs: {
                   include: {
@@ -771,24 +828,34 @@ export class CompetitionsService {
       },
     });
 
-    const stageTeams = compSeason?.competition_stages?.[0]?.stage_teams || [];
+    if (!compSeason) return [];
+
+    // 2. Lấy danh sách đội bóng thực sự đăng ký trong stage_teams (đã lọc theo groupId nếu có)
+    const stageTeams = compSeason.competition_stages?.[0]?.stage_teams || [];
     if (stageTeams.length > 0) {
       return stageTeams.map((st) => this.mapClubToTeamDto(st.clubs));
     }
 
-    // 4. Default fallback: take top 20 clubs
-    const clubs = await this.prisma.clubs.findMany({
-      take: 20,
-      include: {
-        stadiums: true,
-        cities: true,
-        countries: true,
-        users: { select: { id: true, username: true } },
-      },
-      orderBy: { reputation: 'desc' },
-    });
+    // 3. Nếu là giải VĐQG (Domestic League) và chưa có stage_teams, lấy theo current_competition_id của quốc gia đó
+    if (isDomestic && countryId && comp.tier && comp.tier > 0) {
+      const clubs = await this.prisma.clubs.findMany({
+        where: {
+          country_id: BigInt(countryId),
+          current_competition_id: competitionId,
+        },
+        include: {
+          stadiums: true,
+          cities: true,
+          countries: true,
+          users: { select: { id: true, username: true } },
+        },
+        orderBy: { reputation: 'desc' },
+      });
+      return clubs.map((c) => this.mapClubToTeamDto(c));
+    }
 
-    return clubs.map((c) => this.mapClubToTeamDto(c));
+    // Tuyệt đối không fallback bốc bừa 20 CLB
+    return [];
   }
 
   /**
@@ -1282,7 +1349,7 @@ export class CompetitionsService {
                 competition_id: 7n,
                 season_id: season.id,
                 country_id: c.id,
-                name: `${c.name} Super Cup - ${season.name}`,
+                name: `${c.name} Super Cup`,
                 status: 'ACTIVE',
               },
             });
@@ -1375,7 +1442,7 @@ export class CompetitionsService {
                 competition_id: 6n,
                 season_id: season.id,
                 country_id: c.id,
-                name: `${c.name} Cup - ${season.name}`,
+                name: `${c.name} Cup`,
                 status: 'ACTIVE',
               },
             });
@@ -1597,7 +1664,7 @@ export class CompetitionsService {
                 competition_id: 13n,
                 season_id: season.id,
                 country_id: c.id,
-                name: `${c.name} U21 Cup - ${season.name}`,
+                name: `${c.name} U21 Cup`,
                 status: 'ACTIVE',
               },
             });
@@ -1781,7 +1848,7 @@ export class CompetitionsService {
               season_id: targetSeason.id,
               country_id: country.id,
               confederation_id: country.confederation_id,
-              name: `${country.name} League ${comp.tier} - ${targetSeason.name}`,
+              name: `${country.name} League ${comp.tier}`,
               status: 'ACTIVE',
             },
           });
@@ -1868,10 +1935,10 @@ export class CompetitionsService {
         if (!compSeason) {
           const compName =
             comp.competition_type === 'DOMESTIC_SUPER_CUP'
-              ? `${country.name} Super Cup - ${targetSeason.name}`
+              ? `${country.name} Super Cup`
               : comp.competition_type === 'DOMESTIC_YOUTH_CUP'
-                ? `${country.name} U21 Cup - ${targetSeason.name}`
-                : `${country.name} Cup - ${targetSeason.name}`;
+                ? `${country.name} U21 Cup`
+                : `${country.name} Cup`;
 
           compSeason = await this.prisma.competition_seasons.create({
             data: {
@@ -1985,7 +2052,7 @@ export class CompetitionsService {
         }
 
         const levelName = comp.id === 8n ? 'Champions League' : comp.id === 9n ? 'Cup 2' : comp.id === 10n ? 'Cup 3' : comp.name;
-        const cupName = `${confed.name} ${levelName} - ${targetSeason.name}`;
+        const cupName = `${confed.name} ${levelName}`;
 
         let compSeason = await this.prisma.competition_seasons.findFirst({
           where: {
