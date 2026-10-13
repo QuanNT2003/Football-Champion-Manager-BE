@@ -163,10 +163,10 @@ export class CompetitionsService {
       const regionName = country?.name || confed?.name || 'Global';
 
       let formatType: 'LEAGUE' | 'KNOCKOUT' | 'GROUP_KNOCKOUT' = 'LEAGUE';
-      let formatLabel = 'Vòng tròn tính điểm';
+      let formatLabel = 'Round-Robin';
       if (comp.competition_type === 'DOMESTIC_LEAGUE') {
         formatType = 'LEAGUE';
-        formatLabel = 'Vòng tròn tính điểm (League)';
+        formatLabel = 'Round-Robin (League)';
       } else if (
         comp.competition_type === 'DOMESTIC_CUP' ||
         comp.competition_type === 'DOMESTIC_SUPER_CUP' ||
@@ -176,17 +176,17 @@ export class CompetitionsService {
       ) {
         formatType = 'KNOCKOUT';
         formatLabel = comp.competition_type === 'DOMESTIC_SUPER_CUP'
-          ? 'Tranh Siêu Cúp (Knockout)'
+          ? 'Super Cup (Single Match)'
           : comp.competition_type === 'DOMESTIC_YOUTH_CUP'
-          ? 'Cúp Trẻ U21 (Knockout)'
-          : 'Cúp Loại Trực Tiếp (Knockout)';
+          ? 'Youth Cup (Knockout)'
+          : 'Single Elimination (Knockout)';
       } else if (
         comp.competition_type?.startsWith('CONTINENTAL_CLUB') ||
         comp.competition_type?.startsWith('WORLD') ||
         comp.competition_type?.startsWith('CONTINENTAL_NATIONAL')
       ) {
         formatType = 'GROUP_KNOCKOUT';
-        formatLabel = 'Vòng Bảng & Loại Trực Tiếp (Knockout)';
+        formatLabel = 'Group Stage & Knockout';
       }
 
       return {
@@ -454,10 +454,10 @@ export class CompetitionsService {
     const standings = stage?.stage_standings || [];
 
     let formatType: 'LEAGUE' | 'KNOCKOUT' | 'GROUP_KNOCKOUT' = 'LEAGUE';
-    let formatLabel = 'Vòng tròn tính điểm';
+    let formatLabel = 'Round-Robin';
     if (comp?.competition_type === 'DOMESTIC_LEAGUE') {
       formatType = 'LEAGUE';
-      formatLabel = 'Vòng tròn tính điểm (League)';
+      formatLabel = 'Round-Robin (League)';
     } else if (
       comp?.competition_type === 'DOMESTIC_CUP' ||
       comp?.competition_type === 'DOMESTIC_SUPER_CUP' ||
@@ -467,17 +467,17 @@ export class CompetitionsService {
     ) {
       formatType = 'KNOCKOUT';
       formatLabel = comp?.competition_type === 'DOMESTIC_SUPER_CUP'
-        ? 'Tranh Siêu Cúp (Knockout)'
+        ? 'Super Cup (Single Match)'
         : comp?.competition_type === 'DOMESTIC_YOUTH_CUP'
-        ? 'Cúp Trẻ U21 (Knockout)'
-        : 'Cúp Loại Trực Tiếp (Knockout)';
+        ? 'Youth Cup (Knockout)'
+        : 'Single Elimination (Knockout)';
     } else if (
       comp?.competition_type?.startsWith('CONTINENTAL_CLUB') ||
       comp?.competition_type?.startsWith('WORLD') ||
       comp?.competition_type?.startsWith('CONTINENTAL_NATIONAL')
     ) {
       formatType = 'GROUP_KNOCKOUT';
-      formatLabel = 'Vòng Bảng & Loại Trực Tiếp (Knockout)';
+      formatLabel = 'Group Stage & Knockout';
     }
 
     // Extract groups if competition has multiple groups (e.g. Continental Cup Group Stage: Group A to H)
@@ -513,7 +513,7 @@ export class CompetitionsService {
     if (standings.length > 0 || groups.length > 0) {
       return {
         competitionId: competitionId.toString(),
-        stageName: stage?.name || 'Vòng Bảng',
+        stageName: stage?.name || 'Group Stage',
         formatType,
         formatLabel,
         groups: groups.length > 0 ? groups : undefined,
@@ -543,7 +543,7 @@ export class CompetitionsService {
     // Nếu giải đấu không tổ chức hoặc chưa có dữ liệu bảng điểm trong mùa này:
     return {
       competitionId: competitionId.toString(),
-      stageName: stage?.name || 'Chưa diễn ra',
+      stageName: stage?.name || 'Upcoming',
       formatType,
       formatLabel,
       groups: undefined,
@@ -1279,7 +1279,7 @@ export class CompetitionsService {
           const rounds = new Map<number, any>();
           for (let roundNo = 1; roundNo <= maxRound; roundNo++) {
             const seasonDay = roundDays[roundNo - 1] || this.leagueSeasonDays[this.leagueSeasonDays.length - 1];
-            const round = await this.ensureStageRound(stage.id, season, roundNo, seasonDay, `Vòng ${roundNo}`);
+            const round = await this.ensureStageRound(stage.id, season, roundNo, seasonDay, `Round ${roundNo}`);
             rounds.set(roundNo, round);
           }
 
@@ -1362,7 +1362,7 @@ export class CompetitionsService {
             stage = await this.prisma.competition_stages.create({
               data: {
                 competition_season_id: cs.id,
-                name: 'Chung Kết Siêu Cúp',
+                name: 'Super Cup Final',
                 stage_type: 'KNOCKOUT',
                 order_no: 1,
                 status: 'ACTIVE',
@@ -1375,7 +1375,7 @@ export class CompetitionsService {
             const group = await this.ensureStageGroup(stage.id);
             await this.ensureStageParticipants(stage.id, topClubs, group.id, 'Super Cup Berth');
             const seasonDay = 3; // Cố định Day 3 Siêu Cúp Quốc Gia
-            const round = await this.ensureStageRound(stage.id, season, 1, seasonDay, 'Chung kết Siêu Cúp');
+            const round = await this.ensureStageRound(stage.id, season, 1, seasonDay, 'Final');
             const matchDate = this.getSeasonDate(season, seasonDay);
             const kickoff_time = this.getKickoffTimeFromLocalSlot(
               this.cupLocalKickoffSlots,
@@ -1455,7 +1455,7 @@ export class CompetitionsService {
             stage = await this.prisma.competition_stages.create({
               data: {
                 competition_season_id: cs.id,
-                name: 'Cúp Quốc Gia (Knockout Stage)',
+                name: 'National Cup (Knockout Stage)',
                 stage_type: 'KNOCKOUT',
                 order_no: 1,
                 status: 'ACTIVE',
@@ -1470,17 +1470,17 @@ export class CompetitionsService {
 
             // Khởi tạo trước 9 rounds chuẩn Master Calendar cho Cúp Quốc Gia
             const cupRoundsSpec = [
-              { roundNo: 1, day: 4, name: 'Vòng 1 (Tier 4)' },
-              { roundNo: 2, day: 7, name: 'Vòng 2 (+ Tier 3)' },
-              { roundNo: 3, day: 10, name: 'Vòng 3 (+ Tier 2)' },
-              { roundNo: 4, day: 13, name: 'Vòng 4 (Tier 1 Xuất Trận - Vòng 64)' },
-              { roundNo: 5, day: 16, name: 'Vòng 5 (Vòng 32 Đội)' },
-              { roundNo: 6, day: 21, name: 'Vòng 6 (Vòng 1/8)' },
-              { roundNo: 7, day: 24, name: 'Vòng 7 (Tứ Kết)' },
-              { roundNo: 8, day: 27, name: 'Vòng 8 (Bán Kết)' },
-              { roundNo: 9, day: 33, name: 'Vòng 9 (Chung Kết Cúp QG)' },
+              { roundNo: 1, day: 4, name: 'Round 1 (Tier 4)' },
+              { roundNo: 2, day: 7, name: 'Round 2 (+ Tier 3)' },
+              { roundNo: 3, day: 10, name: 'Round 3 (+ Tier 2)' },
+              { roundNo: 4, day: 13, name: 'Round 4 (+ Tier 1 - Round of 64)' },
+              { roundNo: 5, day: 16, name: 'Round of 32' },
+              { roundNo: 6, day: 21, name: 'Round of 16' },
+              { roundNo: 7, day: 24, name: 'Quarter-finals' },
+              { roundNo: 8, day: 27, name: 'Semi-finals' },
+              { roundNo: 9, day: 33, name: 'Final' },
             ];
-            const round1 = await this.ensureStageRound(stage.id, season, 1, 4, 'Vòng 1 (Tier 4)');
+            const round1 = await this.ensureStageRound(stage.id, season, 1, 4, 'Round 1 (Tier 4)');
             for (let rIdx = 1; rIdx < cupRoundsSpec.length; rIdx++) {
               await this.ensureStageRound(stage.id, season, cupRoundsSpec[rIdx].roundNo, cupRoundsSpec[rIdx].day, cupRoundsSpec[rIdx].name);
             }
@@ -1570,7 +1570,7 @@ export class CompetitionsService {
 
         const rounds = new Map<number, any>();
         for (let roundNo = 1; roundNo <= contCupDays.length; roundNo++) {
-          const round = await this.ensureStageRound(stage.id, season, roundNo, contCupDays[roundNo - 1], `Lượt ${roundNo}`);
+          const round = await this.ensureStageRound(stage.id, season, roundNo, contCupDays[roundNo - 1], `Matchday ${roundNo}`);
           rounds.set(roundNo, round);
         }
 
@@ -1588,13 +1588,13 @@ export class CompetitionsService {
           });
         }
         const contKnockoutRoundsSpec = [
-          { roundNo: 1, day: 25, name: 'Vòng 1/8 - Lượt Đi' },
-          { roundNo: 2, day: 26, name: 'Vòng 1/8 - Lượt Về' },
-          { roundNo: 3, day: 28, name: 'Tứ Kết - Lượt Đi' },
-          { roundNo: 4, day: 29, name: 'Tứ Kết - Lượt Về' },
-          { roundNo: 5, day: 31, name: 'Bán Kết - Lượt Đi' },
-          { roundNo: 6, day: 32, name: 'Bán Kết - Lượt Về' },
-          { roundNo: 7, day: 34, name: 'Chung Kết Cúp Châu Lục' },
+          { roundNo: 1, day: 25, name: 'Round of 16 - 1st Leg' },
+          { roundNo: 2, day: 26, name: 'Round of 16 - 2nd Leg' },
+          { roundNo: 3, day: 28, name: 'Quarter-finals - 1st Leg' },
+          { roundNo: 4, day: 29, name: 'Quarter-finals - 2nd Leg' },
+          { roundNo: 5, day: 31, name: 'Semi-finals - 1st Leg' },
+          { roundNo: 6, day: 32, name: 'Semi-finals - 2nd Leg' },
+          { roundNo: 7, day: 34, name: 'Continental Cup Final' },
         ];
         for (const r of contKnockoutRoundsSpec) {
           await this.ensureStageRound(knockoutStage.id, season, r.roundNo, r.day, r.name);
@@ -1677,7 +1677,7 @@ export class CompetitionsService {
             stage = await this.prisma.competition_stages.create({
               data: {
                 competition_season_id: cs.id,
-                name: 'Vòng 1 (Vòng 32 Đội Trẻ)',
+                name: 'Youth Cup (Round of 32)',
                 stage_type: 'KNOCKOUT',
                 order_no: 1,
                 status: 'ACTIVE',
@@ -1693,7 +1693,7 @@ export class CompetitionsService {
               const home = clubs32[i];
               const away = clubs32[31 - i];
               const seasonDay = 7; // Cố định Day 7 cho Vòng 1 Cúp Trẻ U21
-              const round = await this.ensureStageRound(stage.id, season, 1, seasonDay, 'Vòng 1 (Vòng 32 Đội)');
+              const round = await this.ensureStageRound(stage.id, season, 1, seasonDay, 'Round of 32');
               const matchDate = this.getSeasonDate(season, seasonDay);
               const kickoff_time = this.getKickoffTimeFromLocalSlot(
                 this.youthLocalKickoffSlots,
@@ -1897,7 +1897,7 @@ export class CompetitionsService {
 
           for (let gIdx = 0; gIdx < groupsCount; gIdx++) {
             const letter = groupLetters[gIdx];
-            const groupName = groupsCount > 1 ? `Bảng ${letter}` : 'Main Table';
+            const groupName = groupsCount > 1 ? `Group ${letter}` : 'Main Table';
             const groupCode = groupsCount > 1 ? `GROUP_${letter}` : 'MAIN';
             const group = await this.ensureStageGroup(stage.id, groupName, groupCode, gIdx + 1);
 
@@ -1910,7 +1910,7 @@ export class CompetitionsService {
               const roundDays = this.getLeagueRoundDays(thisGroupClubs.length, maxRound);
               for (let roundNo = 1; roundNo <= maxRound; roundNo++) {
                 const seasonDay = roundDays[roundNo - 1] || this.leagueSeasonDays[this.leagueSeasonDays.length - 1];
-                await this.ensureStageRound(stage.id, targetSeason, roundNo, seasonDay, `Vòng ${roundNo}`);
+                await this.ensureStageRound(stage.id, targetSeason, roundNo, seasonDay, `Round ${roundNo}`);
               }
             }
           }
@@ -1960,10 +1960,10 @@ export class CompetitionsService {
         if (!stage) {
           const stageName =
             comp.competition_type === 'DOMESTIC_SUPER_CUP'
-              ? 'Chung Kết Siêu Cúp'
+              ? 'Super Cup Final'
               : comp.competition_type === 'DOMESTIC_YOUTH_CUP'
-                ? 'Vòng 1 (Vòng 32 Đội Trẻ)'
-                : 'Vòng 1 (Vòng Loại Trực Tiếp)';
+                ? 'Youth Cup (Round of 32)'
+                : 'National Cup (Knockout Stage)';
 
           stage = await this.prisma.competition_stages.create({
             data: {
@@ -1986,14 +1986,14 @@ export class CompetitionsService {
           });
           if (clubs.length > 0) {
             enrolledClubsCount += await this.ensureStageParticipants(stage.id, clubs, group.id, 'Super Cup Berth');
-            await this.ensureStageRound(stage.id, targetSeason, 1, 3, 'Chung kết');
+            await this.ensureStageRound(stage.id, targetSeason, 1, 3, 'Final');
           }
         } else if (comp.competition_type === 'DOMESTIC_YOUTH_CUP') {
           // Lấy Top 32 CLB tham gia theo Cấp độ Học viện trẻ (Youth Academy) + Danh tiếng CLB (Reputation)
           const clubs = await this.getTopYouthClubsByCountry(country.id, 32);
           if (clubs.length > 0) {
             enrolledClubsCount += await this.ensureStageParticipants(stage.id, clubs, group.id, 'Youth Cup Entry');
-            await this.ensureStageRound(stage.id, targetSeason, 1, 7, 'Vòng 1 (Vòng 32 Đội)');
+            await this.ensureStageRound(stage.id, targetSeason, 1, 7, 'Round of 32');
           }
         } else {
           // DOMESTIC_CUP: Đăng ký toàn bộ 240 CLB của quốc gia và khởi tạo đủ 9 rounds chuẩn Master Calendar
@@ -2005,15 +2005,15 @@ export class CompetitionsService {
           if (allClubs.length > 0) {
             enrolledClubsCount += await this.ensureStageParticipants(stage.id, allClubs, group.id, 'Domestic Cup Entry');
             const cupRoundsSpec = [
-              { roundNo: 1, day: 4, name: 'Vòng 1 (Tier 4)' },
-              { roundNo: 2, day: 7, name: 'Vòng 2 (+ Tier 3)' },
-              { roundNo: 3, day: 10, name: 'Vòng 3 (+ Tier 2)' },
-              { roundNo: 4, day: 13, name: 'Vòng 4 (Tier 1 Xuất Trận - Vòng 64)' },
-              { roundNo: 5, day: 16, name: 'Vòng 5 (Vòng 32 Đội)' },
-              { roundNo: 6, day: 21, name: 'Vòng 6 (Vòng 1/8)' },
-              { roundNo: 7, day: 24, name: 'Vòng 7 (Tứ Kết)' },
-              { roundNo: 8, day: 27, name: 'Vòng 8 (Bán Kết)' },
-              { roundNo: 9, day: 33, name: 'Vòng 9 (Chung Kết Cúp QG)' },
+              { roundNo: 1, day: 4, name: 'Round 1' },
+              { roundNo: 2, day: 7, name: 'Round 2' },
+              { roundNo: 3, day: 10, name: 'Round 3' },
+              { roundNo: 4, day: 13, name: 'Round 4 (Round of 64)' },
+              { roundNo: 5, day: 16, name: 'Round of 32' },
+              { roundNo: 6, day: 21, name: 'Round of 16' },
+              { roundNo: 7, day: 24, name: 'Quarter-finals' },
+              { roundNo: 8, day: 27, name: 'Semi-finals' },
+              { roundNo: 9, day: 33, name: 'Final' },
             ];
             for (const r of cupRoundsSpec) {
               await this.ensureStageRound(stage.id, targetSeason, r.roundNo, r.day, r.name);
@@ -2099,7 +2099,7 @@ export class CompetitionsService {
         if (groups.length === 0) {
           const groupLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
           for (let g = 0; g < 8; g++) {
-            groups.push(await this.ensureStageGroup(stage.id, `Bảng ${groupLetters[g]}`, `GROUP_${groupLetters[g]}`, g + 1));
+            groups.push(await this.ensureStageGroup(stage.id, `Group ${groupLetters[g]}`, `GROUP_${groupLetters[g]}`, g + 1));
           }
         }
 
@@ -2139,7 +2139,7 @@ export class CompetitionsService {
           const contGroupDays = [5, 8, 11, 14, 17, 22];
           for (let roundNo = 1; roundNo <= 6; roundNo++) {
             const seasonDay = contGroupDays[roundNo - 1];
-            await this.ensureStageRound(stage.id, targetSeason, roundNo, seasonDay, `Lượt ${roundNo}`);
+            await this.ensureStageRound(stage.id, targetSeason, roundNo, seasonDay, `Matchday ${roundNo}`);
           }
 
           // Tạo Knockout Stage và 7 rounds loại trực tiếp chuẩn Master Calendar
@@ -2158,13 +2158,13 @@ export class CompetitionsService {
             });
           }
           const contKnockoutRoundsSpec = [
-            { roundNo: 1, day: 25, name: 'Vòng 1/8 - Lượt Đi' },
-            { roundNo: 2, day: 26, name: 'Vòng 1/8 - Lượt Về' },
-            { roundNo: 3, day: 28, name: 'Tứ Kết - Lượt Đi' },
-            { roundNo: 4, day: 29, name: 'Tứ Kết - Lượt Về' },
-            { roundNo: 5, day: 31, name: 'Bán Kết - Lượt Đi' },
-            { roundNo: 6, day: 32, name: 'Bán Kết - Lượt Về' },
-            { roundNo: 7, day: 34, name: 'Chung Kết Cúp Châu Lục' },
+            { roundNo: 1, day: 25, name: 'Round of 16 - 1st Leg' },
+            { roundNo: 2, day: 26, name: 'Round of 16 - 2nd Leg' },
+            { roundNo: 3, day: 28, name: 'Quarter-finals - 1st Leg' },
+            { roundNo: 4, day: 29, name: 'Quarter-finals - 2nd Leg' },
+            { roundNo: 5, day: 31, name: 'Semi-finals - 1st Leg' },
+            { roundNo: 6, day: 32, name: 'Semi-finals - 2nd Leg' },
+            { roundNo: 7, day: 34, name: 'Continental Cup Final' },
           ];
           for (const r of contKnockoutRoundsSpec) {
             await this.ensureStageRound(knockoutStage.id, targetSeason, r.roundNo, r.day, r.name);
@@ -3330,7 +3330,7 @@ export class CompetitionsService {
             for (let i = 0; i < count; i++) {
               pairs.push({ home: tier3Clubs[i].id, away: winnersV1[i] });
             }
-            await scheduleRoundMatches(2, 7, 'Vòng 2 (+ Tier 3)', pairs);
+            await scheduleRoundMatches(2, 7, 'Round 2 (+ Tier 3)', pairs);
           }
         }
       }
@@ -3362,7 +3362,7 @@ export class CompetitionsService {
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
               pairs.push({ home: pool[i], away: pool[pool.length - 1 - i] });
             }
-            await scheduleRoundMatches(3, 10, 'Vòng 3 (+ Tier 2)', pairs);
+            await scheduleRoundMatches(3, 10, 'Round 3 (+ Tier 2)', pairs);
           }
         }
       }
@@ -3393,7 +3393,7 @@ export class CompetitionsService {
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
               pairs.push({ home: pool[i], away: pool[pool.length - 1 - i] });
             }
-            await scheduleRoundMatches(4, 13, 'Vòng 4 (Tier 1 Xuất Trận - Vòng 64)', pairs);
+            await scheduleRoundMatches(4, 13, 'Round 4 (+ Tier 1 - Round of 64)', pairs);
           }
         }
       }
@@ -3410,7 +3410,7 @@ export class CompetitionsService {
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
               pairs.push({ home: pool[i], away: pool[pool.length - 1 - i] });
             }
-            await scheduleRoundMatches(5, 16, 'Vòng 5 (Vòng 32 Đội)', pairs);
+            await scheduleRoundMatches(5, 16, 'Round of 32', pairs);
           }
         }
       }
@@ -3427,7 +3427,7 @@ export class CompetitionsService {
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
               pairs.push({ home: pool[i], away: pool[pool.length - 1 - i] });
             }
-            await scheduleRoundMatches(6, 21, 'Vòng 6 (Vòng 1/8)', pairs);
+            await scheduleRoundMatches(6, 21, 'Round of 16', pairs);
           }
         }
       }
@@ -3444,7 +3444,7 @@ export class CompetitionsService {
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
               pairs.push({ home: pool[i], away: pool[pool.length - 1 - i] });
             }
-            await scheduleRoundMatches(7, 24, 'Vòng 7 (Tứ Kết)', pairs);
+            await scheduleRoundMatches(7, 24, 'Quarter-finals', pairs);
           }
         }
       }
@@ -3461,7 +3461,7 @@ export class CompetitionsService {
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
               pairs.push({ home: pool[i], away: pool[pool.length - 1 - i] });
             }
-            await scheduleRoundMatches(8, 27, 'Vòng 8 (Bán Kết)', pairs);
+            await scheduleRoundMatches(8, 27, 'Semi-finals', pairs);
           }
         }
       }
@@ -3476,7 +3476,7 @@ export class CompetitionsService {
             const pool = r8Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             if (pool.length >= 2) {
               const pairs = [{ home: pool[0], away: pool[1] }];
-              await scheduleRoundMatches(9, 33, 'Vòng 9 (Chung Kết Cúp QG)', pairs);
+              await scheduleRoundMatches(9, 33, 'Final', pairs);
             }
           }
         }
@@ -3580,8 +3580,8 @@ export class CompetitionsService {
             }
 
             if (firstPlaces.length === 8 && secondPlaces.length === 8) {
-              const roundLeg1 = await this.ensureStageRound(knockoutStage.id, season, 1, 25, 'Vòng 1/8 - Lượt Đi');
-              const roundLeg2 = await this.ensureStageRound(knockoutStage.id, season, 2, 26, 'Vòng 1/8 - Lượt Về');
+              const roundLeg1 = await this.ensureStageRound(knockoutStage.id, season, 1, 25, 'Round of 16 - 1st Leg');
+              const roundLeg2 = await this.ensureStageRound(knockoutStage.id, season, 2, 26, 'Round of 16 - 2nd Leg');
               const matches16: any[] = [];
 
               for (let i = 0; i < 8; i++) {
@@ -3652,8 +3652,8 @@ export class CompetitionsService {
               winners8.push(getWinnerOfTwoLegs(l1, l2));
             }
             if (winners8.length === 8) {
-              const rLeg1 = await this.ensureStageRound(knockoutStage.id, season, 3, 28, 'Tứ Kết - Lượt Đi');
-              const rLeg2 = await this.ensureStageRound(knockoutStage.id, season, 4, 29, 'Tứ Kết - Lượt Về');
+              const rLeg1 = await this.ensureStageRound(knockoutStage.id, season, 3, 28, 'Quarter-finals - 1st Leg');
+              const rLeg2 = await this.ensureStageRound(knockoutStage.id, season, 4, 29, 'Quarter-finals - 2nd Leg');
               const matchesQF: any[] = [];
               for (let i = 0; i < 4; i++) {
                 const tA = winners8[i];
@@ -3715,8 +3715,8 @@ export class CompetitionsService {
               winners4.push(getWinnerOfTwoLegs(l1, l2));
             }
             if (winners4.length === 4) {
-              const rLeg1 = await this.ensureStageRound(knockoutStage.id, season, 5, 31, 'Bán Kết - Lượt Đi');
-              const rLeg2 = await this.ensureStageRound(knockoutStage.id, season, 6, 32, 'Bán Kết - Lượt Về');
+              const rLeg1 = await this.ensureStageRound(knockoutStage.id, season, 5, 31, 'Semi-finals - 1st Leg');
+              const rLeg2 = await this.ensureStageRound(knockoutStage.id, season, 6, 32, 'Semi-finals - 2nd Leg');
               const matchesSF: any[] = [];
               for (let i = 0; i < 2; i++) {
                 const tA = winners4[i];
@@ -3778,7 +3778,7 @@ export class CompetitionsService {
               finalists.push(getWinnerOfTwoLegs(l1, l2));
             }
             if (finalists.length === 2) {
-              const rFinal = await this.ensureStageRound(knockoutStage.id, season, 7, 34, 'Chung Kết Cúp Châu Lục');
+              const rFinal = await this.ensureStageRound(knockoutStage.id, season, 7, 34, 'Continental Cup Final');
               const kickoff_time = this.getKickoffTimeFromLocalSlot(this.cupLocalKickoffSlots, Number(finalists[0] + finalists[1]));
               await this.prisma.matches.create({
                 data: {
@@ -3979,17 +3979,37 @@ export class CompetitionsService {
 
     // 3. Với các vòng sau chưa đến ngày thi đấu (chưa có trận thật), tạo các cặp đấu placeholder TBD để người dùng thấy rõ toàn bộ nhánh đấu
     const expectedMatchesPerRound: Record<string, number> = {
-      // Domestic Cup (240 CLB)
+      // Domestic Cup (240 CLB) - English standard
+      'Round 1 (Tier 4)': 64,
+      'Round 2 (+ Tier 3)': 64,
+      'Round 3 (+ Tier 2)': 48,
+      'Round 4 (+ Tier 1 - Round of 64)': 32,
+      'Round 4 (Tier 1 Xuất Trận - Vòng 64)': 32,
+      'Round of 32': 16,
+      'Round of 16': 8,
+      'Quarter-finals': 4,
+      'Semi-finals': 2,
+      'Final': 1,
+      // Continental Cup (16 CLB vào Knockout) - English standard
+      'Round of 16 - 1st Leg': 8,
+      'Round of 16 - 2nd Leg': 8,
+      'Quarter-finals - 1st Leg': 4,
+      'Quarter-finals - 2nd Leg': 4,
+      'Semi-finals - 1st Leg': 2,
+      'Semi-finals - 2nd Leg': 2,
+      'Continental Cup Final': 1,
+      // Super Cup - English standard
+      'Super Cup Final': 1,
+
+      // --- Legacy Vietnamese compatibility ---
       'Vòng 1 (Tier 4)': 64,
       'Vòng 2 (+ Tier 3)': 64,
       'Vòng 3 (+ Tier 2)': 48,
-      'Vòng 4 (Tier 1 Xuất Trận - Vòng 64)': 32,
       'Vòng 5 (Vòng 32 Đội)': 16,
       'Vòng 6 (Vòng 1/8)': 8,
       'Vòng 7 (Tứ Kết)': 4,
       'Vòng 8 (Bán Kết)': 2,
       'Vòng 9 (Chung Kết Cúp QG)': 1,
-      // Continental Cup (16 CLB vào Knockout)
       'Vòng 1/8 - Lượt Đi': 8,
       'Vòng 1/8 - Lượt Về': 8,
       'Tứ Kết - Lượt Đi': 4,
@@ -3997,7 +4017,6 @@ export class CompetitionsService {
       'Bán Kết - Lượt Đi': 2,
       'Bán Kết - Lượt Về': 2,
       'Chung Kết Cúp Châu Lục': 1,
-      // Super Cup
       'Chung kết': 1,
       'Chung kết Siêu Cúp': 1,
     };
