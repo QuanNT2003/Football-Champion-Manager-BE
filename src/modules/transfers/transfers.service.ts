@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { staff_role_attributes_staff_type } from '@prisma/client';
+import { calculateDynamicOvr } from '../players/players.service';
 
 import { GetMarketFilterDto } from './dto';
 
@@ -111,13 +112,15 @@ export class TransfersService {
       } catch (e) {}
     }
 
-    // 5. Lọc theo OVR (Overall rating tính từ reputation)
+    // 5. Lọc theo OVR (Lấy trực tiếp từ trường players.ovr trong bảng players)
     const hasMinOvr = params.minOvr != null && !isNaN(Number(params.minOvr));
     const hasMaxOvr = params.maxOvr != null && !isNaN(Number(params.maxOvr));
     if (hasMinOvr || hasMaxOvr) {
-      where.reputation = {
-        ...(hasMinOvr ? { gte: Number(params.minOvr) * 100 } : {}),
-        ...(hasMaxOvr ? { lte: Number(params.maxOvr) * 100 } : {}),
+      const minOvr = hasMinOvr ? Number(params.minOvr) : 0;
+      const maxOvr = hasMaxOvr ? Number(params.maxOvr) : 99;
+      where.ovr = {
+        gte: minOvr,
+        lte: maxOvr,
       };
     }
 
@@ -192,7 +195,15 @@ export class TransfersService {
             select: { id: true, name: true, flag_url: true },
           },
           player_positions: {
-            include: { positions: true },
+            include: {
+              positions: {
+                include: {
+                  position_attributes: {
+                    select: { attribute_id: true, multiplier: true, is_key: true, order_no: true },
+                  },
+                },
+              },
+            },
           },
           player_attributes: {
             include: { attributes: true },
@@ -209,7 +220,13 @@ export class TransfersService {
       totalPages: Math.ceil(total / l),
       items: list.map((p) => {
         const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
-        const computedOvr = Math.round(Math.min(99, Math.max(55, (p.reputation || 6000) / 100)));
+        const posAttrs = (primaryPos?.positions as any)?.position_attributes || [];
+        const hasAttributes = p.player_attributes && p.player_attributes.length > 0;
+        const computedOvr = p.ovr != null && p.ovr > 0
+          ? p.ovr
+          : (hasAttributes
+              ? calculateDynamicOvr(p.player_attributes, posAttrs)
+              : Math.round(Math.min(99, Math.max(55, (p.reputation || 6000) / 100))));
         const playerName = p.first_name || p.last_name ? `${p.first_name || ''} ${p.last_name || ''}`.trim() : 'Player';
         const clubObj = p.clubs_players_current_club_idToclubs ? {
           id: p.clubs_players_current_club_idToclubs.id.toString(),
@@ -462,7 +479,7 @@ export class TransfersService {
           common_name: `${p.first_name} ${p.last_name}`.trim(),
           age: p.age,
           reputation: p.reputation,
-          ovr: p.reputation || 70,
+          ovr: p.ovr || p.reputation || 70,
           photo_url: p.photo_url,
           market_value: Number(p.market_value),
           position: posCode,
@@ -782,7 +799,18 @@ export class TransfersService {
     };
 
     if (role && role !== 'ALL') {
-      where.staff_type = role;
+      const r = role.toUpperCase();
+      if (['COACH', 'SCOUT', 'PHYSIO', 'DIRECTOR'].includes(r)) {
+        where.staff_type = r;
+      } else if (['HEAD_COACH', 'ASSISTANT_COACH', 'HEAD_COACH_YOUTH', 'ASSISTANT_COACH_YOUTH', 'FITNESS_COACH', 'GOALKEEPING_COACH'].includes(r)) {
+        where.staff_type = 'COACH';
+      } else if (r.includes('SCOUT')) {
+        where.staff_type = r.includes('DIRECTOR') ? 'DIRECTOR' : 'SCOUT';
+      } else if (r.includes('PHYSIO')) {
+        where.staff_type = r.includes('DIRECTOR') ? 'DIRECTOR' : 'PHYSIO';
+      } else if (r.includes('DIRECTOR')) {
+        where.staff_type = 'DIRECTOR';
+      }
     }
 
     if (search) {
@@ -817,6 +845,10 @@ export class TransfersService {
           coachingLicense: s.coaching_license,
           tacticalStyle: s.tactical_style,
           reputation: s.reputation,
+          ovr: s.ovr || 60,
+          overall_rating: s.ovr || 60,
+          age: s.age || 40,
+          birth_season_day: s.birth_season_day || 1,
           nationality: s.countries?.name || 'International',
           countryCode: s.countries?.code || 'INT',
           preferredFormation: s.preferred_formation ? {
@@ -841,11 +873,11 @@ export class TransfersService {
       throw new NotFoundException('Không tìm thấy thông tin nhân viên');
     }
 
-    if (staff.staff_type === 'HEAD_COACH') {
+    if (staff.staff_type === 'COACH') {
       const existingHeadCoach = await this.prisma.staff_contracts.findFirst({
         where: {
           club_id: clubId,
-          staff: { staff_type: 'HEAD_COACH' },
+          role: 'HEAD_COACH',
         },
       });
 
@@ -985,6 +1017,10 @@ export class TransfersService {
       coachingLicense: staff.coaching_license,
       tacticalStyle: staff.tactical_style,
       reputation: staff.reputation,
+      ovr: staff.ovr || 60,
+      overall_rating: staff.ovr || 60,
+      age: staff.age || 40,
+      birth_season_day: staff.birth_season_day || 1,
       potential: (staff as any).potential ?? Math.round(40 + ((staff.reputation || 3000) / 10000) * 45),
       photoUrl: staff.photo_url,
       nationality: staff.countries
@@ -1221,9 +1257,14 @@ export class TransfersService {
         contractId: c.id.toString(),
         name: s.name || 'Staff',
         staffType: s.staff_type,
+        role: c.role || s.staff_type,
         coachingLicense: s.coaching_license,
         tacticalStyle: s.tactical_style,
         reputation: s.reputation,
+        ovr: s.ovr || 60,
+        overall_rating: s.ovr || 60,
+        age: s.age || 40,
+        birth_season_day: s.birth_season_day || 1,
         photoUrl: s.photo_url,
         nationality: s.countries?.name || 'Quốc tế',
         countryCode: s.countries?.code || 'INT',
@@ -1251,25 +1292,18 @@ export class TransfersService {
   }
 
   private mapStaffTypeToRoleAttributeType(staffType: string): staff_role_attributes_staff_type {
-    switch (staffType) {
-      case 'HEAD_COACH':
-      case 'HEAD_COACH_YOUTH':
-        return staff_role_attributes_staff_type.HEAD_COACH;
-      case 'ASSISTANT_COACH':
-      case 'ASSISTANT_COACH_YOUTH':
-        return staff_role_attributes_staff_type.ASSISTANT_COACH;
-      case 'FITNESS_COACH':
-        return staff_role_attributes_staff_type.FITNESS_COACH;
-      case 'GOALKEEPING_COACH':
-        return staff_role_attributes_staff_type.GOALKEEPING_COACH;
-      case 'SCOUT':
-        return staff_role_attributes_staff_type.SCOUT;
-      case 'PHYSIO':
-        return staff_role_attributes_staff_type.PHYSIO;
-      case 'YOUTH_DIRECTOR':
-        return staff_role_attributes_staff_type.YOUTH_DIRECTOR;
-      default:
-        return staff_role_attributes_staff_type.HEAD_COACH;
+    const t = (staffType || '').toUpperCase();
+    if (t === 'SCOUT' || t.includes('SCOUT')) {
+      if (t.includes('DIRECTOR')) return staff_role_attributes_staff_type.DIRECTOR;
+      return staff_role_attributes_staff_type.SCOUT;
     }
+    if (t === 'PHYSIO' || t.includes('PHYSIO')) {
+      if (t.includes('DIRECTOR')) return staff_role_attributes_staff_type.DIRECTOR;
+      return staff_role_attributes_staff_type.PHYSIO;
+    }
+    if (t.includes('DIRECTOR')) {
+      return staff_role_attributes_staff_type.DIRECTOR;
+    }
+    return staff_role_attributes_staff_type.COACH;
   }
 }

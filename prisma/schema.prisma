@@ -253,7 +253,7 @@ model clubs {
   short_name                                              String                   @default("") @db.VarChar(50)
   founded_year                                            Int                      @default(0) @db.SmallInt
   ranking_points                                          Decimal                  @default(1000.00) @db.Decimal(18, 2)
-  world_rank                                              Int                      @default(0)
+  world_rank                                              Int                      @default(1)
   previous_world_rank                                     Int                      @default(0)
   reputation                                              Int                      @default(1000)
   current_competition_id                                  BigInt?                  @db.UnsignedBigInt
@@ -1297,14 +1297,14 @@ model players {
   personality_type_id                                  BigInt                       @db.UnsignedBigInt
   first_name                                           String                       @default("") @db.VarChar(100)
   last_name                                            String                       @default("") @db.VarChar(100)
-  date_of_birth                                        DateTime                     @db.Date
   birth_season                                         Int                          @default(0)
   birth_season_day                                     Int                          @default(1)
   age                                                  Int                          @default(20)
   preferred_foot                                       players_preferred_foot       @default(RIGHT)
   height                                               Decimal                      @default(0.00) @db.Decimal(5, 2)
   weight                                               Decimal                      @default(0.00) @db.Decimal(5, 2)
-  reputation                                           Int                          @default(0)
+  reputation                                           Int                          @default(1000)
+  ovr                                                  Int                          @default(60)
   potential                                            Int                          @default(0)
   experience                                           Int                          @default(0)
   market_value                                         Decimal                      @default(0.00) @db.Decimal(18, 2)
@@ -1505,9 +1505,13 @@ model staff {
   id                     BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
   world_id               BigInt                 @db.UnsignedBigInt
   name                   String                 @default("") @db.VarChar(150)
-  staff_type             staff_staff_type       @default(HEAD_COACH)
+  birth_season           Int                    @default(0)
+  birth_season_day       Int                    @default(1)
+  age                    Int                    @default(20)
+  staff_type             staff_staff_type       @default(COACH)
   nationality_id         BigInt                 @db.UnsignedBigInt
-  reputation             Int                    @default(0)
+  reputation             Int                    @default(1000)
+  ovr                    Int                    @default(60)
   potential              Int                    @default(0)
   coaching_license       staff_coaching_license @default(C)
   preferred_formation_id BigInt?                @db.UnsignedBigInt
@@ -1569,7 +1573,7 @@ model staff_contracts {
   start_season_id    BigInt                     @default(1) @db.UnsignedBigInt
   start_season_day   Int                        @default(1)
   end_season_id      BigInt                     @default(1) @db.UnsignedBigInt
-  end_season_day     Int                        @default(40)
+  end_season_day     Int                        @default(36)
   start_date         DateTime                   @db.Date
   end_date           DateTime?                  @db.Date
   salary             Decimal                    @default(0.0000) @db.Decimal(10, 4)
@@ -1589,7 +1593,7 @@ model staff_contracts {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model staff_role_attributes {
   id                    BigInt                           @id @default(autoincrement()) @db.UnsignedBigInt
-  staff_type            staff_role_attributes_staff_type @default(HEAD_COACH)
+  staff_type            staff_role_attributes_staff_type @default(COACH)
   attribute_type_id     BigInt                           @db.UnsignedBigInt
   multiplier            Decimal                          @default(1.00) @db.Decimal(4, 2)
   is_key                Boolean                          @default(false)
@@ -1851,7 +1855,7 @@ model staff_offers {
   staff_id                                  BigInt           @db.UnsignedBigInt
   club_id                                   BigInt           @db.UnsignedBigInt
   current_club_id                           BigInt?          @db.UnsignedBigInt
-  role_offered                              staff_staff_type @default(HEAD_COACH)
+  role_offered                              staff_contracts_role @default(HEAD_COACH)
   proposed_wage                             Decimal          @default(0.00) @db.Decimal(18, 2)
   contract_years                            Int              @default(1)
   signing_bonus                             Decimal          @default(0.00) @db.Decimal(18, 2)
@@ -1911,13 +1915,10 @@ enum staff_coaching_license {
 }
 
 enum staff_role_attributes_staff_type {
-  HEAD_COACH
-  ASSISTANT_COACH
-  FITNESS_COACH
-  GOALKEEPING_COACH
+  COACH
   SCOUT
   PHYSIO
-  YOUTH_DIRECTOR
+  DIRECTOR
 }
 
 enum competition_ranking_rules_ranking_type {
@@ -2050,13 +2051,10 @@ enum club_tactics_squad_type {
 }
 
 enum staff_staff_type {
-  HEAD_COACH
-  ASSISTANT_COACH
-  FITNESS_COACH
-  GOALKEEPING_COACH
+  COACH
   SCOUT
   PHYSIO
-  YOUTH_DIRECTOR
+  DIRECTOR
 }
 
 enum staff_contracts_role {
@@ -2069,6 +2067,9 @@ enum staff_contracts_role {
   SCOUT
   PHYSIO
   YOUTH_DIRECTOR
+  SCOUT_DIRECTOR
+  PHYSIO_DIRECTOR
+  FINANCIAL_DIRECTOR
 }
 
 enum staff_contracts_squad_type {

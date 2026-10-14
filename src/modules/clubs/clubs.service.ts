@@ -453,7 +453,9 @@ export class ClubsService {
     const playersCount = players.length;
     const avgOvr = playersCount > 0
       ? Math.round((players.reduce((sum, p) => {
-          const rating = p.reputation ? Math.min(99, Math.max(40, p.reputation / 100)) : (p.potential || 50);
+          const rating = p.ovr != null && p.ovr > 0
+            ? p.ovr
+            : (p.reputation ? Math.min(99, Math.max(40, p.reputation / 100)) : (p.potential || 50));
           return sum + rating;
         }, 0) / playersCount) * 10) / 10
       : 50.0;

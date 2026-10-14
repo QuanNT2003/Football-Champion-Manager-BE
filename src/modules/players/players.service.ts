@@ -275,8 +275,8 @@ export class PlayersService {
     const leftColumnKey = keyAttributes.slice(0, Math.ceil(keyAttributes.length / 2));
     const rightColumnKey = keyAttributes.slice(Math.ceil(keyAttributes.length / 2));
 
-    // Calculate OVR dynamically from CSDL position attributes
-    const ovr = calculateDynamicOvr(player.player_attributes, posAttributes);
+    // Use OVR directly from player table if present, fallback to calculateDynamicOvr
+    const ovr = player.ovr != null && player.ovr > 0 ? player.ovr : calculateDynamicOvr(player.player_attributes, posAttributes);
 
     // Total of key skills and total of all skills
     const totalKeySkills = keyAttributes.reduce((acc, a) => acc + a.value, 0);
@@ -396,8 +396,10 @@ export class PlayersService {
       first_name: player.first_name,
       last_name: player.last_name,
       age: player.age,
-      birthday_text: player.date_of_birth ? new Date(player.date_of_birth).toLocaleDateString('vi-VN') : '',
-      date_of_birth: player.date_of_birth,
+      birth_season: player.birth_season,
+      birth_season_day: player.birth_season_day,
+      birthday_text: player.birth_season_day ? `Ngày ${player.birth_season_day}` : '',
+      date_of_birth: null,
       height: player.height ? `${player.height}cm` : '-',
       weight: player.weight ? `${player.weight}kg` : '-',
       preferred_foot: player.preferred_foot || 'Right',
@@ -427,6 +429,8 @@ export class PlayersService {
       },
       experience_points: (player as any).experience ?? 0,
       average_quality: Number(ovr),
+      overall_rating: Number(ovr),
+      ovr: Number(ovr),
       nationality: player.countries_players_nationality_idTocountries?.name || null,
       nationality_detail: player.countries_players_nationality_idTocountries ? {
         id: player.countries_players_nationality_idTocountries.id.toString(),
@@ -559,7 +563,7 @@ export class PlayersService {
 
       const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
       const posAttrs = primaryPos?.positions?.position_attributes || [];
-      const ovr = calculateDynamicOvr(p.player_attributes, posAttrs);
+      const ovr = p.ovr != null && p.ovr > 0 ? p.ovr : calculateDynamicOvr(p.player_attributes, posAttrs);
 
       return {
         id: p.id.toString(),
@@ -589,6 +593,7 @@ export class PlayersService {
           is_loan_listed: Boolean(p.player_status.is_loan_listed),
         } : null,
         overall_rating: ovr,
+        ovr: ovr,
       };
     });
   }

@@ -48,8 +48,9 @@ export class TacticsService {
         where: {
           club_id: clubId,
           OR: [
+            { squad_type: (squadType as any), role: 'HEAD_COACH_YOUTH' },
+            { role: 'HEAD_COACH_YOUTH' },
             { squad_type: (squadType as any) },
-            { staff: { staff_type: 'HEAD_COACH_YOUTH' } },
           ],
         },
         include: {
@@ -82,7 +83,7 @@ export class TacticsService {
       headCoachContract = await this.prisma.staff_contracts.findFirst({
         where: {
           club_id: clubId,
-          staff: { staff_type: 'HEAD_COACH' },
+          role: 'HEAD_COACH',
         },
       include: {
         staff: {
