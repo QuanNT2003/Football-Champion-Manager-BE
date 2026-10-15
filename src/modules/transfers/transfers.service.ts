@@ -687,8 +687,11 @@ export class TransfersService {
       const proposedWage = offer.proposed_wage ? Number(offer.proposed_wage) : 1000;
       const contractYears = offer.contract_years || 3;
 
+      const currentContractStartDate = timeline?.real_date ? new Date(timeline.real_date) : this.calculateGameDate(Number(seasonId || 1), seasonDay);
+
       if (isLoan) {
         // Hợp đồng cho mượn: tạo mới hợp đồng mượn với parent_club_id là CLB cũ
+        const loanEndSeason = Number(seasonId || 1);
         await tx.player_contracts.create({
           data: {
             player_id: offer.player_id,
@@ -696,13 +699,14 @@ export class TransfersService {
             parent_club_id: offer.to_club_id,
             salary: proposedWage,
             salary_currency_id: currencyId,
-            start_date: new Date(),
+            start_date: currentContractStartDate,
+            end_date: this.calculateGameDate(loanEndSeason, 36),
             status: 'ACTIVE',
             is_loan_contract: true,
             start_season_id: seasonId || BigInt(1),
             start_season_day: seasonDay,
             end_season_id: seasonId || BigInt(1),
-            end_season_day: 40,
+            end_season_day: 36,
           },
         });
       } else {
@@ -714,24 +718,26 @@ export class TransfersService {
           },
           data: {
             status: 'TERMINATED',
-            end_date: new Date(),
+            end_date: currentContractStartDate,
           },
         });
 
         // Tạo hợp đồng mới với CLB mua
+        const newContractEndSeason = seasonId ? Number(seasonId) + contractYears : 1 + contractYears;
         await tx.player_contracts.create({
           data: {
             player_id: offer.player_id,
             club_id: offer.from_club_id,
             salary: proposedWage,
             salary_currency_id: currencyId,
-            start_date: new Date(),
+            start_date: currentContractStartDate,
+            end_date: this.calculateGameDate(newContractEndSeason, 36),
             status: 'ACTIVE',
             is_loan_contract: false,
             start_season_id: seasonId || BigInt(1),
             start_season_day: seasonDay,
-            end_season_id: seasonId ? BigInt(Number(seasonId) + contractYears) : BigInt(1 + contractYears),
-            end_season_day: 40,
+            end_season_id: BigInt(newContractEndSeason),
+            end_season_day: 36,
           },
         });
       }
@@ -892,15 +898,28 @@ export class TransfersService {
       where: { staff_id: staffId },
     });
 
+    const timeline = await this.prisma.server_timeline.findFirst();
+    const currentSeason = Number(timeline?.season_number || 1);
+    const currentDay = timeline?.season_day || 1;
+    const startDate = timeline?.real_date ? new Date(timeline.real_date) : this.calculateGameDate(currentSeason, currentDay);
+    const endSeason = currentSeason + 2;
+    const endDate = this.calculateGameDate(endSeason, 36);
+
     const weeklyWage = Math.round((staff.reputation || 5000) * 1.8);
     const newContract = await this.prisma.staff_contracts.create({
       data: {
         staff_id: staffId,
         club_id: clubId,
+        role: staff.staff_type === 'COACH' ? 'HEAD_COACH' : (staff.staff_type as any),
+        squad_type: 'FIRST_TEAM',
+        start_season_id: BigInt(currentSeason),
+        start_season_day: currentDay,
+        end_season_id: BigInt(endSeason),
+        end_season_day: 36,
+        start_date: startDate,
+        end_date: endDate,
         salary: weeklyWage,
         salary_currency_id: BigInt(1),
-        start_date: new Date(),
-        end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
         status: 'ACTIVE',
       },
       include: {
@@ -979,7 +998,13 @@ export class TransfersService {
       medical: attributes.filter((a) => a.category === 'MEDICAL'),
     };
 
+    const timeline = await this.prisma.server_timeline.findFirst();
+    const currentSeasonNumber = timeline?.season_number || 1;
+
     const currentContract = staff.staff_contracts.find((c) => c.status === 'ACTIVE') || null;
+    const contractEndSeason = currentContract?.end_season_id ? Number(currentContract.end_season_id) : currentSeasonNumber;
+    const remainingSeasons = currentContract ? Math.max(0, contractEndSeason - currentSeasonNumber) : 0;
+
     const contractHistory = staff.staff_contracts.map((c) => ({
       id: c.id.toString(),
       club: c.clubs
@@ -1058,10 +1083,19 @@ export class TransfersService {
                   logo_url: currentContract.clubs.logo_url,
                 }
               : null,
+            role: currentContract.role || staff.staff_type,
+            squad_type: currentContract.squad_type || 'FIRST_TEAM',
             salary: Number(currentContract.salary),
+            weekly_wage: Number(currentContract.salary),
             startDate: currentContract.start_date,
             endDate: currentContract.end_date,
+            start_season_id: Number(currentContract.start_season_id || 1),
+            start_season_day: currentContract.start_season_day || 1,
+            end_season_id: contractEndSeason,
+            end_season_day: currentContract.end_season_day || 36,
             status: currentContract.status,
+            current_season: currentSeasonNumber,
+            remaining_seasons: remainingSeasons,
           }
         : null,
       contractHistory,
@@ -1291,6 +1325,178 @@ export class TransfersService {
     });
   }
 
+  async renewPlayerContract(
+    playerId: bigint,
+    dto: { additional_seasons: number; proposed_wage: number; club_id?: string },
+  ) {
+    const clubId = dto.club_id ? BigInt(dto.club_id) : undefined;
+    const contract = await this.prisma.player_contracts.findFirst({
+      where: {
+        player_id: playerId,
+        ...(clubId ? { club_id: clubId } : {}),
+        status: 'ACTIVE',
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    if (!contract) {
+      throw new BadRequestException('Không tìm thấy hợp đồng đang hiệu lực của cầu thủ với CLB này.');
+    }
+
+    const additionalSeasons = Math.max(1, Math.min(5, Number(dto.additional_seasons) || 1));
+    const newEndSeason = Number(contract.end_season_id || 1) + additionalSeasons;
+    const newSalary = Number(dto.proposed_wage) > 0 ? Number(dto.proposed_wage) : Number(contract.salary);
+    const newEndDate = this.calculateGameDate(newEndSeason, 36);
+
+    const updated = await this.prisma.player_contracts.update({
+      where: { id: contract.id },
+      data: {
+        end_season_id: BigInt(newEndSeason),
+        end_season_day: 36,
+        end_date: newEndDate,
+        salary: newSalary,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Gia hạn hợp đồng cầu thủ thành công thêm ${additionalSeasons} mùa giải!`,
+      contract: {
+        id: updated.id.toString(),
+        salary: Number(updated.salary),
+        end_season_id: Number(updated.end_season_id),
+      },
+    };
+  }
+
+  async terminatePlayerContract(playerId: bigint, clubIdParam?: string) {
+    const clubId = clubIdParam ? BigInt(clubIdParam) : undefined;
+    const contract = await this.prisma.player_contracts.findFirst({
+      where: {
+        player_id: playerId,
+        ...(clubId ? { club_id: clubId } : {}),
+        status: 'ACTIVE',
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    if (!contract) {
+      throw new BadRequestException('Không tìm thấy hợp đồng hiệu lực của cầu thủ để chấm dứt.');
+    }
+
+    const timeline = await this.prisma.server_timeline.findFirst();
+    const gameDate = timeline?.real_date ? new Date(timeline.real_date) : new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.player_contracts.update({
+        where: { id: contract.id },
+        data: {
+          status: 'TERMINATED',
+          end_date: gameDate,
+        },
+      });
+
+      await tx.players.update({
+        where: { id: playerId },
+        data: {
+          current_club_id: null,
+        },
+      });
+
+      await tx.player_club_history.updateMany({
+        where: {
+          player_id: playerId,
+          club_id: contract.club_id,
+          end_date: null,
+        },
+        data: {
+          end_date: new Date(),
+        },
+      });
+    });
+
+    return {
+      success: true,
+      message: 'Đã kết thúc hợp đồng và sa thải cầu thủ thành công. Cầu thủ hiện là cầu thủ tự do.',
+    };
+  }
+
+  async renewStaffContract(
+    staffId: bigint,
+    dto: { additional_seasons: number; proposed_wage: number; club_id?: string },
+  ) {
+    const clubId = dto.club_id ? BigInt(dto.club_id) : undefined;
+    const contract = await this.prisma.staff_contracts.findFirst({
+      where: {
+        staff_id: staffId,
+        ...(clubId ? { club_id: clubId } : {}),
+        status: 'ACTIVE',
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    if (!contract) {
+      throw new BadRequestException('Không tìm thấy hợp đồng đang hiệu lực của nhân sự với CLB này.');
+    }
+
+    const additionalSeasons = Math.max(1, Math.min(5, Number(dto.additional_seasons) || 1));
+    const newEndSeason = Number(contract.end_season_id || 1) + additionalSeasons;
+    const newSalary = Number(dto.proposed_wage) > 0 ? Number(dto.proposed_wage) : Number(contract.salary);
+    const newEndDate = this.calculateGameDate(newEndSeason, 36);
+
+    const updated = await this.prisma.staff_contracts.update({
+      where: { id: contract.id },
+      data: {
+        end_season_id: BigInt(newEndSeason),
+        end_season_day: 36,
+        end_date: newEndDate,
+        salary: newSalary,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Gia hạn hợp đồng nhân sự thành công thêm ${additionalSeasons} mùa giải!`,
+      contract: {
+        id: updated.id.toString(),
+        salary: Number(updated.salary),
+        end_season_id: Number(updated.end_season_id),
+      },
+    };
+  }
+
+  async terminateStaffContract(staffId: bigint, clubIdParam?: string) {
+    const clubId = clubIdParam ? BigInt(clubIdParam) : undefined;
+    const contract = await this.prisma.staff_contracts.findFirst({
+      where: {
+        staff_id: staffId,
+        ...(clubId ? { club_id: clubId } : {}),
+        status: 'ACTIVE',
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    if (!contract) {
+      throw new BadRequestException('Không tìm thấy hợp đồng hiệu lực của nhân sự để chấm dứt.');
+    }
+
+    const timeline = await this.prisma.server_timeline.findFirst();
+    const gameDate = timeline?.real_date ? new Date(timeline.real_date) : new Date();
+
+    await this.prisma.staff_contracts.update({
+      where: { id: contract.id },
+      data: {
+        status: 'TERMINATED',
+        end_date: gameDate,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Đã sa thải / chấm dứt hợp đồng với nhân sự thành công.',
+    };
+  }
+
   private mapStaffTypeToRoleAttributeType(staffType: string): staff_role_attributes_staff_type {
     const t = (staffType || '').toUpperCase();
     if (t === 'SCOUT' || t.includes('SCOUT')) {
@@ -1305,5 +1511,11 @@ export class TransfersService {
       return staff_role_attributes_staff_type.DIRECTOR;
     }
     return staff_role_attributes_staff_type.COACH;
+  }
+
+  private calculateGameDate(seasonNumber: number, seasonDay: number): Date {
+    const base = new Date(Date.UTC(2026, 7, 1)); // 2026-08-01 (Season 1 Day 1)
+    const offsetDays = (Math.max(1, Number(seasonNumber)) - 1) * 36 + (Math.max(1, Number(seasonDay)) - 1);
+    return new Date(base.getTime() + offsetDays * 86400000);
   }
 }

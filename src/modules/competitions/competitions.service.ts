@@ -170,23 +170,23 @@ export class CompetitionsService {
       } else if (
         comp.competition_type === 'DOMESTIC_CUP' ||
         comp.competition_type === 'DOMESTIC_SUPER_CUP' ||
-        comp.competition_type === 'DOMESTIC_YOUTH_CUP' ||
-        comp.competition_type === 'INVITATIONAL_YOUTH_CUP' ||
         comp.competition_type?.endsWith('_CUP')
       ) {
         formatType = 'KNOCKOUT';
         formatLabel = comp.competition_type === 'DOMESTIC_SUPER_CUP'
           ? 'Super Cup (Single Match)'
-          : comp.competition_type === 'DOMESTIC_YOUTH_CUP'
-          ? 'Youth Cup (Knockout)'
           : 'Single Elimination (Knockout)';
       } else if (
+        comp.competition_type === 'DOMESTIC_YOUTH_CUP' ||
+        comp.competition_type === 'INVITATIONAL_YOUTH_CUP' ||
         comp.competition_type?.startsWith('CONTINENTAL_CLUB') ||
         comp.competition_type?.startsWith('WORLD') ||
         comp.competition_type?.startsWith('CONTINENTAL_NATIONAL')
       ) {
         formatType = 'GROUP_KNOCKOUT';
-        formatLabel = 'Group Stage & Knockout';
+        formatLabel = comp.competition_type === 'DOMESTIC_YOUTH_CUP'
+          ? 'Youth Cup (Group Stage & Knockout)'
+          : 'Group Stage & Knockout';
       }
 
       return {
@@ -461,23 +461,23 @@ export class CompetitionsService {
     } else if (
       comp?.competition_type === 'DOMESTIC_CUP' ||
       comp?.competition_type === 'DOMESTIC_SUPER_CUP' ||
-      comp?.competition_type === 'DOMESTIC_YOUTH_CUP' ||
-      comp?.competition_type === 'INVITATIONAL_YOUTH_CUP' ||
       comp?.competition_type?.endsWith('_CUP')
     ) {
       formatType = 'KNOCKOUT';
       formatLabel = comp?.competition_type === 'DOMESTIC_SUPER_CUP'
         ? 'Super Cup (Single Match)'
-        : comp?.competition_type === 'DOMESTIC_YOUTH_CUP'
-        ? 'Youth Cup (Knockout)'
         : 'Single Elimination (Knockout)';
     } else if (
+      comp?.competition_type === 'DOMESTIC_YOUTH_CUP' ||
+      comp?.competition_type === 'INVITATIONAL_YOUTH_CUP' ||
       comp?.competition_type?.startsWith('CONTINENTAL_CLUB') ||
       comp?.competition_type?.startsWith('WORLD') ||
       comp?.competition_type?.startsWith('CONTINENTAL_NATIONAL')
     ) {
       formatType = 'GROUP_KNOCKOUT';
-      formatLabel = 'Group Stage & Knockout';
+      formatLabel = comp?.competition_type === 'DOMESTIC_YOUTH_CUP'
+        ? 'Youth Cup (Group Stage & Knockout)'
+        : 'Group Stage & Knockout';
     }
 
     // Extract groups if competition has multiple groups (e.g. Continental Cup Group Stage: Group A to H)
@@ -1646,10 +1646,13 @@ export class CompetitionsService {
     }
 
     // =========================================================================
-    // 5. CÚP TRẺ U21 QUỐC NỘI (DOMESTIC_YOUTH_CUP - VÒNG 1 KNOCKOUT - DAY 7)
+    // 5. CÚP TRẺ U21 QUỐC NỘI (DOMESTIC_YOUTH_CUP - HYBRID: VÒNG BẢNG DAY 7, 12, 17)
     // =========================================================================
     if (!dto.competitionSeasonId || dto.competitionId === '13') {
       const youthMatches: any[] = [];
+      const youthGroupDays = [7, 12, 17];
+      const groupLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
       for (const c of countries) {
         // Lấy Top 32 CLB tham gia theo Cấp độ Học viện trẻ (Youth Academy) + Danh tiếng CLB (Reputation)
         const clubs32 = await this.getTopYouthClubsByCountry(c.id, 32);
@@ -1670,53 +1673,107 @@ export class CompetitionsService {
             });
           }
 
+          // Stage 1: Vòng Bảng (GROUP - 8 Bảng A..H)
           let stage = await this.prisma.competition_stages.findFirst({
-            where: { competition_season_id: cs.id },
+            where: { competition_season_id: cs.id, stage_type: 'GROUP' },
           });
           if (!stage) {
             stage = await this.prisma.competition_stages.create({
               data: {
                 competition_season_id: cs.id,
-                name: 'Youth Cup (Round of 32)',
-                stage_type: 'KNOCKOUT',
+                name: 'Group Stage',
+                stage_type: 'GROUP',
                 order_no: 1,
                 status: 'ACTIVE',
               },
             });
           }
 
+          // Stage 2: Vòng Knockout (KNOCKOUT - Tứ kết, Bán kết, Chung kết)
+          let knockoutStage = await this.prisma.competition_stages.findFirst({
+            where: { competition_season_id: cs.id, stage_type: 'KNOCKOUT' },
+          });
+          if (!knockoutStage) {
+            knockoutStage = await this.prisma.competition_stages.create({
+              data: {
+                competition_season_id: cs.id,
+                name: 'Knockout Stage',
+                stage_type: 'KNOCKOUT',
+                order_no: 2,
+                status: 'ACTIVE',
+              },
+            });
+          }
+
+          // Khởi tạo trước các rounds cho Vòng Knockout (Vòng 1/8 Day 20, Tứ kết Day 23, Bán kết Day 27, Chung kết Day 33)
+          const youthKnockoutRoundsSpec = [
+            { roundNo: 1, day: 20, name: 'Round of 16' },
+            { roundNo: 2, day: 23, name: 'Quarter-finals' },
+            { roundNo: 3, day: 27, name: 'Semi-finals' },
+            { roundNo: 4, day: 33, name: 'Youth Cup Final' },
+          ];
+          for (const r of youthKnockoutRoundsSpec) {
+            await this.ensureStageRound(knockoutStage.id, season, r.roundNo, r.day, r.name);
+          }
+
+          // Khởi tạo các rounds cho Vòng Bảng
+          const groupRounds = new Map<number, any>();
+          for (let rNo = 1; rNo <= youthGroupDays.length; rNo++) {
+            const round = await this.ensureStageRound(
+              stage.id,
+              season,
+              rNo,
+              youthGroupDays[rNo - 1],
+              `Group Stage - Matchday ${rNo}`,
+            );
+            groupRounds.set(rNo, round);
+          }
+
           const matchCount = await this.prisma.matches.count({ where: { competition_season_id: cs.id } });
           if (matchCount === 0 || dto.regenerate) {
-            const group = await this.ensureStageGroup(stage.id);
-            await this.ensureStageParticipants(stage.id, clubs32, group.id, 'Youth Cup Entry');
-            for (let i = 0; i < 16; i++) {
-              const home = clubs32[i];
-              const away = clubs32[31 - i];
-              const seasonDay = 7; // Cố định Day 7 cho Vòng 1 Cúp Trẻ U21
-              const round = await this.ensureStageRound(stage.id, season, 1, seasonDay, 'Round of 32');
-              const matchDate = this.getSeasonDate(season, seasonDay);
-              const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                this.youthLocalKickoffSlots,
-                i + Number(home.id + away.id),
-                clubCountryMap.get(home.id.toString()),
-              );
-              this.reserveMatchDay(teamDailyLoad, seasonDay, home.id, away.id);
-              youthMatches.push({
-                competition_season_id: cs.id,
-                stage_id: stage.id,
-                round_id: round.id,
-                group_id: group.id,
-                season_id: season.id,
-                season_day: seasonDay,
-                match_date: matchDate,
-                kickoff_time,
-                home_club_id: home.id,
-                away_club_id: away.id,
-                stadium_id: stadiumMap.get(home.id.toString()) || null,
-                status: 'SCHEDULED',
-                match_type: 'COMPETITIVE' as any,
-                result_type: 'REGULAR' as any,
-              });
+            // Phân bổ 32 đội vào 8 bảng A..H theo nhóm hạt giống cân bằng (Snake draft)
+            const groupsClubs: Array<typeof clubs32> = Array.from({ length: 8 }, () => []);
+            for (let i = 0; i < clubs32.length; i++) {
+              const potIdx = Math.floor(i / 8);
+              const posInPot = i % 8;
+              const gIdx = potIdx % 2 === 0 ? posInPot : 7 - posInPot;
+              groupsClubs[gIdx].push(clubs32[i]);
+            }
+
+            for (let gIdx = 0; gIdx < 8; gIdx++) {
+              const letter = groupLetters[gIdx];
+              const group = await this.ensureStageGroup(stage.id, `Group ${letter}`, `GROUP_${letter}`, gIdx + 1);
+              await this.ensureStageParticipants(stage.id, groupsClubs[gIdx], group.id, 'Youth Cup Group Entry');
+
+              const groupClubIds = groupsClubs[gIdx].map((cl) => cl.id);
+              const pairings = this.generateBergerPairings(groupClubIds);
+
+              for (const p of pairings) {
+                const matchDay = youthGroupDays[p.round - 1] || youthGroupDays[0];
+                const roundObj = groupRounds.get(p.round);
+                const kickoff_time = this.getKickoffTimeFromLocalSlot(
+                  this.youthLocalKickoffSlots,
+                  gIdx + Number(p.home + p.away + BigInt(p.round)),
+                  clubCountryMap.get(p.home.toString()),
+                );
+                this.reserveMatchDay(teamDailyLoad, matchDay, p.home, p.away);
+                youthMatches.push({
+                  competition_season_id: cs.id,
+                  stage_id: stage.id,
+                  round_id: roundObj?.id,
+                  group_id: group.id,
+                  season_id: season.id,
+                  season_day: matchDay,
+                  match_date: this.getSeasonDate(season, matchDay),
+                  kickoff_time,
+                  home_club_id: p.home,
+                  away_club_id: p.away,
+                  stadium_id: stadiumMap.get(p.home.toString()) || null,
+                  status: 'SCHEDULED',
+                  match_type: 'COMPETITIVE' as any,
+                  result_type: 'REGULAR' as any,
+                });
+              }
             }
           }
         }
@@ -1954,7 +2011,7 @@ export class CompetitionsService {
         }
 
         let stage = await this.prisma.competition_stages.findFirst({
-          where: { competition_season_id: compSeason.id },
+          where: { competition_season_id: compSeason.id, stage_type: comp.competition_type === 'DOMESTIC_YOUTH_CUP' ? 'GROUP' : 'KNOCKOUT' },
         });
 
         if (!stage) {
@@ -1962,14 +2019,18 @@ export class CompetitionsService {
             comp.competition_type === 'DOMESTIC_SUPER_CUP'
               ? 'Super Cup Final'
               : comp.competition_type === 'DOMESTIC_YOUTH_CUP'
-                ? 'Youth Cup (Round of 32)'
+                ? 'Group Stage'
                 : 'National Cup (Knockout Stage)';
+          const stageType =
+            comp.competition_type === 'DOMESTIC_YOUTH_CUP'
+              ? 'GROUP'
+              : 'KNOCKOUT';
 
           stage = await this.prisma.competition_stages.create({
             data: {
               competition_season_id: compSeason.id,
               name: stageName,
-              stage_type: 'KNOCKOUT',
+              stage_type: stageType,
               order_no: 1,
               status: 'ACTIVE',
             },
@@ -1991,9 +2052,53 @@ export class CompetitionsService {
         } else if (comp.competition_type === 'DOMESTIC_YOUTH_CUP') {
           // Lấy Top 32 CLB tham gia theo Cấp độ Học viện trẻ (Youth Academy) + Danh tiếng CLB (Reputation)
           const clubs = await this.getTopYouthClubsByCountry(country.id, 32);
-          if (clubs.length > 0) {
-            enrolledClubsCount += await this.ensureStageParticipants(stage.id, clubs, group.id, 'Youth Cup Entry');
-            await this.ensureStageRound(stage.id, targetSeason, 1, 7, 'Round of 32');
+          if (clubs.length >= 32) {
+            // Phân bổ 32 đội vào 8 bảng A..H (mỗi bảng 4 đội) theo Snake draft
+            const groupLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+            const groupsClubs: Array<typeof clubs> = Array.from({ length: 8 }, () => []);
+            for (let i = 0; i < clubs.length; i++) {
+              const potIdx = Math.floor(i / 8);
+              const posInPot = i % 8;
+              const gIdx = potIdx % 2 === 0 ? posInPot : 7 - posInPot;
+              groupsClubs[gIdx].push(clubs[i]);
+            }
+
+            for (let gIdx = 0; gIdx < 8; gIdx++) {
+              const letter = groupLetters[gIdx];
+              const grp = await this.ensureStageGroup(stage.id, `Group ${letter}`, `GROUP_${letter}`, gIdx + 1);
+              enrolledClubsCount += await this.ensureStageParticipants(stage.id, groupsClubs[gIdx], grp.id, 'Youth Cup Group Entry');
+            }
+
+            // Tạo 3 rounds vòng bảng (Day 7, 12, 17)
+            const youthGroupDays = [7, 12, 17];
+            for (let rNo = 1; rNo <= 3; rNo++) {
+              await this.ensureStageRound(stage.id, targetSeason, rNo, youthGroupDays[rNo - 1], `Group Stage - Matchday ${rNo}`);
+            }
+
+            // Khởi tạo trước Stage 2 (Knockout Stage)
+            let knockoutStage = await this.prisma.competition_stages.findFirst({
+              where: { competition_season_id: compSeason.id, stage_type: 'KNOCKOUT' },
+            });
+            if (!knockoutStage) {
+              knockoutStage = await this.prisma.competition_stages.create({
+                data: {
+                  competition_season_id: compSeason.id,
+                  name: 'Knockout Stage',
+                  stage_type: 'KNOCKOUT',
+                  order_no: 2,
+                  status: 'ACTIVE',
+                },
+              });
+            }
+            const youthKnockoutRoundsSpec = [
+              { roundNo: 1, day: 20, name: 'Round of 16' },
+              { roundNo: 2, day: 23, name: 'Quarter-finals' },
+              { roundNo: 3, day: 27, name: 'Semi-finals' },
+              { roundNo: 4, day: 33, name: 'Youth Cup Final' },
+            ];
+            for (const r of youthKnockoutRoundsSpec) {
+              await this.ensureStageRound(knockoutStage.id, targetSeason, r.roundNo, r.day, r.name);
+            }
           }
         } else {
           // DOMESTIC_CUP: Đăng ký toàn bộ 240 CLB của quốc gia và khởi tạo đủ 9 rounds chuẩn Master Calendar
@@ -3789,6 +3894,282 @@ export class CompetitionsService {
                   season_id: season.id,
                   season_day: 34,
                   match_date: this.getSeasonDate(season, 34),
+                  kickoff_time,
+                  home_club_id: finalists[0],
+                  away_club_id: finalists[1],
+                  stadium_id: null,
+                  status: 'SCHEDULED',
+                  match_type: 'COMPETITIVE' as any,
+                  result_type: 'REGULAR' as any,
+                },
+              });
+              totalMatchesCreated += 1;
+            }
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 3. TIẾN VÒNG CÚP TRẺ U21 QUỐC NỘI (DOMESTIC_YOUTH_CUP - HYBRID: GROUP -> KNOCKOUT)
+    // =========================================================================
+    const youthCompSeasons = await this.prisma.competition_seasons.findMany({
+      where: {
+        season_id: seasonId,
+        competitions: { competition_type: 'DOMESTIC_YOUTH_CUP' },
+      },
+      include: {
+        competition_stages: {
+          include: {
+            stage_groups: { orderBy: { order_no: 'asc' } },
+            stage_rounds: { orderBy: { round_no: 'asc' } },
+          },
+        },
+      },
+    });
+
+    for (const cs of youthCompSeasons) {
+      const groupStage = cs.competition_stages.find((s) => s.stage_type === 'GROUP') || cs.competition_stages[0];
+      let knockoutStage: any = cs.competition_stages.find((s) => s.stage_type === 'KNOCKOUT');
+      if (!groupStage) continue;
+
+      if (!knockoutStage) {
+        knockoutStage = await this.prisma.competition_stages.create({
+          data: {
+            competition_season_id: cs.id,
+            name: 'Knockout Stage',
+            stage_type: 'KNOCKOUT',
+            order_no: 2,
+            status: 'ACTIVE',
+          },
+        });
+      }
+
+      const countryObj = cs.country_id ? clubCountryMap.get(cs.country_id.toString()) : undefined;
+
+      // Helper lấy đội thắng trận Knockout đơn U21
+      const getMatchWinnerId = (m: any): bigint | null => {
+        if (m.home_score === null || m.away_score === null) return null;
+        if (m.home_score > m.away_score) return m.home_club_id;
+        if (m.away_score > m.home_score) return m.away_club_id;
+        if (m.home_penalty_score !== null && m.away_penalty_score !== null) {
+          if (m.home_penalty_score > m.away_penalty_score) return m.home_club_id;
+          if (m.away_penalty_score > m.home_penalty_score) return m.away_club_id;
+        }
+        return m.home_club_id;
+      };
+
+      // Vòng Bảng -> Vòng 1/8 (Sau Day 17: Nhất & Nhì 8 bảng A..H -> 8 cặp Vòng 1/8 Day 20)
+      if (currentSeasonDay >= 18) {
+        const r16Matches = await this.prisma.matches.count({
+          where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 20 },
+        });
+        if (r16Matches === 0) {
+          const groupMatches = await this.prisma.matches.findMany({
+            where: { competition_season_id: cs.id, stage_id: groupStage.id },
+          });
+          const allGroupCompleted = groupMatches.length === 48 && groupMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED');
+          if (allGroupCompleted) {
+            // Lấy Nhất và Nhì 8 bảng A..H (16 đội)
+            const firstPlaces: bigint[] = [];
+            const secondPlaces: bigint[] = [];
+
+            for (const grp of groupStage.stage_groups) {
+              const grpMatches = groupMatches.filter((m) => m.group_id === grp.id);
+              const table = new Map<string, { clubId: bigint; pts: number; gd: number; gf: number }>();
+
+              grpMatches.forEach((m) => {
+                const hId = m.home_club_id.toString();
+                const aId = m.away_club_id.toString();
+                if (!table.has(hId)) table.set(hId, { clubId: m.home_club_id, pts: 0, gd: 0, gf: 0 });
+                if (!table.has(aId)) table.set(aId, { clubId: m.away_club_id, pts: 0, gd: 0, gf: 0 });
+
+                const h = table.get(hId)!;
+                const a = table.get(aId)!;
+                const hs = m.home_score || 0;
+                const as = m.away_score || 0;
+                h.gf += hs; a.gf += as;
+                h.gd += (hs - as); a.gd += (as - hs);
+                if (hs > as) h.pts += 3;
+                else if (as > hs) a.pts += 3;
+                else { h.pts += 1; a.pts += 1; }
+              });
+
+              const sorted = Array.from(table.values()).sort((x, y) => y.pts - x.pts || y.gd - x.gd || y.gf - x.gf);
+              if (sorted[0]) firstPlaces.push(sorted[0].clubId);
+              if (sorted[1]) secondPlaces.push(sorted[1].clubId);
+            }
+
+            if (firstPlaces.length === 8 && secondPlaces.length === 8) {
+              const r16 = await this.ensureStageRound(knockoutStage.id, season, 1, 20, 'Round of 16');
+              const matches16: any[] = [];
+              // Ghép 8 cặp Vòng 1/8: Nhất bảng này gặp Nhì bảng khác
+              const pairings = [
+                { home: firstPlaces[0], away: secondPlaces[1] }, // Nhất A vs Nhì B
+                { home: firstPlaces[2], away: secondPlaces[3] }, // Nhất C vs Nhì D
+                { home: firstPlaces[4], away: secondPlaces[5] }, // Nhất E vs Nhì F
+                { home: firstPlaces[6], away: secondPlaces[7] }, // Nhất G vs Nhì H
+                { home: firstPlaces[1], away: secondPlaces[0] }, // Nhất B vs Nhì A
+                { home: firstPlaces[3], away: secondPlaces[2] }, // Nhất D vs Nhì C
+                { home: firstPlaces[5], away: secondPlaces[4] }, // Nhất F vs Nhì E
+                { home: firstPlaces[7], away: secondPlaces[6] }, // Nhất H vs Nhì G
+              ];
+
+              for (let i = 0; i < pairings.length; i++) {
+                const pair = pairings[i];
+                const kickoff_time = this.getKickoffTimeFromLocalSlot(
+                  this.youthLocalKickoffSlots,
+                  i + Number(pair.home + pair.away),
+                  countryObj,
+                );
+                matches16.push({
+                  competition_season_id: cs.id,
+                  stage_id: knockoutStage.id,
+                  round_id: r16.id,
+                  group_id: null,
+                  season_id: season.id,
+                  season_day: 20,
+                  match_date: this.getSeasonDate(season, 20),
+                  kickoff_time,
+                  home_club_id: pair.home,
+                  away_club_id: pair.away,
+                  stadium_id: null,
+                  status: 'SCHEDULED',
+                  match_type: 'COMPETITIVE' as any,
+                  result_type: 'REGULAR' as any,
+                });
+              }
+              await this.prisma.matches.createMany({ data: matches16 });
+              totalMatchesCreated += matches16.length;
+            }
+          }
+        }
+      }
+
+      // Vòng 1/8 -> Tứ Kết (Sau Day 20: 8 đội thắng Vòng 1/8 -> 4 cặp Tứ Kết Day 23)
+      if (currentSeasonDay >= 21) {
+        const qfMatches = await this.prisma.matches.count({
+          where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 23 },
+        });
+        if (qfMatches === 0) {
+          const r16Matches = await this.prisma.matches.findMany({
+            where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 20 },
+            orderBy: { id: 'asc' },
+          });
+          if (r16Matches.length === 8 && r16Matches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED')) {
+            const winners8 = r16Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
+            if (winners8.length === 8) {
+              const rQF = await this.ensureStageRound(knockoutStage.id, season, 2, 23, 'Quarter-finals');
+              const matchesQF: any[] = [];
+              // Ghép 4 cặp Tứ Kết: Thắng R16-1 vs R16-2, R16-3 vs R16-4, R16-5 vs R16-6, R16-7 vs R16-8
+              for (let i = 0; i < 4; i++) {
+                const home = winners8[i * 2];
+                const away = winners8[i * 2 + 1];
+                const kickoff_time = this.getKickoffTimeFromLocalSlot(
+                  this.youthLocalKickoffSlots,
+                  i + Number(home + away),
+                  countryObj,
+                );
+                matchesQF.push({
+                  competition_season_id: cs.id,
+                  stage_id: knockoutStage.id,
+                  round_id: rQF.id,
+                  group_id: null,
+                  season_id: season.id,
+                  season_day: 23,
+                  match_date: this.getSeasonDate(season, 23),
+                  kickoff_time,
+                  home_club_id: home,
+                  away_club_id: away,
+                  stadium_id: null,
+                  status: 'SCHEDULED',
+                  match_type: 'COMPETITIVE' as any,
+                  result_type: 'REGULAR' as any,
+                });
+              }
+              await this.prisma.matches.createMany({ data: matchesQF });
+              totalMatchesCreated += matchesQF.length;
+            }
+          }
+        }
+      }
+
+      // Tứ Kết -> Bán Kết (Sau Day 23: 4 đội thắng Tứ Kết -> 2 trận Bán Kết Day 27)
+      if (currentSeasonDay >= 24) {
+        const sfMatches = await this.prisma.matches.count({
+          where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 27 },
+        });
+        if (sfMatches === 0) {
+          const qfMatches = await this.prisma.matches.findMany({
+            where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 23 },
+            orderBy: { id: 'asc' },
+          });
+          if (qfMatches.length === 4 && qfMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED')) {
+            const winners4 = qfMatches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
+            if (winners4.length === 4) {
+              const rSF = await this.ensureStageRound(knockoutStage.id, season, 3, 27, 'Semi-finals');
+              const matchesSF: any[] = [];
+              // Bán kết 1: Thắng QF1 vs Thắng QF2; Bán kết 2: Thắng QF3 vs Thắng QF4
+              for (let i = 0; i < 2; i++) {
+                const home = winners4[i * 2];
+                const away = winners4[i * 2 + 1];
+                const kickoff_time = this.getKickoffTimeFromLocalSlot(
+                  this.youthLocalKickoffSlots,
+                  i + Number(home + away),
+                  countryObj,
+                );
+                matchesSF.push({
+                  competition_season_id: cs.id,
+                  stage_id: knockoutStage.id,
+                  round_id: rSF.id,
+                  group_id: null,
+                  season_id: season.id,
+                  season_day: 27,
+                  match_date: this.getSeasonDate(season, 27),
+                  kickoff_time,
+                  home_club_id: home,
+                  away_club_id: away,
+                  stadium_id: null,
+                  status: 'SCHEDULED',
+                  match_type: 'COMPETITIVE' as any,
+                  result_type: 'REGULAR' as any,
+                });
+              }
+              await this.prisma.matches.createMany({ data: matchesSF });
+              totalMatchesCreated += matchesSF.length;
+            }
+          }
+        }
+      }
+
+      // Bán Kết -> Chung Kết (Sau Day 27: 2 đội thắng Bán Kết -> 1 trận Chung Kết Day 33)
+      if (currentSeasonDay >= 28) {
+        const finalMatches = await this.prisma.matches.count({
+          where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 33 },
+        });
+        if (finalMatches === 0) {
+          const sfMatches = await this.prisma.matches.findMany({
+            where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 27 },
+            orderBy: { id: 'asc' },
+          });
+          if (sfMatches.length === 2 && sfMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED')) {
+            const finalists = sfMatches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
+            if (finalists.length === 2) {
+              const rFinal = await this.ensureStageRound(knockoutStage.id, season, 4, 33, 'Youth Cup Final');
+              const kickoff_time = this.getKickoffTimeFromLocalSlot(
+                this.youthLocalKickoffSlots,
+                Number(finalists[0] + finalists[1]),
+                countryObj,
+              );
+              await this.prisma.matches.create({
+                data: {
+                  competition_season_id: cs.id,
+                  stage_id: knockoutStage.id,
+                  round_id: rFinal.id,
+                  group_id: null,
+                  season_id: season.id,
+                  season_day: 33,
+                  match_date: this.getSeasonDate(season, 33),
                   kickoff_time,
                   home_club_id: finalists[0],
                   away_club_id: finalists[1],

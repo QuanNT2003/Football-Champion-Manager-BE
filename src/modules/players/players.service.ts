@@ -162,6 +162,9 @@ export class PlayersService {
         player_status: true,
         player_contracts: {
           where: { status: 'ACTIVE' },
+          include: {
+            clubs_player_contracts_club_idToclubs: true,
+          },
           take: 1,
         },
         player_positions: {
@@ -380,10 +383,24 @@ export class PlayersService {
       disciplineStatus = 'WARNING';
     }
 
+    // Server timeline for contract season comparison
+    const timeline = await this.prisma.server_timeline.findFirst();
+    const currentSeasonNumber = timeline?.season_number || 1;
+
     // Weekly wages from contract DB
-    const contractSalary = player.player_contracts[0]?.salary ? Number(player.player_contracts[0].salary) : 0;
-    const weeklyWagesStr = contractSalary > 0 ? `€ ${(contractSalary / 52 / 1000).toFixed(2)}K` : 'Chưa ký HĐ';
+    const activeContract = player.player_contracts[0];
+    const contractSalary = activeContract?.salary ? Number(activeContract.salary) : 0;
+    const weeklyWagesStr = contractSalary > 0 
+      ? (contractSalary >= 1000000 
+          ? `€ ${(contractSalary / 1000000).toFixed(1)}M` 
+          : contractSalary >= 1000 
+            ? `€ ${(contractSalary / 1000).toFixed(contractSalary % 1000 === 0 ? 0 : 1)}K` 
+            : `€ ${contractSalary}`)
+      : 'Chưa ký HĐ';
     const worthStr = player.market_value ? `€ ${(Number(player.market_value) / 1000000).toFixed(2)}M` : '€ 0.0M';
+
+    const contractEndSeason = activeContract?.end_season_id ? Number(activeContract.end_season_id) : currentSeasonNumber;
+    const remainingSeasons = activeContract ? Math.max(0, contractEndSeason - currentSeasonNumber) : 0;
 
     // Condition & Fitness from player_status DB
     const staminaCondition = player.player_status?.condition ?? 100;
@@ -407,6 +424,7 @@ export class PlayersService {
       potential: player.potential || 1,
       market_value: player.market_value,
       worth_display: worthStr,
+      weekly_wage: contractSalary,
       weekly_wages_display: weeklyWagesStr,
       squad_type: player.squad_type,
       squad_number: player.squad_number || '-',
@@ -445,10 +463,26 @@ export class PlayersService {
         country: player.clubs_players_current_club_idToclubs.countries?.name || null,
         country_flag: player.clubs_players_current_club_idToclubs.countries?.flag_url || null,
       } : null,
-      contract: player.player_contracts[0] ? {
-        salary: player.player_contracts[0].salary,
-        start_date: player.player_contracts[0].start_date,
-        end_date: player.player_contracts[0].end_date,
+      contract: activeContract ? {
+        id: activeContract.id.toString(),
+        club_id: activeContract.club_id.toString(),
+        club_name: activeContract.clubs_player_contracts_club_idToclubs?.name || player.clubs_players_current_club_idToclubs?.name || null,
+        club_logo: activeContract.clubs_player_contracts_club_idToclubs?.logo_url || player.clubs_players_current_club_idToclubs?.logo_url || null,
+        salary: Number(activeContract.salary),
+        weekly_wage: Number(activeContract.salary),
+        squad_role: activeContract.squad_role || 'Đội 1 (First Team)',
+        status: activeContract.status || 'ACTIVE',
+        start_date: activeContract.start_date,
+        end_date: activeContract.end_date,
+        start_season_id: Number(activeContract.start_season_id || 1),
+        start_season_day: activeContract.start_season_day || 1,
+        end_season_id: contractEndSeason,
+        end_season_day: activeContract.end_season_day || 36,
+        signing_bonus: Number(activeContract.signing_bonus || 0),
+        release_clause: Number(activeContract.release_clause || 0),
+        is_loan_contract: Boolean(activeContract.is_loan_contract),
+        current_season: currentSeasonNumber,
+        remaining_seasons: remainingSeasons,
       } : null,
       positions: player.player_positions.map((pp) => ({
         code: pp.positions.code,

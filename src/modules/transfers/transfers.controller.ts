@@ -252,4 +252,40 @@ export class TransfersController {
   async getClubStaff(@Param('clubId') clubId: string) {
     return this.transfersService.getClubStaff(BigInt(clubId));
   }
+
+  @Post('players/:id/renew-contract')
+  @ApiOperation({ summary: 'Gia hạn hợp đồng cầu thủ' })
+  async renewPlayerContract(
+    @Param('id') id: string,
+    @Body() body: { additional_seasons: number; proposed_wage: number; club_id?: string },
+  ) {
+    return this.transfersService.renewPlayerContract(BigInt(id), body);
+  }
+
+  @Post('players/:id/terminate-contract')
+  @ApiOperation({ summary: 'Kết thúc hợp đồng / sa thải cầu thủ' })
+  async terminatePlayerContract(
+    @Param('id') id: string,
+    @Body() body: { club_id?: string },
+  ) {
+    return this.transfersService.terminatePlayerContract(BigInt(id), body?.club_id);
+  }
+
+  @Post('staff/:id/renew-contract')
+  @ApiOperation({ summary: 'Gia hạn hợp đồng nhân viên' })
+  async renewStaffContract(
+    @Param('id') id: string,
+    @Body() body: { additional_seasons: number; proposed_wage: number; club_id?: string },
+  ) {
+    return this.transfersService.renewStaffContract(BigInt(id), body);
+  }
+
+  @Post('staff/:id/terminate-contract')
+  @ApiOperation({ summary: 'Kết thúc hợp đồng / sa thải nhân viên' })
+  async terminateStaffContract(
+    @Param('id') id: string,
+    @Body() body: { club_id?: string },
+  ) {
+    return this.transfersService.terminateStaffContract(BigInt(id), body?.club_id);
+  }
 }
