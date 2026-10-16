@@ -5,6 +5,7 @@ import {
   Param,
   Put,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
@@ -58,14 +59,17 @@ export class PlayersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Đổi trạng thái rao bán / cho mượn và giá yêu cầu của cầu thủ' })
   async updateTransferListing(
+    @Request() req: any,
     @Param('id') id: string,
     @Body() body: UpdateListingDto,
   ) {
+    const userClubId = req.user?.clubId ? BigInt(req.user.clubId) : undefined;
     return this.playersService.updateTransferListing(
       BigInt(id),
       body.isTransferListed,
       body.isLoanListed,
       body.askingPrice,
+      userClubId,
     );
   }
 }

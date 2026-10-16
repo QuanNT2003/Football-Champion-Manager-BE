@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
 /**
@@ -637,7 +637,20 @@ export class PlayersService {
     isTransferListed: boolean,
     isLoanListed: boolean,
     askingPrice?: number,
+    userClubId?: bigint,
   ) {
+    const player = await this.prisma.players.findUnique({
+      where: { id: playerId },
+    });
+
+    if (!player) {
+      throw new NotFoundException('Không tìm thấy cầu thủ');
+    }
+
+    if (userClubId && player.current_club_id && player.current_club_id !== userClubId) {
+      throw new ForbiddenException('Bạn chỉ có quyền niêm yết chuyển nhượng cầu thủ thuộc CLB của mình');
+    }
+
     const status = await this.prisma.player_status.upsert({
       where: { player_id: playerId },
       update: {

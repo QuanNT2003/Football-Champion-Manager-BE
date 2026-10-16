@@ -293,6 +293,7 @@ export class TransfersService {
 
     const player = await this.prisma.players.findUnique({
       where: { id: playerId },
+      include: { player_status: true },
     });
 
     if (!player) {
@@ -329,6 +330,29 @@ export class TransfersService {
 
     if (!buyerAccount || Number(buyerAccount.balance_cash) < finalOfferAmount) {
       throw new BadRequestException('Ngân sách tiền mặt của CLB không đủ để gửi lời đề nghị này');
+    }
+
+    // Ràng buộc quy định thị trường chuyển nhượng:
+    if (!isLoan) {
+      const askingPrice = player.player_status?.asking_price
+        ? Number(player.player_status.asking_price)
+        : 0;
+      const marketVal = player.market_value
+        ? Number(player.market_value)
+        : 2500000;
+
+      if (askingPrice > 0 && finalOfferAmount < askingPrice) {
+        throw new BadRequestException(
+          `Mức giá đề nghị (€${finalOfferAmount.toLocaleString()}) không được thấp hơn mức phí tối thiểu do CLB chủ quản yêu cầu (€${askingPrice.toLocaleString()})`
+        );
+      }
+
+      const minAllowed = Math.round(marketVal * 0.5);
+      if (askingPrice <= 0 && finalOfferAmount < minAllowed) {
+        throw new BadRequestException(
+          `Mức giá đề nghị (€${finalOfferAmount.toLocaleString()}) không được thấp hơn 50% giá trị thị trường của cầu thủ (Tối thiểu €${minAllowed.toLocaleString()})`
+        );
+      }
     }
 
     const offer = await (this.prisma.transfer_offers as any).create({
