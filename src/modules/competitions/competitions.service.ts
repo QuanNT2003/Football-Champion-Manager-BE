@@ -3262,6 +3262,13 @@ export class CompetitionsService {
       console.warn('[processSeasonTransition] Lỗi tự động trao cúp mùa giải:', err);
     }
 
+    // 6.6. Xóa toàn bộ lịch sử tăng trưởng chỉ số mùa cũ (bảng player_attribute_history chỉ dùng cho 1 mùa giải)
+    try {
+      await this.prisma.player_attribute_history.deleteMany();
+    } catch (err) {
+      console.warn('[processSeasonTransition] Lỗi dọn dẹp player_attribute_history:', err);
+    }
+
     // 7. Đóng mùa giải cũ
     await this.prisma.seasons.update({
       where: { id: completedSeason.id },

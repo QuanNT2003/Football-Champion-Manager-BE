@@ -148,8 +148,23 @@ export class PlayersService {
     };
   }
 
-  async getPlayerById(playerId: bigint) {
-    const player = await this.prisma.players.findUnique({
+  async getPlayerById(playerId: bigint, viewerClubId?: bigint) {
+    const basicPlayer = await this.prisma.players.findUnique({
+      where: { id: playerId },
+      select: { current_club_id: true },
+    });
+
+    if (!basicPlayer) {
+      throw new NotFoundException('Không tìm thấy cầu thủ');
+    }
+
+    const isOwner = Boolean(
+      viewerClubId &&
+      basicPlayer.current_club_id &&
+      BigInt(basicPlayer.current_club_id) === BigInt(viewerClubId),
+    );
+
+    const player: any = await this.prisma.players.findUnique({
       where: { id: playerId },
       include: {
         countries_players_nationality_idTocountries: true,
@@ -160,13 +175,6 @@ export class PlayersService {
           }
         },
         player_status: true,
-        player_contracts: {
-          where: { status: 'ACTIVE' },
-          include: {
-            clubs_player_contracts_club_idToclubs: true,
-          },
-          take: 1,
-        },
         player_positions: {
           include: {
             positions: {
@@ -179,11 +187,6 @@ export class PlayersService {
             }
           },
         },
-        injuries: {
-          include: { injury_types: true },
-          orderBy: { start_date: 'desc' },
-          take: 20,
-        },
         personality_types: true,
         player_play_styles: {
           include: { play_styles: true },
@@ -191,11 +194,6 @@ export class PlayersService {
         player_attributes: {
           include: { attributes: true },
           orderBy: { attribute_id: 'asc' },
-        },
-        player_attribute_history: {
-          include: { attributes: true },
-          orderBy: { created_at: 'desc' },
-          take: 20,
         },
         match_players: {
           include: {
@@ -220,9 +218,31 @@ export class PlayersService {
           include: {
             clubs_transfers_from_club_idToclubs: true,
             clubs_transfers_to_club_idToclubs: true,
+            seasons: true,
           },
           orderBy: { transfer_date: 'desc' },
         },
+        // Tối ưu DB & Bảo mật: Chỉ query các bảng nội bộ khi người xem là CLB chủ quản
+        ...(isOwner
+          ? {
+              player_contracts: {
+                where: { status: 'ACTIVE' },
+                include: {
+                  clubs_player_contracts_club_idToclubs: true,
+                },
+                take: 1,
+              },
+              player_attribute_history: {
+                include: { attributes: true },
+                orderBy: { created_at: 'asc' },
+              },
+              injuries: {
+                include: { injury_types: true },
+                orderBy: { start_date: 'desc' },
+                take: 20,
+              },
+            }
+          : {}),
       },
     });
 
@@ -246,9 +266,39 @@ export class PlayersService {
       });
     }
 
+    // Calculate attribute growth from player_attribute_history:
+    // Growth per attribute = max(new_value) - min(old_value) across history records
+    const growthMap = new Map<string, number>();
+    if (player.player_attribute_history && player.player_attribute_history.length > 0) {
+      const historyByAttr = new Map<string, { maxNew: number; minOld: number }>();
+      for (const h of player.player_attribute_history) {
+        const attrIdStr = h.attribute_id.toString();
+        const current = historyByAttr.get(attrIdStr);
+        if (!current) {
+          historyByAttr.set(attrIdStr, {
+            maxNew: h.new_value,
+            minOld: h.old_value,
+          });
+        } else {
+          current.maxNew = Math.max(current.maxNew, h.new_value);
+          current.minOld = Math.min(current.minOld, h.old_value);
+        }
+      }
+
+      for (const [attrIdStr, bounds] of historyByAttr.entries()) {
+        const diff = bounds.maxNew - bounds.minOld;
+        if (diff !== 0) {
+          growthMap.set(attrIdStr, diff);
+        }
+      }
+    }
+
     // Map 40 attributes from player_attributes table in DB
     const allAttributes = player.player_attributes.map((pa) => {
       const keyInfo = keyAttrMap.get(pa.attribute_id.toString()) || { is_key: false, multiplier: 1.0, order_no: 0 };
+      const growthDiff = growthMap.get(pa.attribute_id.toString());
+      const growthStr = growthDiff !== undefined ? (growthDiff > 0 ? `+${growthDiff}` : `${growthDiff}`) : null;
+
       return {
         id: pa.attribute_id.toString(),
         code: pa.attributes.code,
@@ -257,6 +307,7 @@ export class PlayersService {
         description: pa.attributes.description,
         value: pa.value ?? 0,
         potential_value: pa.potential_value ?? 0,
+        growth: growthStr,
         is_key: keyInfo.is_key,
         multiplier: keyInfo.multiplier,
         order_no: keyInfo.order_no,
@@ -347,32 +398,66 @@ export class PlayersService {
       ? Number((careerSeasons.reduce((acc, s) => acc + s.rating, 0) / careerSeasons.length).toFixed(2))
       : 0;
 
-    // --- TAB 4: TRANSFERS HISTORY (100% PURE DB) ---
-    const transfersHistory = (player.transfers || []).map((t) => ({
-      from_team: t.clubs_transfers_from_club_idToclubs?.name || 'CLB Trước',
-      to_team: t.clubs_transfers_to_club_idToclubs?.name || 'CLB Hiện Tại',
-      season: t.transfer_date ? new Date(t.transfer_date).toLocaleDateString('vi-VN') : 'Mùa 1',
-      avg_quality: Number(Number(ovr).toFixed(1)),
-      bid_value: t.transfer_fee ? `€ ${(Number(t.transfer_fee) / 1000000).toFixed(2)}M` : 'Miễn phí',
-      type: t.is_loan ? 'LOAN' : 'PERMANENT',
-    }));
+    // Server timeline for contract & season comparison
+    const timeline = await this.prisma.server_timeline.findFirst();
+    const currentSeasonNumber = timeline?.season_number || 1;
 
-    // --- TAB 5: INJURIES HISTORY (100% PURE DB) ---
-    const injuriesHistory = (player.injuries || []).map((inj) => ({
-      id: inj.id.toString(),
-      injury_name: inj.injury_types?.name || 'Chấn thương',
-      category: inj.injury_types?.category || 'MUSCLE',
-      severity: inj.severity || 'MILD',
-      days_missed: inj.days_injured || 0,
-      days_remaining: inj.days_remaining || 0,
-      season: inj.start_season_id ? `Mùa ${inj.start_season_id}` : 'Mùa 1',
-      start_date: inj.start_date ? new Date(inj.start_date).toLocaleDateString('vi-VN') : '',
-      status: inj.status || (inj.days_remaining > 0 ? 'ACTIVE' : 'RECOVERED'),
-    }));
+    // --- TAB 4: TRANSFERS HISTORY (100% PURE DB) ---
+    const allSeasons = await this.prisma.seasons.findMany({
+      orderBy: { season_number: 'asc' },
+    });
+
+    const formatTransferFee = (fee: any) => {
+      const num = Number(fee || 0);
+      if (num <= 0) return 'Miễn phí';
+      if (num < 1000) return `€${Math.round(num).toLocaleString('vi-VN')}`;
+      if (num < 1000000) {
+        const valK = num / 1000;
+        const formattedK = valK % 1 === 0 ? valK.toString() : valK.toFixed(1).replace(/\.0$/, '');
+        return `€${formattedK}K`;
+      }
+      const valM = num / 1000000;
+      const formattedM = (valM >= 10 ? valM.toFixed(1) : valM.toFixed(2)).replace(/\.?0+$/, '');
+      return `€${formattedM}M`;
+    };
+
+    const transfersHistory = (player.transfers || []).map((t: any) => {
+      // Show ra số season thôi không thêm từ mùa vào
+      const seasonNum = t.seasons?.season_number ?? (t.season_id ? Number(t.season_id) : currentSeasonNumber);
+      const rawFee = Number(t.transfer_fee || 0);
+
+      return {
+        id: t.id ? t.id.toString() : undefined,
+        from_team: t.clubs_transfers_from_club_idToclubs?.name || 'Tự do',
+        to_team: t.clubs_transfers_to_club_idToclubs?.name || 'CLB Hiện Tại',
+        season: String(seasonNum),
+        season_id: t.season_id ? t.season_id.toString() : '1',
+        date: t.transfer_date ? new Date(t.transfer_date).toLocaleDateString('vi-VN') : '',
+        avg_quality: Number(Number(ovr).toFixed(1)),
+        transfer_fee: rawFee,
+        bid_value: formatTransferFee(rawFee),
+        type: t.is_loan ? 'LOAN' : 'PERMANENT',
+      };
+    });
+
+    // --- TAB 5: INJURIES HISTORY (100% PURE DB - CHỈ KHI LÀ CLB CHỦ QUẢN) ---
+    const injuriesHistory = isOwner && player.injuries
+      ? player.injuries.map((inj: any) => ({
+          id: inj.id.toString(),
+          injury_name: inj.injury_types?.name || 'Chấn thương',
+          category: inj.injury_types?.category || 'MUSCLE',
+          severity: inj.severity || 'MILD',
+          days_missed: inj.days_injured || 0,
+          days_remaining: inj.days_remaining || 0,
+          season: inj.start_season_id ? `Mùa ${inj.start_season_id}` : 'Mùa 1',
+          start_date: inj.start_date ? new Date(inj.start_date).toLocaleDateString('vi-VN') : '',
+          status: inj.status || (inj.days_remaining > 0 ? 'ACTIVE' : 'RECOVERED'),
+        }))
+      : [];
 
     // Discipline from DB
     const isSuspended = Boolean(player.player_status?.is_suspended);
-    const yellowCount = player.match_players?.reduce((acc, m) => acc + (m.yellow_cards || 0), 0) || 0;
+    const yellowCount = player.match_players?.reduce((acc: number, m: any) => acc + (m.yellow_cards || 0), 0) || 0;
     let disciplineLabel = 'Clean';
     let disciplineStatus: 'CLEAN' | 'WARNING' | 'SUSPENDED' = 'CLEAN';
     if (isSuspended) {
@@ -383,20 +468,18 @@ export class PlayersService {
       disciplineStatus = 'WARNING';
     }
 
-    // Server timeline for contract season comparison
-    const timeline = await this.prisma.server_timeline.findFirst();
-    const currentSeasonNumber = timeline?.season_number || 1;
-
-    // Weekly wages from contract DB
-    const activeContract = player.player_contracts[0];
+    // Weekly wages from contract DB (chỉ hiển thị chi tiết khi là CLB chủ quản)
+    const activeContract = isOwner && player.player_contracts ? player.player_contracts[0] : null;
     const contractSalary = activeContract?.salary ? Number(activeContract.salary) : 0;
-    const weeklyWagesStr = contractSalary > 0 
-      ? (contractSalary >= 1000000 
-          ? `€ ${(contractSalary / 1000000).toFixed(1)}M` 
-          : contractSalary >= 1000 
-            ? `€ ${(contractSalary / 1000).toFixed(contractSalary % 1000 === 0 ? 0 : 1)}K` 
-            : `€ ${contractSalary}`)
-      : 'Chưa ký HĐ';
+    const weeklyWagesStr = isOwner
+      ? (contractSalary > 0 
+          ? (contractSalary >= 1000000 
+              ? `€ ${(contractSalary / 1000000).toFixed(1)}M` 
+              : contractSalary >= 1000 
+                ? `€ ${(contractSalary / 1000).toFixed(contractSalary % 1000 === 0 ? 0 : 1)}K` 
+                : `€ ${contractSalary}`)
+          : 'Chưa ký HĐ')
+      : 'Bảo mật';
     const worthStr = player.market_value ? `€ ${(Number(player.market_value) / 1000000).toFixed(2)}M` : '€ 0.0M';
 
     const contractEndSeason = activeContract?.end_season_id ? Number(activeContract.end_season_id) : currentSeasonNumber;
@@ -409,6 +492,8 @@ export class PlayersService {
 
     return {
       id: player.id.toString(),
+      is_own_club: isOwner,
+      can_view_confidential: isOwner,
       name: `${player.first_name} ${player.last_name}`.trim(),
       first_name: player.first_name,
       last_name: player.last_name,
@@ -424,7 +509,7 @@ export class PlayersService {
       potential: player.potential || 1,
       market_value: player.market_value,
       worth_display: worthStr,
-      weekly_wage: contractSalary,
+      weekly_wage: isOwner ? contractSalary : null,
       weekly_wages_display: weeklyWagesStr,
       squad_type: player.squad_type,
       squad_number: player.squad_number || '-',
@@ -463,7 +548,7 @@ export class PlayersService {
         country: player.clubs_players_current_club_idToclubs.countries?.name || null,
         country_flag: player.clubs_players_current_club_idToclubs.countries?.flag_url || null,
       } : null,
-      contract: activeContract ? {
+      contract: isOwner && activeContract ? {
         id: activeContract.id.toString(),
         club_id: activeContract.club_id.toString(),
         club_name: activeContract.clubs_player_contracts_club_idToclubs?.name || player.clubs_players_current_club_idToclubs?.name || null,
@@ -484,7 +569,7 @@ export class PlayersService {
         current_season: currentSeasonNumber,
         remaining_seasons: remainingSeasons,
       } : null,
-      positions: player.player_positions.map((pp) => ({
+      positions: player.player_positions.map((pp: any) => ({
         code: pp.positions.code,
         name: pp.positions.name,
         is_preferred: Boolean(pp.is_preferred),
@@ -505,14 +590,14 @@ export class PlayersService {
         is_loan_listed: Boolean(player.player_status.is_loan_listed),
         asking_price: player.player_status.asking_price,
       } : null,
-      active_injury: player.injuries[0] && player.injuries[0].days_remaining > 0 ? {
+      active_injury: isOwner && player.injuries?.[0] && player.injuries[0].days_remaining > 0 ? {
         injury_type: player.injuries[0].injury_types?.name || 'Chấn thương',
         injury_code: player.injuries[0].injury_types?.code,
         severity: player.injuries[0].severity,
         days_remaining: player.injuries[0].days_remaining,
         expected_return_date: player.injuries[0].expected_return_date,
       } : null,
-      play_styles: player.player_play_styles.map((ps) => ps.play_styles.name),
+      play_styles: player.player_play_styles.map((ps: any) => ps.play_styles.name),
 
       // 5 TABS DATA (100% PURE DATABASE ACCORDING TO SEED DATA)
       skills: {
@@ -554,7 +639,7 @@ export class PlayersService {
         potential_upgrades: [],
       },
       injuries_tab: {
-        current: player.injuries[0] && player.injuries[0].days_remaining > 0 ? {
+        current: isOwner && player.injuries?.[0] && player.injuries[0].days_remaining > 0 ? {
           injury_type: player.injuries[0].injury_types?.name || 'Chấn thương',
           severity: player.injuries[0].severity,
           days_remaining: player.injuries[0].days_remaining,

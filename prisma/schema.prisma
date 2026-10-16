@@ -1449,6 +1449,7 @@ model seasons {
   game_worlds                game_worlds                  @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_seasons_world_id")
   server_timeline            server_timeline[]
   youth_intakes              youth_intakes[]
+  transfers                  transfers[]
 
   @@index([world_id], map: "idx_seasons_world_id")
 }
@@ -1810,14 +1811,17 @@ model transfers {
   loan_end_date                       DateTime?               @db.Date
   wage_split_percentage               Decimal?                @db.Decimal(10, 4)
   buy_option_fee                      Decimal?                @db.Decimal(10, 4)
+  season_id                           BigInt                  @default(1) @db.UnsignedBigInt
   player_club_history                 player_club_history[]
   clubs_transfers_from_club_idToclubs clubs                   @relation("transfers_from_club_idToclubs", fields: [from_club_id], references: [id], onDelete: Cascade, map: "fk_transfers_from_club_id")
   players                             players                 @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_transfers_player_id")
   clubs_transfers_to_club_idToclubs   clubs                   @relation("transfers_to_club_idToclubs", fields: [to_club_id], references: [id], onDelete: Cascade, map: "fk_transfers_to_club_id")
+  seasons                             seasons                 @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_transfers_season_id")
 
   @@index([from_club_id], map: "idx_transfers_from_club_id")
   @@index([player_id], map: "idx_transfers_player_id")
   @@index([to_club_id], map: "idx_transfers_to_club_id")
+  @@index([season_id], map: "idx_transfers_season_id")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

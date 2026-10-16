@@ -626,6 +626,7 @@ export class TransfersService {
           transfer_date: new Date(),
           is_loan: isLoan,
           loan_end_date: isLoan ? offer.loan_end_date : null,
+          season_id: timeline?.season_id ? BigInt(timeline.season_id) : 1n,
         },
       });
 

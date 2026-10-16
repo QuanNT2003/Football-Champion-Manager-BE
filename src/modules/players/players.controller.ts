@@ -50,8 +50,15 @@ export class PlayersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Lấy chi tiết hồ sơ, chỉ số, hợp đồng và tình trạng cầu thủ' })
-  async getPlayerById(@Param('id') id: string) {
-    return this.playersService.getPlayerById(BigInt(id));
+  @ApiQuery({ name: 'viewerClubId', required: false, description: 'ID CLB người xem để quyết định quyền xem thông tin nội bộ (tăng trưởng chỉ số, chấn thương, hợp đồng)' })
+  async getPlayerById(
+    @Param('id') id: string,
+    @Query('viewerClubId') viewerClubId?: string,
+  ) {
+    return this.playersService.getPlayerById(
+      BigInt(id),
+      viewerClubId ? BigInt(viewerClubId) : undefined,
+    );
   }
 
   @Put(':id/transfer-listing')
