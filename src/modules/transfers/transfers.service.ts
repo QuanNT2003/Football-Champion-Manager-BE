@@ -694,10 +694,15 @@ export class TransfersService {
         });
       }
 
-      // BƯỚC 3: Cập nhật CLB hiện tại của cầu thủ
+      // BƯỚC 3: Cập nhật CLB hiện tại của cầu thủ -> Tự động đưa vào Youth Squad & gán số áo còn trống
+      const youthSquadNumber = await this.getNextAvailableYouthSquadNumber(tx, offer.from_club_id);
       await tx.players.update({
         where: { id: offer.player_id },
-        data: { current_club_id: offer.from_club_id },
+        data: { 
+          current_club_id: offer.from_club_id,
+          squad_type: 'YOUTH_U21',
+          squad_number: youthSquadNumber,
+        },
       });
 
       // BƯỚC 4: Gỡ cầu thủ khỏi danh sách rao bán / cho mượn
@@ -1484,11 +1489,14 @@ export class TransfersService {
       });
 
       if (isLoan && contract.parent_club_id) {
-        // Trả cầu thủ về CLB chủ quản gốc
+        // Trả cầu thủ về CLB chủ quản gốc -> Tự động đưa vào Youth Squad & gán số áo còn trống
+        const youthSquadNumber = await this.getNextAvailableYouthSquadNumber(tx, contract.parent_club_id);
         await tx.players.update({
           where: { id: playerId },
           data: {
             current_club_id: contract.parent_club_id,
+            squad_type: 'YOUTH_U21',
+            squad_number: youthSquadNumber,
           },
         });
 
@@ -1681,5 +1689,33 @@ export class TransfersService {
     const base = new Date(Date.UTC(2026, 7, 1)); // 2026-08-01 (Season 1 Day 1)
     const offsetDays = (Math.max(1, Number(seasonNumber)) - 1) * 36 + (Math.max(1, Number(seasonDay)) - 1);
     return new Date(base.getTime() + offsetDays * 86400000);
+  }
+
+  /**
+   * Tìm số áo còn trống nhỏ nhất (1..99) trong đội trẻ (Youth Squad - YOUTH_U21) của CLB
+   */
+  async getNextAvailableYouthSquadNumber(client: any, clubId: bigint): Promise<number> {
+    const existingPlayers = await client.players.findMany({
+      where: {
+        current_club_id: clubId,
+        squad_type: 'YOUTH_U21',
+        squad_number: { not: null },
+      },
+      select: { squad_number: true },
+    });
+
+    const usedNumbers = new Set<number>(
+      existingPlayers
+        .map((p: any) => Number(p.squad_number))
+        .filter((num: number) => num > 0)
+    );
+
+    for (let num = 1; num <= 99; num++) {
+      if (!usedNumbers.has(num)) {
+        return num;
+      }
+    }
+
+    return (existingPlayers.length || 0) + 1;
   }
 }

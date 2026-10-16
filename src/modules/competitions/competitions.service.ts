@@ -1111,6 +1111,34 @@ export class CompetitionsService implements OnModuleInit {
     }
   }
 
+  /**
+   * Tìm số áo còn trống nhỏ nhất (1..99) trong đội trẻ (Youth Squad - YOUTH_U21) của CLB
+   */
+  async getNextAvailableYouthSquadNumber(client: any, clubId: bigint): Promise<number> {
+    const existingPlayers = await client.players.findMany({
+      where: {
+        current_club_id: clubId,
+        squad_type: 'YOUTH_U21',
+        squad_number: { not: null },
+      },
+      select: { squad_number: true },
+    });
+
+    const usedNumbers = new Set<number>(
+      existingPlayers
+        .map((p: any) => Number(p.squad_number))
+        .filter((num: number) => num > 0)
+    );
+
+    for (let num = 1; num <= 99; num++) {
+      if (!usedNumbers.has(num)) {
+        return num;
+      }
+    }
+
+    return (existingPlayers.length || 0) + 1;
+  }
+
   private async ensureStageGroup(stageId: bigint, name = 'Main Table', code = 'MAIN', orderNo = 1) {
     const existing = await this.prisma.stage_groups.findFirst({
       where: { stage_id: stageId, code },
@@ -2780,9 +2808,14 @@ export class CompetitionsService implements OnModuleInit {
       });
 
       if (contract.parent_club_id) {
+        const youthSquadNumber = await this.getNextAvailableYouthSquadNumber(this.prisma, contract.parent_club_id);
         await this.prisma.players.update({
           where: { id: contract.player_id },
-          data: { current_club_id: contract.parent_club_id },
+          data: { 
+            current_club_id: contract.parent_club_id,
+            squad_type: 'YOUTH_U21',
+            squad_number: youthSquadNumber,
+          },
         });
       }
       expiredLoansCount++;
@@ -2805,7 +2838,7 @@ export class CompetitionsService implements OnModuleInit {
 
       await this.prisma.players.update({
         where: { id: contract.player_id },
-        data: { current_club_id: null },
+        data: { current_club_id: null, squad_number: null },
       });
       expiredContractsCount++;
     }
