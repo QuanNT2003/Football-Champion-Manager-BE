@@ -96,6 +96,13 @@ export class PlayersService {
               positions: true,
             },
           },
+          player_contracts: {
+            where: { status: 'ACTIVE', is_loan_contract: true },
+            include: {
+              clubs_player_contracts_parent_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
+            },
+            take: 1,
+          },
         },
       }),
     ]);
@@ -108,6 +115,8 @@ export class PlayersService {
       items: players.map((p) => {
 
         const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
+        const activeLoan = (p as any).player_contracts?.[0];
+        const isOnLoan = Boolean(activeLoan);
 
         return {
           id: p.id.toString(),
@@ -121,6 +130,12 @@ export class PlayersService {
           squad_type: p.squad_type,
           squad_number: p.squad_number,
           photo_url: p.photo_url,
+          is_on_loan: isOnLoan,
+          parent_club: activeLoan?.clubs_player_contracts_parent_club_idToclubs ? {
+            id: activeLoan.clubs_player_contracts_parent_club_idToclubs.id.toString(),
+            name: activeLoan.clubs_player_contracts_parent_club_idToclubs.name,
+            logo_url: activeLoan.clubs_player_contracts_parent_club_idToclubs.logo_url,
+          } : null,
           nationality: p.countries_players_nationality_idTocountries?.name,
           nationalityFlag: p.countries_players_nationality_idTocountries?.flag_url,
           club: p.clubs_players_current_club_idToclubs ? {
@@ -158,11 +173,33 @@ export class PlayersService {
       throw new NotFoundException('Không tìm thấy cầu thủ');
     }
 
-    const isOwner = Boolean(
+    // Kiểm tra xem cầu thủ có đang trong hợp đồng cho mượn hay không
+    const activeLoan = await this.prisma.player_contracts.findFirst({
+      where: {
+        player_id: playerId,
+        status: 'ACTIVE',
+        is_loan_contract: true,
+      },
+      include: {
+        clubs_player_contracts_parent_club_idToclubs: true,
+        clubs_player_contracts_club_idToclubs: true,
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    const isCurrentClub = Boolean(
       viewerClubId &&
       basicPlayer.current_club_id &&
       BigInt(basicPlayer.current_club_id) === BigInt(viewerClubId),
     );
+
+    const isParentClub = Boolean(
+      viewerClubId &&
+      activeLoan?.parent_club_id &&
+      BigInt(activeLoan.parent_club_id) === BigInt(viewerClubId),
+    );
+
+    const isOwner = isCurrentClub || isParentClub;
 
     const player: any = await this.prisma.players.findUnique({
       where: { id: playerId },
@@ -226,10 +263,19 @@ export class PlayersService {
         ...(isOwner
           ? {
               player_contracts: {
-                where: { status: 'ACTIVE' },
+                where: {
+                  status: 'ACTIVE',
+                  ...(isCurrentClub && activeLoan
+                    ? { id: activeLoan.id }
+                    : viewerClubId
+                      ? { club_id: viewerClubId }
+                      : {}),
+                },
                 include: {
                   clubs_player_contracts_club_idToclubs: true,
+                  clubs_player_contracts_parent_club_idToclubs: true,
                 },
+                orderBy: { id: 'desc' },
                 take: 1,
               },
               player_attribute_history: {
@@ -553,6 +599,9 @@ export class PlayersService {
         club_id: activeContract.club_id.toString(),
         club_name: activeContract.clubs_player_contracts_club_idToclubs?.name || player.clubs_players_current_club_idToclubs?.name || null,
         club_logo: activeContract.clubs_player_contracts_club_idToclubs?.logo_url || player.clubs_players_current_club_idToclubs?.logo_url || null,
+        parent_club_id: activeContract.parent_club_id ? activeContract.parent_club_id.toString() : null,
+        parent_club_name: activeContract.clubs_player_contracts_parent_club_idToclubs?.name || null,
+        parent_club_logo: activeContract.clubs_player_contracts_parent_club_idToclubs?.logo_url || null,
         salary: Number(activeContract.salary),
         weekly_wage: Number(activeContract.salary),
         squad_role: activeContract.squad_role || 'Đội 1 (First Team)',
@@ -568,6 +617,17 @@ export class PlayersService {
         is_loan_contract: Boolean(activeContract.is_loan_contract),
         current_season: currentSeasonNumber,
         remaining_seasons: remainingSeasons,
+      } : null,
+      is_on_loan: Boolean(activeLoan),
+      on_loan: activeLoan ? {
+        is_loan: true,
+        borrowing_club_id: activeLoan.club_id.toString(),
+        borrowing_club_name: activeLoan.clubs_player_contracts_club_idToclubs?.name || null,
+        borrowing_club_logo: activeLoan.clubs_player_contracts_club_idToclubs?.logo_url || null,
+        parent_club_id: activeLoan.parent_club_id ? activeLoan.parent_club_id.toString() : null,
+        parent_club_name: activeLoan.clubs_player_contracts_parent_club_idToclubs?.name || null,
+        parent_club_logo: activeLoan.clubs_player_contracts_parent_club_idToclubs?.logo_url || null,
+        end_season_id: Number(activeLoan.end_season_id || 1),
       } : null,
       positions: player.player_positions.map((pp: any) => ({
         code: pp.positions.code,
@@ -734,6 +794,18 @@ export class PlayersService {
 
     if (userClubId && player.current_club_id && player.current_club_id !== userClubId) {
       throw new ForbiddenException('Bạn chỉ có quyền niêm yết chuyển nhượng cầu thủ thuộc CLB của mình');
+    }
+
+    // Không cho phép CLB mượn niêm yết cầu thủ đang mượn
+    const activeLoan = await this.prisma.player_contracts.findFirst({
+      where: {
+        player_id: playerId,
+        status: 'ACTIVE',
+        is_loan_contract: true,
+      },
+    });
+    if (activeLoan) {
+      throw new ForbiddenException('Cầu thủ đang trong hợp đồng cho mượn, không thể niêm yết bán hoặc cho mượn lại.');
     }
 
     const status = await this.prisma.player_status.upsert({

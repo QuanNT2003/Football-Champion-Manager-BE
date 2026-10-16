@@ -321,6 +321,18 @@ export class TransfersService {
       throw new BadRequestException('Bạn không thể gửi đề nghị mua cầu thủ thuộc chính CLB của mình');
     }
 
+    // Không cho phép gửi đề nghị khi cầu thủ đang thi đấu theo diện mượn
+    const activeLoan = await this.prisma.player_contracts.findFirst({
+      where: {
+        player_id: playerId,
+        status: 'ACTIVE',
+        is_loan_contract: true,
+      },
+    });
+    if (activeLoan) {
+      throw new BadRequestException('Cầu thủ đang trong thời gian thi đấu cho mượn tại CLB khác. Không thể gửi đề nghị lúc này.');
+    }
+
     const buyerAccount = await this.prisma.financial_accounts.findFirst({
       where: { club_id: fromClubId },
     });
@@ -1368,6 +1380,10 @@ export class TransfersService {
       throw new BadRequestException('Không tìm thấy hợp đồng đang hiệu lực của cầu thủ với CLB này.');
     }
 
+    if (contract.is_loan_contract) {
+      throw new BadRequestException('Không thể gia hạn hợp đồng mượn. Cầu thủ thuộc quyền sở hữu của CLB chủ quản gốc.');
+    }
+
     const additionalSeasons = Math.max(1, Math.min(5, Number(dto.additional_seasons) || 1));
     const newEndSeason = Number(contract.end_season_id || 1) + additionalSeasons;
     const newSalary = Number(dto.proposed_wage) > 0 ? Number(dto.proposed_wage) : Number(contract.salary);
@@ -1412,6 +1428,8 @@ export class TransfersService {
     const timeline = await this.prisma.server_timeline.findFirst();
     const gameDate = timeline?.real_date ? new Date(timeline.real_date) : new Date();
 
+    const isLoan = Boolean(contract.is_loan_contract && contract.parent_club_id);
+
     await this.prisma.$transaction(async (tx) => {
       await tx.player_contracts.update({
         where: { id: contract.id },
@@ -1421,24 +1439,70 @@ export class TransfersService {
         },
       });
 
-      await tx.players.update({
-        where: { id: playerId },
-        data: {
-          current_club_id: null,
-        },
-      });
+      if (isLoan && contract.parent_club_id) {
+        // Trả cầu thủ về CLB chủ quản gốc
+        await tx.players.update({
+          where: { id: playerId },
+          data: {
+            current_club_id: contract.parent_club_id,
+          },
+        });
 
-      await tx.player_club_history.updateMany({
-        where: {
-          player_id: playerId,
-          club_id: contract.club_id,
-          end_date: null,
-        },
-        data: {
-          end_date: new Date(),
-        },
-      });
+        // Kết thúc thời hạn mượn tại CLB mượn trong player_club_history
+        await tx.player_club_history.updateMany({
+          where: {
+            player_id: playerId,
+            club_id: contract.club_id,
+            end_date: null,
+          },
+          data: {
+            end_date: gameDate,
+          },
+        });
+
+        // Hủy trạng thái niêm yết bán/mượn nếu có
+        await tx.player_status.updateMany({
+          where: { player_id: playerId },
+          data: {
+            is_transfer_listed: false,
+            is_loan_listed: false,
+          },
+        });
+      } else {
+        await tx.players.update({
+          where: { id: playerId },
+          data: {
+            current_club_id: null,
+          },
+        });
+
+        await tx.player_club_history.updateMany({
+          where: {
+            player_id: playerId,
+            club_id: contract.club_id,
+            end_date: null,
+          },
+          data: {
+            end_date: gameDate,
+          },
+        });
+
+        await tx.player_status.updateMany({
+          where: { player_id: playerId },
+          data: {
+            is_transfer_listed: false,
+            is_loan_listed: false,
+          },
+        });
+      }
     });
+
+    if (isLoan) {
+      return {
+        success: true,
+        message: 'Đã chấm dứt hợp đồng mượn thành công. Cầu thủ đã được hoàn trả về CLB chủ quản gốc.',
+      };
+    }
 
     return {
       success: true,
