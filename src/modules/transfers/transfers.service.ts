@@ -471,6 +471,19 @@ export class TransfersService {
       },
     };
 
+    // Kiểm tra nếu kỳ chuyển nhượng đang đóng cửa -> Tự động hủy các offer PENDING chưa có kết quả (chuyển sang CANCELLED)
+    try {
+      const timeline = await this.prisma.server_timeline.findFirst();
+      if (timeline && !timeline.is_transfer_window_open) {
+        await this.prisma.transfer_offers.updateMany({
+          where: { status: 'PENDING' },
+          data: { status: 'CANCELLED' },
+        });
+      }
+    } catch (e) {
+      // Bỏ qua lỗi nếu có
+    }
+
     const [incomingRaw, outgoingRaw] = await Promise.all([
       this.prisma.transfer_offers.findMany({
         where: { to_club_id: clubId },
@@ -573,7 +586,7 @@ export class TransfersService {
       throw new BadRequestException('Lời đề nghị này đã được xử lý trước đó');
     }
 
-    // 1. Trường hợp TỪ CHỐI (REJECTED)
+    // 1. Trường hợp TỪ CHỐI (REJECTED): Lưu trạng thái REJECTED để CLB đối tác biết kết quả trong suốt mùa giải (sang mùa sau mới xóa)
     if (response === 'REJECTED') {
       await this.prisma.transfer_offers.update({
         where: { id: offerId },
@@ -803,13 +816,44 @@ export class TransfersService {
         },
       });
 
+      // BƯỚC 7.5: Tạo / Đảm bảo bản ghi player_statistics cho CLB mới trong mùa hiện tại
+      const currentSeasonId = timeline?.season_id ? BigInt(timeline.season_id) : 1n;
+      const existingStat = await tx.player_statistics.findFirst({
+        where: {
+          player_id: offer.player_id,
+          club_id: offer.from_club_id,
+          season_id: currentSeasonId,
+        },
+      });
+
+      if (!existingStat) {
+        await tx.player_statistics.create({
+          data: {
+            player_id: offer.player_id,
+            club_id: offer.from_club_id,
+            season_id: currentSeasonId,
+            appearances: 0,
+            starts: 0,
+            substitute_appearances: 0,
+            minutes: 0,
+            goals: 0,
+            assists: 0,
+            clean_sheets: 0,
+            yellow_cards: 0,
+            red_cards: 0,
+            average_rating: 0.0,
+            motm: 0,
+          },
+        });
+      }
+
       // BƯỚC 8: Cập nhật trạng thái đề nghị này thành ACCEPTED
       await tx.transfer_offers.update({
         where: { id: offerId },
         data: { status: 'ACCEPTED' },
       });
 
-      // BƯỚC 9: Tự động từ chối (REJECTED) tất cả các lời đề nghị PENDING khác cho cùng cầu thủ này
+      // BƯỚC 9: Tự động chuyển trạng thái REJECTED cho tất cả các lời đề nghị PENDING khác của cầu thủ này
       await tx.transfer_offers.updateMany({
         where: {
           player_id: offer.player_id,
@@ -1468,6 +1512,37 @@ export class TransfersService {
             is_loan_listed: false,
           },
         });
+
+        // Đảm bảo bản ghi player_statistics cho CLB chủ quản gốc nếu chưa có
+        const currentSeasonId = timeline?.season_id ? BigInt(timeline.season_id) : 1n;
+        const existingParentStat = await tx.player_statistics.findFirst({
+          where: {
+            player_id: playerId,
+            club_id: contract.parent_club_id,
+            season_id: currentSeasonId,
+          },
+        });
+
+        if (!existingParentStat) {
+          await tx.player_statistics.create({
+            data: {
+              player_id: playerId,
+              club_id: contract.parent_club_id,
+              season_id: currentSeasonId,
+              appearances: 0,
+              starts: 0,
+              substitute_appearances: 0,
+              minutes: 0,
+              goals: 0,
+              assists: 0,
+              clean_sheets: 0,
+              yellow_cards: 0,
+              red_cards: 0,
+              average_rating: 0.0,
+              motm: 0,
+            },
+          });
+        }
       } else {
         await tx.players.update({
           where: { id: playerId },

@@ -426,20 +426,36 @@ export class PlayersService {
       };
     });
 
-    // --- TAB 3: CAREER STATISTICS (100% PURE DB) ---
-    const careerSeasons = (player.player_statistics || []).map((ps) => ({
-      season: ps.seasons?.name || `Mùa ${ps.season_id}`,
-      team: ps.clubs?.name || 'CLB',
-      avg_quality: Number(Number(ps.average_rating || 0).toFixed(2)),
-      matches: ps.appearances || 0,
-      tackles: ps.clean_sheets || 0,
-      key_ass: `${ps.assists || 0}/${ps.assists || 0}`,
-      shot_goal: `${ps.goals || 0}/${ps.goals || 0}`,
-      rating: Number(Number(ps.average_rating || 0).toFixed(2)),
-    }));
+    // --- TAB 3: CAREER STATISTICS (100% PURE DB THEO BẢNG player_statistics) ---
+    const careerSeasons = (player.player_statistics || []).map((ps) => {
+      const yellow = ps.yellow_cards || 0;
+      const red = ps.red_cards || 0;
+      const avgRating = Number(Number(ps.average_rating || 0).toFixed(2));
+      return {
+        season: ps.seasons?.name || `Mùa ${ps.season_id}`,
+        team: ps.clubs?.name || 'CLB',
+        matches: ps.appearances || 0,
+        minutes: ps.minutes || 0,
+        clean_sheets: ps.clean_sheets || 0,
+        goals: ps.goals || 0,
+        assists: ps.assists || 0,
+        yellow_cards: yellow,
+        red_cards: red,
+        cards: `${yellow}/${red}`,
+        motm: ps.motm || 0,
+        rating: avgRating,
+        avg_quality: avgRating,
+      };
+    });
 
     const totalMatches = careerSeasons.reduce((acc, s) => acc + s.matches, 0);
-    const totalTackles = careerSeasons.reduce((acc, s) => acc + s.tackles, 0);
+    const totalMinutes = careerSeasons.reduce((acc, s) => acc + s.minutes, 0);
+    const totalCleanSheets = careerSeasons.reduce((acc, s) => acc + s.clean_sheets, 0);
+    const totalGoals = careerSeasons.reduce((acc, s) => acc + s.goals, 0);
+    const totalAssists = careerSeasons.reduce((acc, s) => acc + s.assists, 0);
+    const totalYellow = careerSeasons.reduce((acc, s) => acc + s.yellow_cards, 0);
+    const totalRed = careerSeasons.reduce((acc, s) => acc + s.red_cards, 0);
+    const totalMotm = careerSeasons.reduce((acc, s) => acc + s.motm, 0);
     const careerRating = careerSeasons.length > 0
       ? Number((careerSeasons.reduce((acc, s) => acc + s.rating, 0) / careerSeasons.length).toFixed(2))
       : 0;
@@ -686,10 +702,12 @@ export class PlayersService {
       statistics: {
         career_totals: {
           matches: totalMatches,
-          caps: 0,
-          tackles: totalTackles,
-          key_ass: '0/0',
-          shot_goal: '0/0',
+          minutes: totalMinutes,
+          clean_sheets: totalCleanSheets,
+          goals: totalGoals,
+          assists: totalAssists,
+          cards: `${totalYellow}/${totalRed}`,
+          motm: totalMotm,
           rating: careerRating,
         },
         seasons: careerSeasons,

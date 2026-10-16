@@ -1,5 +1,5 @@
 import { SeasonTrophiesService } from './season-trophies.service';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
 import { InitializeSeasonDto } from './dto/initialize-season.dto';
@@ -7,12 +7,28 @@ import { ProcessSeasonTransitionDto } from './dto/process-season-transition.dto'
 import { ContinentalCoefficientService } from './continental-coefficient.service';
 
 @Injectable()
-export class CompetitionsService {
+export class CompetitionsService implements OnModuleInit {
+  private readonly logger = new Logger(CompetitionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly continentalCoefficientService: ContinentalCoefficientService,
     private readonly seasonTrophiesService: SeasonTrophiesService,
   ) {}
+
+  async onModuleInit() {
+    try {
+      const activeSeason = await this.prisma.seasons.findFirst({
+        where: { status: 'ACTIVE' },
+        orderBy: { season_number: 'desc' },
+      });
+      if (activeSeason) {
+        await this.ensurePlayerStatisticsForSeason(activeSeason.id);
+      }
+    } catch (err) {
+      this.logger.warn('[CompetitionsService.onModuleInit] Lỗi khởi tạo player_statistics:', err);
+    }
+  }
 
 
   private readonly leagueLocalKickoffSlots = ['19:30', '20:00', '20:30', '21:00', '21:30'];
@@ -1063,6 +1079,38 @@ export class CompetitionsService {
     });
   }
 
+  /**
+   * Đảm bảo bản ghi player_statistics tồn tại từ đầu mùa cho toàn bộ cầu thủ có CLB
+   */
+  async ensurePlayerStatisticsForSeason(seasonId: bigint) {
+    try {
+      await this.prisma.$executeRaw`
+        INSERT INTO player_statistics (
+          player_id, season_id, club_id, 
+          appearances, starts, substitute_appearances, 
+          minutes, goals, assists, clean_sheets, 
+          yellow_cards, red_cards, average_rating, motm
+        )
+        SELECT 
+          p.id, ${seasonId}, p.current_club_id, 
+          0, 0, 0, 
+          0, 0, 0, 0, 
+          0, 0, 0.0000, 0
+        FROM players p
+        WHERE p.current_club_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM player_statistics ps 
+            WHERE ps.player_id = p.id 
+              AND ps.season_id = ${seasonId} 
+              AND ps.club_id = p.current_club_id
+          )
+      `;
+      this.logger.log(`✅ [PLAYER_STATISTICS] Đã khởi tạo/đồng bộ player_statistics mùa ${seasonId} cho toàn bộ cầu thủ.`);
+    } catch (err) {
+      this.logger.warn(`[ensurePlayerStatisticsForSeason] Lỗi khởi tạo player_statistics mùa ${seasonId}:`, err);
+    }
+  }
+
   private async ensureStageGroup(stageId: bigint, name = 'Main Table', code = 'MAIN', orderNo = 1) {
     const existing = await this.prisma.stage_groups.findFirst({
       where: { stage_id: stageId, code },
@@ -1850,6 +1898,7 @@ export class CompetitionsService {
     }
 
     await this.ensureServerTimeline(worldId, targetSeason);
+    await this.ensurePlayerStatisticsForSeason(targetSeason.id);
 
     // 2. Phân loại giải đấu: Quốc nội (Domestic Tiers 1..5) và Châu lục (Continental C1, C2, C3)
     const domesticComps = await this.prisma.competitions.findMany({
@@ -3267,6 +3316,18 @@ export class CompetitionsService {
       await this.prisma.player_attribute_history.deleteMany();
     } catch (err) {
       console.warn('[processSeasonTransition] Lỗi dọn dẹp player_attribute_history:', err);
+    }
+
+    // 6.7. Xóa toàn bộ các đề nghị chuyển nhượng REJECTED và CANCELLED của mùa cũ khi chuyển giao sang mùa giải mới
+    try {
+      await this.prisma.transfer_offers.deleteMany({
+        where: {
+          status: { in: ['REJECTED', 'CANCELLED'] },
+        },
+      });
+      this.logger.log('🧹 [processSeasonTransition] Đã xóa toàn bộ đề nghị chuyển nhượng REJECTED và CANCELLED của mùa cũ khi chuyển sang mùa mới.');
+    } catch (err) {
+      console.warn('[processSeasonTransition] Lỗi dọn dẹp transfer_offers mùa cũ:', err);
     }
 
     // 7. Đóng mùa giải cũ

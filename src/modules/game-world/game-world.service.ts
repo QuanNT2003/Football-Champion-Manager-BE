@@ -163,10 +163,16 @@ export class GameWorldService implements OnApplicationBootstrap {
       newSeasonData = transitionResult.nextSeason;
       this.logger.log(`🎉 [CHUYỂN GIAO MÙA THÀNH CÔNG] ${transitionResult.summary}`);
     } else {
+      // Xác định thị trường chuyển nhượng: Mở vào Day 1 - 2 (đầu mùa) và Day 18 - 19 (giữa mùa)
+      const isTransferWindowOpen = (nextDay <= 2) || (nextDay >= 18 && nextDay <= 19);
+
       // Tiếp tục ngày tiếp theo trong mùa hiện tại
       await this.prisma.seasons.update({
         where: { id: season.id },
-        data: { current_day: nextDay },
+        data: { 
+          current_day: nextDay,
+          is_transfer_window_open: isTransferWindowOpen,
+        },
       });
 
       await this.prisma.$executeRaw`
@@ -174,9 +180,24 @@ export class GameWorldService implements OnApplicationBootstrap {
         SET season_day = ${nextDay},
             world_day = world_day + 1,
             real_date = DATE_ADD(real_date, INTERVAL 1 DAY),
+            is_transfer_window_open = ${isTransferWindowOpen},
             updated_at = NOW()
         WHERE world_id = ${worldId}
       `;
+
+      // Ở các ngày sau kỳ chuyển nhượng: Tự động hủy các offer chưa có kết quả (PENDING -> CANCELLED)
+      if (!isTransferWindowOpen) {
+        try {
+          await this.prisma.transfer_offers.updateMany({
+            where: { status: 'PENDING' },
+            data: { status: 'CANCELLED' },
+          });
+        } catch (err) {
+          this.logger.warn('Lỗi khi tự động hủy các offer pending khi đóng cửa thị trường:', err);
+        }
+      }
+
+
 
       // Tự động kiểm tra và tiến vòng Knockout Cúp Quốc Gia & Cúp Châu Lục cho ngày mới
       try {
