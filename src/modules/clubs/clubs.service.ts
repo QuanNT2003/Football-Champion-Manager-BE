@@ -599,82 +599,101 @@ export class ClubsService {
       kickoffFormatted = `${hh}:${mm}`;
     }
 
-    return {
-      club: {
-        id: club.id.toString(),
-        name: club.name,
-        short_name: club.short_name,
-        logo_url: club.logo_url,
-        country: club.countries?.name || 'Việt Nam',
-        country_code: club.countries?.code || 'VN',
-        flag_url: club.countries?.flag_url,
-        reputation: club.reputation || 3000,
-        popularity: Number(((club.reputation ? Math.min(99, Math.max(10, club.reputation / 100)) : 30.0)).toFixed(1)),
-        team_morale: avgMorale,
-        avg_ovr: avgOvr,
-        players_count: playersCount,
-        cash: fin ? Number(fin.balance_cash) : 0,
-        gold: fin ? Number(fin.balance_gold) : 0,
-        league_rank: leagueStanding ? leagueStanding.position : 1,
-        league_points: leagueStanding ? leagueStanding.points : 0,
-        trophies_count: trophiesCount,
-        tier_label: `Tier ${compTier}`,
-        competition_name: compName,
-      },
-      next_match: nextMatch ? {
-        id: nextMatch.id.toString(),
-        competition_name: nextMatch.competition_seasons?.competitions?.name || compName,
-        season_day: nextMatch.season_day,
-        match_date: nextMatch.match_date,
-        kickoff_time: kickoffFormatted,
-        status: nextMatch.status,
-        is_home: isHomeNext,
-        schedule_label: `${kickoffFormatted} • Ngày ${nextMatch.season_day}`,
-        opponent: isHomeNext ? {
-          id: nextMatch.clubs_matches_away_club_idToclubs?.id.toString(),
-          name: nextMatch.clubs_matches_away_club_idToclubs?.name || 'Đối thủ',
-          short_name: nextMatch.clubs_matches_away_club_idToclubs?.short_name,
-          logo_url: nextMatch.clubs_matches_away_club_idToclubs?.logo_url,
-          is_home: false,
-        } : {
-          id: nextMatch.clubs_matches_home_club_idToclubs?.id.toString(),
-          name: nextMatch.clubs_matches_home_club_idToclubs?.name || 'Đối thủ',
-          short_name: nextMatch.clubs_matches_home_club_idToclubs?.short_name,
-          logo_url: nextMatch.clubs_matches_home_club_idToclubs?.logo_url,
-          is_home: true,
+      // 6. Recent club news (Top 5 tin tức mới nhất của CLB)
+      const recentNewsRaw = await this.prisma.club_news.findMany({
+        where: { club_id: clubId },
+        orderBy: { published_at: 'desc' },
+        take: 5,
+      });
+
+      const recentNews = recentNewsRaw.map((n) => ({
+        id: n.id.toString(),
+        club_id: n.club_id.toString(),
+        season_id: n.season_id ? n.season_id.toString() : null,
+        news_type: n.news_type,
+        title: n.title,
+        thumbnail_url: n.thumbnail_url,
+        content: n.content,
+        published_at: n.published_at,
+      }));
+
+      return {
+        club: {
+          id: club.id.toString(),
+          name: club.name,
+          short_name: club.short_name,
+          logo_url: club.logo_url,
+          country: club.countries?.name || 'Việt Nam',
+          country_code: club.countries?.code || 'VN',
+          flag_url: club.countries?.flag_url,
+          reputation: club.reputation || 3000,
+          popularity: Number(((club.reputation ? Math.min(99, Math.max(10, club.reputation / 100)) : 30.0)).toFixed(1)),
+          team_morale: avgMorale,
+          avg_ovr: avgOvr,
+          players_count: playersCount,
+          cash: fin ? Number(fin.balance_cash) : 0,
+          gold: fin ? Number(fin.balance_gold) : 0,
+          league_rank: leagueStanding ? leagueStanding.position : 1,
+          league_points: leagueStanding ? leagueStanding.points : 0,
+          trophies_count: trophiesCount,
+          tier_label: `Tier ${compTier}`,
+          competition_name: compName,
         },
-        home_club: {
-          id: nextMatch.clubs_matches_home_club_idToclubs?.id.toString(),
-          name: nextMatch.clubs_matches_home_club_idToclubs?.name || club.name,
-          logo_url: nextMatch.clubs_matches_home_club_idToclubs?.logo_url,
+        next_match: nextMatch ? {
+          id: nextMatch.id.toString(),
+          competition_name: nextMatch.competition_seasons?.competitions?.name || compName,
+          season_day: nextMatch.season_day,
+          match_date: nextMatch.match_date,
+          kickoff_time: kickoffFormatted,
+          status: nextMatch.status,
+          is_home: isHomeNext,
+          schedule_label: `${kickoffFormatted} • Ngày ${nextMatch.season_day}`,
+          opponent: isHomeNext ? {
+            id: nextMatch.clubs_matches_away_club_idToclubs?.id.toString(),
+            name: nextMatch.clubs_matches_away_club_idToclubs?.name || 'Đối thủ',
+            short_name: nextMatch.clubs_matches_away_club_idToclubs?.short_name,
+            logo_url: nextMatch.clubs_matches_away_club_idToclubs?.logo_url,
+            is_home: false,
+          } : {
+            id: nextMatch.clubs_matches_home_club_idToclubs?.id.toString(),
+            name: nextMatch.clubs_matches_home_club_idToclubs?.name || 'Đối thủ',
+            short_name: nextMatch.clubs_matches_home_club_idToclubs?.short_name,
+            logo_url: nextMatch.clubs_matches_home_club_idToclubs?.logo_url,
+            is_home: true,
+          },
+          home_club: {
+            id: nextMatch.clubs_matches_home_club_idToclubs?.id.toString(),
+            name: nextMatch.clubs_matches_home_club_idToclubs?.name || club.name,
+            logo_url: nextMatch.clubs_matches_home_club_idToclubs?.logo_url,
+          },
+          away_club: {
+            id: nextMatch.clubs_matches_away_club_idToclubs?.id.toString(),
+            name: nextMatch.clubs_matches_away_club_idToclubs?.name || 'Đối thủ',
+            logo_url: nextMatch.clubs_matches_away_club_idToclubs?.logo_url,
+          },
+        } : null,
+        last_match: lastMatch ? {
+          id: lastMatch.id.toString(),
+          competition_name: lastMatch.competition_seasons?.competitions?.name || 'VĐQG',
+          home_club_name: lastMatch.clubs_matches_home_club_idToclubs?.name || '',
+          away_club_name: lastMatch.clubs_matches_away_club_idToclubs?.name || '',
+          home_score: lastMatch.home_score ?? 0,
+          away_score: lastMatch.away_score ?? 0,
+        } : null,
+        competitions: competitionsList,
+        metrics: {
+          avg_ovr: avgOvr,
+          players_count: playersCount,
+          team_morale: avgMorale,
         },
-        away_club: {
-          id: nextMatch.clubs_matches_away_club_idToclubs?.id.toString(),
-          name: nextMatch.clubs_matches_away_club_idToclubs?.name || 'Đối thủ',
-          logo_url: nextMatch.clubs_matches_away_club_idToclubs?.logo_url,
+        timeline: {
+          season_number: timeline ? Number(timeline.season_id) || 1 : 1,
+          current_day: nextMatch ? nextMatch.season_day : 3,
+          total_days: 34,
         },
-      } : null,
-      last_match: lastMatch ? {
-        id: lastMatch.id.toString(),
-        competition_name: lastMatch.competition_seasons?.competitions?.name || 'VĐQG',
-        home_club_name: lastMatch.clubs_matches_home_club_idToclubs?.name || '',
-        away_club_name: lastMatch.clubs_matches_away_club_idToclubs?.name || '',
-        home_score: lastMatch.home_score ?? 0,
-        away_score: lastMatch.away_score ?? 0,
-      } : null,
-      competitions: competitionsList,
-      metrics: {
-        avg_ovr: avgOvr,
-        players_count: playersCount,
-        team_morale: avgMorale,
-      },
-      timeline: {
-        season_number: timeline ? Number(timeline.season_id) || 1 : 1,
-        current_day: nextMatch ? nextMatch.season_day : 3,
-        total_days: 34,
-      },
-    };
-  }
+        recent_news: recentNews,
+      };
+    }
 
   async getClubTrophies(clubId: bigint) {
     const trophies = await this.prisma.club_trophies.findMany({
@@ -702,6 +721,39 @@ export class ClubsService {
       rank_position: t.rank_position,
       achieved_at: t.achieved_at,
     }));
+  }
+
+  async getClubNews(clubId: bigint, page: number = 1, limit: number = 20) {
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.max(1, Math.min(100, Number(limit) || 20));
+    const skip = (p - 1) * l;
+
+    const [total, news] = await Promise.all([
+      this.prisma.club_news.count({ where: { club_id: clubId } }),
+      this.prisma.club_news.findMany({
+        where: { club_id: clubId },
+        skip,
+        take: l,
+        orderBy: { published_at: 'desc' },
+      }),
+    ]);
+
+    return {
+      total,
+      page: p,
+      limit: l,
+      totalPages: Math.ceil(total / l),
+      items: news.map((n) => ({
+        id: n.id.toString(),
+        club_id: n.club_id.toString(),
+        season_id: n.season_id ? n.season_id.toString() : null,
+        news_type: n.news_type,
+        title: n.title,
+        thumbnail_url: n.thumbnail_url,
+        content: n.content,
+        published_at: n.published_at,
+      })),
+    };
   }
 
 }

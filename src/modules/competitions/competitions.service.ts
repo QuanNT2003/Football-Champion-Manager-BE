@@ -2817,6 +2817,51 @@ export class CompetitionsService implements OnModuleInit {
             squad_number: youthSquadNumber,
           },
         });
+
+        // Lưu tin tức CLB khi cầu thủ hết hạn cho mượn (cho cả CLB chủ quản và CLB mượn)
+        try {
+          const parentClub = await this.prisma.clubs.findUnique({
+            where: { id: contract.parent_club_id },
+            select: { name: true },
+          });
+          const borrowerClub = await this.prisma.clubs.findUnique({
+            where: { id: contract.club_id },
+            select: { name: true },
+          });
+          const p = await this.prisma.players.findUnique({
+            where: { id: contract.player_id },
+            select: { first_name: true, last_name: true, photo_url: true },
+          });
+          const pName = `${p?.first_name || ''} ${p?.last_name || ''}`.trim() || 'Cầu thủ';
+
+          // Tin tức CLB chủ quản đón trở về
+          await this.prisma.club_news.create({
+            data: {
+              club_id: contract.parent_club_id,
+              season_id: completedSeasonId,
+              news_type: 'TRANSFER',
+              title: `Hết Hạn Mượn: ${pName} trở về CLB`,
+              thumbnail_url: p?.photo_url || null,
+              content: `Cầu thủ ${pName} đã hoàn tất thời hạn cho mượn tại ${borrowerClub?.name || 'đối tác'} và chính thức trở về hội quân cùng đội trẻ của ${parentClub?.name || 'CLB'} cho mùa giải mới.`,
+              published_at: new Date(),
+            },
+          });
+
+          // Tin tức CLB mượn chia tay cầu thủ
+          await this.prisma.club_news.create({
+            data: {
+              club_id: contract.club_id,
+              season_id: completedSeasonId,
+              news_type: 'TRANSFER',
+              title: `Hết Hạn Mượn: Chia tay ${pName}`,
+              thumbnail_url: p?.photo_url || null,
+              content: `Hợp đồng mượn cầu thủ ${pName} đã đáo hạn. Cầu thủ chính thức chia tay ${borrowerClub?.name || 'CLB'} để trở về hội quân cùng ${parentClub?.name || 'CLB chủ quản'}.`,
+              published_at: new Date(),
+            },
+          });
+        } catch (e) {
+          // Bỏ qua nếu lỗi
+        }
       }
       expiredLoansCount++;
     }
@@ -2840,6 +2885,34 @@ export class CompetitionsService implements OnModuleInit {
         where: { id: contract.player_id },
         data: { current_club_id: null, squad_number: null },
       });
+
+      // Lưu tin tức CLB chia tay cầu thủ hết hạn hợp đồng
+      try {
+        const club = await this.prisma.clubs.findUnique({
+          where: { id: contract.club_id },
+          select: { name: true },
+        });
+        const p = await this.prisma.players.findUnique({
+          where: { id: contract.player_id },
+          select: { first_name: true, last_name: true, photo_url: true },
+        });
+        const pName = `${p?.first_name || ''} ${p?.last_name || ''}`.trim() || 'Cầu thủ';
+
+        await this.prisma.club_news.create({
+          data: {
+            club_id: contract.club_id,
+            season_id: completedSeasonId,
+            news_type: 'TRANSFER',
+            title: `Hết Hạn Hợp Đồng: Chia tay ${pName}`,
+            thumbnail_url: p?.photo_url || null,
+            content: `Hợp đồng giữa ${club?.name || 'CLB'} và cầu thủ ${pName} đã chính thức đáo hạn sau khi mùa giải kết thúc. Cầu thủ rời đội theo diện chuyển nhượng tự do. Cảm ơn những đóng góp của anh cho CLB.`,
+            published_at: new Date(),
+          },
+        });
+      } catch (e) {
+        // Bỏ qua nếu lỗi
+      }
+
       expiredContractsCount++;
     }
 

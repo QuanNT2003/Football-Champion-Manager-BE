@@ -852,6 +852,66 @@ export class TransfersService {
         });
       }
 
+      // BƯỚC 7.6: Lưu tin tức CLB (club_news) cho cả 2 bên (CLB mua/mượn và CLB bán/cho mượn)
+      const buyerClubName = buyerClub?.name || 'CLB';
+      const sellerClubName = sellerClub?.name || 'CLB';
+      const playerPhoto = offer.players?.photo_url || null;
+      const formattedFee = amount > 0 ? `€${amount.toLocaleString()}` : 'miễn phí';
+
+      if (isLoan) {
+        // Tin tức cho CLB mượn (offer.from_club_id)
+        await tx.club_news.create({
+          data: {
+            club_id: offer.from_club_id,
+            season_id: currentSeasonId,
+            news_type: 'TRANSFER',
+            title: `Bản Hợp Đồng Mượn: Chào mừng ${playerName}!`,
+            thumbnail_url: playerPhoto,
+            content: `CLB ${buyerClubName} đã chính thức mượn thành công cầu thủ ${playerName} từ ${sellerClubName} đến hết mùa giải. Cầu thủ sẽ hội quân cùng đội trẻ và sẵn sàng thi đấu.`,
+            published_at: currentContractStartDate,
+          },
+        });
+
+        // Tin tức cho CLB cho mượn (offer.to_club_id)
+        await tx.club_news.create({
+          data: {
+            club_id: offer.to_club_id,
+            season_id: currentSeasonId,
+            news_type: 'TRANSFER',
+            title: `Cho Mượn Cầu Thủ: ${playerName} gia nhập ${buyerClubName}`,
+            thumbnail_url: playerPhoto,
+            content: `Cầu thủ ${playerName} đã hoàn tất thủ tục chuyển sang thi đấu cho ${buyerClubName} theo dạng cho mượn đến hết mùa giải nhằm tích lũy thêm kinh nghiệm thi đấu.`,
+            published_at: currentContractStartDate,
+          },
+        });
+      } else {
+        // Tin tức cho CLB mua (offer.from_club_id)
+        await tx.club_news.create({
+          data: {
+            club_id: offer.from_club_id,
+            season_id: currentSeasonId,
+            news_type: 'TRANSFER',
+            title: `Tân Binh Mới: ${buyerClubName} chiêu mộ thành công ${playerName}!`,
+            thumbnail_url: playerPhoto,
+            content: `CLB ${buyerClubName} vui mừng thông báo đã hoàn tất thương vụ chuyển nhượng chiêu mộ ${playerName} từ ${sellerClubName} với mức phí ${formattedFee}. Hợp đồng có thời hạn ${contractYears} mùa giải.`,
+            published_at: currentContractStartDate,
+          },
+        });
+
+        // Tin tức cho CLB bán (offer.to_club_id)
+        await tx.club_news.create({
+          data: {
+            club_id: offer.to_club_id,
+            season_id: currentSeasonId,
+            news_type: 'TRANSFER',
+            title: `Thông Báo Chuyển Nhượng: Chia tay ${playerName}`,
+            thumbnail_url: playerPhoto,
+            content: `CLB ${sellerClubName} gửi lời cảm ơn và lời chúc may mắn nhất đến ${playerName} sau khi cầu thủ chính thức cập bến ${buyerClubName} với mức phí chuyển nhượng ${formattedFee}.`,
+            published_at: currentContractStartDate,
+          },
+        });
+      }
+
       // BƯỚC 8: Cập nhật trạng thái đề nghị này thành ACCEPTED
       await tx.transfer_offers.update({
         where: { id: offerId },
@@ -1476,6 +1536,7 @@ export class TransfersService {
 
     const timeline = await this.prisma.server_timeline.findFirst();
     const gameDate = timeline?.real_date ? new Date(timeline.real_date) : new Date();
+    const currentSeasonId = timeline?.season_id ? BigInt(timeline.season_id) : 1n;
 
     const isLoan = Boolean(contract.is_loan_contract && contract.parent_club_id);
 
@@ -1522,7 +1583,6 @@ export class TransfersService {
         });
 
         // Đảm bảo bản ghi player_statistics cho CLB chủ quản gốc nếu chưa có
-        const currentSeasonId = timeline?.season_id ? BigInt(timeline.season_id) : 1n;
         const existingParentStat = await tx.player_statistics.findFirst({
           where: {
             player_id: playerId,
@@ -1551,11 +1611,48 @@ export class TransfersService {
             },
           });
         }
+
+        // Lưu tin tức kết thúc mượn cho cả CLB chủ quản và CLB mượn
+        try {
+          const parentClub = await tx.clubs.findUnique({ where: { id: contract.parent_club_id }, select: { name: true } });
+          const borrowerClub = await tx.clubs.findUnique({ where: { id: contract.club_id }, select: { name: true } });
+          const p = await tx.players.findUnique({ where: { id: playerId }, select: { first_name: true, last_name: true, photo_url: true } });
+          const pName = `${p?.first_name || ''} ${p?.last_name || ''}`.trim() || 'Cầu thủ';
+
+          // Tin tức cho CLB chủ quản đón cầu thủ trở về
+          await tx.club_news.create({
+            data: {
+              club_id: contract.parent_club_id,
+              season_id: currentSeasonId,
+              news_type: 'TRANSFER',
+              title: `Trở Lại CLB: ${pName} kết thúc hợp đồng mượn`,
+              thumbnail_url: p?.photo_url || null,
+              content: `Cầu thủ ${pName} đã chính thức trở lại ${parentClub?.name || 'CLB'} sau khi chấm dứt hợp đồng cho mượn trước hạn với ${borrowerClub?.name || 'đối tác'}. Cầu thủ sẽ gia nhập đội trẻ để tiếp tục rèn luyện.`,
+              published_at: gameDate,
+            },
+          });
+
+          // Tin tức cho CLB mượn chia tay cầu thủ
+          await tx.club_news.create({
+            data: {
+              club_id: contract.club_id,
+              season_id: currentSeasonId,
+              news_type: 'TRANSFER',
+              title: `Chấm Dứt Cho Mượn: Chia tay ${pName}`,
+              thumbnail_url: p?.photo_url || null,
+              content: `CLB ${borrowerClub?.name || 'CLB'} đã hoàn tất thủ tục kết thúc thời hạn mượn và gửi trả cầu thủ ${pName} về lại ${parentClub?.name || 'CLB chủ quản'}.`,
+              published_at: gameDate,
+            },
+          });
+        } catch (e) {
+          // Bỏ qua nếu lỗi
+        }
       } else {
         await tx.players.update({
           where: { id: playerId },
           data: {
             current_club_id: null,
+            squad_number: null,
           },
         });
 
@@ -1577,6 +1674,27 @@ export class TransfersService {
             is_loan_listed: false,
           },
         });
+
+        // Lưu tin tức thanh lý hợp đồng cho CLB
+        try {
+          const club = await tx.clubs.findUnique({ where: { id: contract.club_id }, select: { name: true } });
+          const p = await tx.players.findUnique({ where: { id: playerId }, select: { first_name: true, last_name: true, photo_url: true } });
+          const pName = `${p?.first_name || ''} ${p?.last_name || ''}`.trim() || 'Cầu thủ';
+
+          await tx.club_news.create({
+            data: {
+              club_id: contract.club_id,
+              season_id: currentSeasonId,
+              news_type: 'TRANSFER',
+              title: `Thanh Lý Hợp Đồng: ${pName} rời CLB`,
+              thumbnail_url: p?.photo_url || null,
+              content: `CLB ${club?.name || 'CLB'} và cầu thủ ${pName} đã đạt thỏa thuận chấm dứt hợp đồng trước thời hạn. Cầu thủ chính thức trở thành cầu thủ tự do. Chúc anh gặt hái nhiều thành công trong tương lai.`,
+              published_at: gameDate,
+            },
+          });
+        } catch (e) {
+          // Bỏ qua nếu lỗi
+        }
       }
     });
 

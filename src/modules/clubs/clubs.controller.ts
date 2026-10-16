@@ -78,6 +78,18 @@ export class ClubsController {
     return this.clubsService.getClubTrophies(BigInt(id));
   }
 
+  @Get(':id/news')
+  @ApiOperation({ summary: 'Lấy danh sách tin tức câu lạc bộ (chuyển nhượng, thi đấu, sự kiện)' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  async getClubNews(
+    @Param('id') id: string,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+  ) {
+    return this.clubsService.getClubNews(BigInt(id), Number(page), Number(limit));
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Lấy thông tin chi tiết một CLB theo ID' })
   async getClubById(@Param('id') id: string) {
