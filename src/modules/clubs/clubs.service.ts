@@ -723,15 +723,26 @@ export class ClubsService {
     }));
   }
 
-  async getClubNews(clubId: bigint, page: number = 1, limit: number = 20) {
+  async getClubNews(clubId: bigint, page: number = 1, limit: number = 20, newsType?: string, search?: string) {
     const p = Math.max(1, Number(page) || 1);
     const l = Math.max(1, Math.min(100, Number(limit) || 20));
     const skip = (p - 1) * l;
 
+    const where: any = { club_id: clubId };
+    if (newsType && newsType.trim()) {
+      where.news_type = newsType.trim();
+    }
+    if (search && search.trim()) {
+      where.OR = [
+        { title: { contains: search.trim() } },
+        { content: { contains: search.trim() } },
+      ];
+    }
+
     const [total, news] = await Promise.all([
-      this.prisma.club_news.count({ where: { club_id: clubId } }),
+      this.prisma.club_news.count({ where }),
       this.prisma.club_news.findMany({
-        where: { club_id: clubId },
+        where,
         skip,
         take: l,
         orderBy: { published_at: 'desc' },

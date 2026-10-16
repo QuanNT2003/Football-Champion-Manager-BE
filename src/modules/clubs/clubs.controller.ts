@@ -82,12 +82,16 @@ export class ClubsController {
   @ApiOperation({ summary: 'Lấy danh sách tin tức câu lạc bộ (chuyển nhượng, thi đấu, sự kiện)' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'newsType', required: false, example: 'TRANSFER' })
+  @ApiQuery({ name: 'search', required: false })
   async getClubNews(
     @Param('id') id: string,
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
+    @Query('newsType') newsType?: string,
+    @Query('search') search?: string,
   ) {
-    return this.clubsService.getClubNews(BigInt(id), Number(page), Number(limit));
+    return this.clubsService.getClubNews(BigInt(id), Number(page), Number(limit), newsType, search);
   }
 
   @Get(':id')
