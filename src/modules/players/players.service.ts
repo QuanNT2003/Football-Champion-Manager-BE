@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
 /**
@@ -847,6 +847,152 @@ export class PlayersService {
         is_transfer_listed: Boolean(status.is_transfer_listed),
         is_loan_listed: Boolean(status.is_loan_listed),
         asking_price: status.asking_price,
+      },
+    };
+  }
+
+  /**
+   * Điều chuyển cầu thủ giữa Đội Một và Đội Trẻ, tự động gán số áo còn trống (1..99)
+   */
+  async updatePlayerSquad(
+    playerId: bigint,
+    targetSquadType: 'FIRST_TEAM' | 'YOUTH_U21' | 'RESERVES' | 'YOUTH_U19',
+    desiredSquadNumber?: number,
+    userClubId?: bigint,
+  ) {
+    const player = await this.prisma.players.findUnique({
+      where: { id: playerId },
+      include: {
+        player_status: true,
+      },
+    });
+
+    if (!player) {
+      throw new NotFoundException('Không tìm thấy cầu thủ');
+    }
+
+    if (!player.current_club_id) {
+      throw new BadRequestException('Cầu thủ tự do không thuộc biên chế CLB nào');
+    }
+
+    if (userClubId && player.current_club_id !== userClubId) {
+      throw new ForbiddenException('Bạn chỉ có quyền điều chuyển cầu thủ thuộc CLB của mình');
+    }
+
+    // Lấy danh sách số áo đang được dùng trong squad đích của CLB này
+    const existingSquadPlayers = await this.prisma.players.findMany({
+      where: {
+        current_club_id: player.current_club_id,
+        squad_type: targetSquadType,
+        id: { not: playerId },
+        squad_number: { not: null },
+      },
+      select: {
+        id: true,
+        first_name: true,
+        last_name: true,
+        squad_number: true,
+      },
+    });
+
+    const usedNumbers = new Set<number>(
+      existingSquadPlayers
+        .map((p) => Number(p.squad_number))
+        .filter((num) => num > 0)
+    );
+
+    let assignedSquadNumber: number;
+
+    if (desiredSquadNumber !== undefined && desiredSquadNumber !== null && desiredSquadNumber > 0) {
+      if (desiredSquadNumber < 1 || desiredSquadNumber > 99) {
+        throw new BadRequestException('Số áo phải từ 1 đến 99');
+      }
+      if (usedNumbers.has(desiredSquadNumber)) {
+        const conflictPlayer = existingSquadPlayers.find(
+          (p) => Number(p.squad_number) === desiredSquadNumber
+        );
+        const conflictName = conflictPlayer
+          ? `${conflictPlayer.first_name} ${conflictPlayer.last_name}`.trim()
+          : 'cầu thủ khác';
+        throw new BadRequestException(
+          `Số áo #${desiredSquadNumber} đã có ${conflictName} sử dụng trong ${targetSquadType === 'FIRST_TEAM' ? 'Đội Một' : 'Đội Trẻ'}`
+        );
+      }
+      assignedSquadNumber = desiredSquadNumber;
+    } else {
+      // Tự động tìm số áo trống nhỏ nhất từ 1 đến 99
+      let freeNum = 1;
+      while (usedNumbers.has(freeNum) && freeNum <= 99) {
+        freeNum++;
+      }
+      if (freeNum > 99) {
+        freeNum = (existingSquadPlayers.length || 0) + 1;
+      }
+      assignedSquadNumber = freeNum;
+    }
+
+    const previousSquadType = player.squad_type;
+
+    // Cập nhật squad_type và squad_number của cầu thủ
+    const updatedPlayer = await this.prisma.players.update({
+      where: { id: playerId },
+      data: {
+        squad_type: targetSquadType,
+        squad_number: assignedSquadNumber,
+      },
+    });
+
+    // Nếu chuyển từ Đội Một sang Đội Trẻ: rút cầu thủ khỏi đội hình thi đấu chính (Starting / Bench) của Đội Một nếu có
+    if (previousSquadType === 'FIRST_TEAM' && targetSquadType !== 'FIRST_TEAM') {
+      const firstTeamTactics = await this.prisma.club_tactics.findMany({
+        where: {
+          club_id: player.current_club_id,
+          squad_type: 'FIRST_TEAM',
+        },
+        select: { id: true },
+      });
+      if (firstTeamTactics.length > 0) {
+        await this.prisma.club_tactic_positions.updateMany({
+          where: {
+            tactic_id: { in: firstTeamTactics.map((t) => t.id) },
+            player_id: playerId,
+          },
+          data: {
+            player_id: null,
+          },
+        });
+      }
+    } else if (previousSquadType !== 'FIRST_TEAM' && targetSquadType === 'FIRST_TEAM') {
+      // Tương tự nếu chuyển từ Đội Trẻ lên Đội Một: rút khỏi tactic của đội trẻ
+      const youthTactics = await this.prisma.club_tactics.findMany({
+        where: {
+          club_id: player.current_club_id,
+          squad_type: 'YOUTH_U21',
+        },
+        select: { id: true },
+      });
+      if (youthTactics.length > 0) {
+        await this.prisma.club_tactic_positions.updateMany({
+          where: {
+            tactic_id: { in: youthTactics.map((t) => t.id) },
+            player_id: playerId,
+          },
+          data: {
+            player_id: null,
+          },
+        });
+      }
+    }
+
+    const squadName = targetSquadType === 'FIRST_TEAM' ? 'Đội Một' : 'Đội Trẻ U21';
+
+    return {
+      success: true,
+      message: `Đã chuyển ${player.first_name} ${player.last_name} sang ${squadName} thành công với số áo #${assignedSquadNumber}!`,
+      player: {
+        id: updatedPlayer.id.toString(),
+        squad_type: updatedPlayer.squad_type,
+        squad_number: updatedPlayer.squad_number,
       },
     };
   }

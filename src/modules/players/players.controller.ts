@@ -12,7 +12,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { PlayersService } from './players.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 
-import { UpdateListingDto, QueryPlayerDto } from './dto';
+import { UpdateListingDto, QueryPlayerDto, MoveSquadDto } from './dto';
 
 @ApiTags('Cầu Thủ & Đội Hình')
 @Controller('players')
@@ -79,4 +79,23 @@ export class PlayersController {
       userClubId,
     );
   }
+
+  @Put(':id/squad')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Chuyển cầu thủ lên đội 1 hoặc xuống đội trẻ và tự fill số áo còn trống' })
+  async updatePlayerSquad(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: MoveSquadDto,
+  ) {
+    const userClubId = req.user?.clubId ? BigInt(req.user.clubId) : undefined;
+    return this.playersService.updatePlayerSquad(
+      BigInt(id),
+      body.squadType,
+      body.squadNumber,
+      userClubId,
+    );
+  }
 }
+
