@@ -171,11 +171,15 @@ export class TransfersService {
       else if (params.position === 'MID') positionCodes = ['CM', 'CDM', 'CAM', 'LM', 'RM'];
       else if (params.position === 'ATT' || params.position === 'FWD') positionCodes = ['ST', 'CF', 'LW', 'RW'];
 
+      const posRecords = await this.prisma.positions.findMany({
+        where: { code: { in: positionCodes } },
+        select: { id: true },
+      });
+      const positionIds = posRecords.map((p) => p.id);
+
       where.player_positions = {
         some: {
-          positions: {
-            code: { in: positionCodes },
-          },
+          position_id: { in: positionIds },
         },
       };
     }
@@ -186,8 +190,25 @@ export class TransfersService {
         where,
         skip,
         take: l,
-        include: {
-          player_status: true,
+        select: {
+          id: true,
+          first_name: true,
+          last_name: true,
+          age: true,
+          reputation: true,
+          potential: true,
+          ovr: true,
+          market_value: true,
+          photo_url: true,
+          current_club_id: true,
+          nationality_id: true,
+          player_status: {
+            select: {
+              is_transfer_listed: true,
+              is_loan_listed: true,
+              asking_price: true,
+            },
+          },
           clubs_players_current_club_idToclubs: {
             select: { id: true, name: true, logo_url: true },
           },
@@ -195,18 +216,12 @@ export class TransfersService {
             select: { id: true, name: true, flag_url: true },
           },
           player_positions: {
-            include: {
+            select: {
+              is_preferred: true,
               positions: {
-                include: {
-                  position_attributes: {
-                    select: { attribute_id: true, multiplier: true, is_key: true, order_no: true },
-                  },
-                },
+                select: { code: true },
               },
             },
-          },
-          player_attributes: {
-            include: { attributes: true },
           },
         },
         orderBy: { market_value: 'desc' },
@@ -220,29 +235,15 @@ export class TransfersService {
       totalPages: Math.ceil(total / l),
       items: list.map((p) => {
         const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
-        const posAttrs = (primaryPos?.positions as any)?.position_attributes || [];
-        const hasAttributes = p.player_attributes && p.player_attributes.length > 0;
         const computedOvr = p.ovr != null && p.ovr > 0
           ? p.ovr
-          : (hasAttributes
-              ? calculateDynamicOvr(p.player_attributes, posAttrs)
-              : Math.round(Math.min(99, Math.max(55, (p.reputation || 6000) / 100))));
+          : Math.round(Math.min(99, Math.max(55, (p.reputation || 6000) / 100)));
         const playerName = p.first_name || p.last_name ? `${p.first_name || ''} ${p.last_name || ''}`.trim() : 'Player';
         const clubObj = p.clubs_players_current_club_idToclubs ? {
           id: p.clubs_players_current_club_idToclubs.id.toString(),
           name: p.clubs_players_current_club_idToclubs.name,
           logo_url: p.clubs_players_current_club_idToclubs.logo_url,
         } : null;
-
-        // Map kỹ năng dạng map { [code]: value }
-        const attributesMap: Record<string, number> = {};
-        if (p.player_attributes) {
-          for (const pa of p.player_attributes) {
-            if (pa.attributes?.code) {
-              attributesMap[pa.attributes.code] = pa.value;
-            }
-          }
-        }
 
         return {
           id: p.id.toString(),
@@ -268,7 +269,6 @@ export class TransfersService {
           nationality: p.countries_players_nationality_idTocountries?.name || 'International',
           nationality_id: p.nationality_id ? p.nationality_id.toString() : null,
           photo_url: p.photo_url || '/assets/players/default.png',
-          attributes: attributesMap,
         };
       }),
     };
