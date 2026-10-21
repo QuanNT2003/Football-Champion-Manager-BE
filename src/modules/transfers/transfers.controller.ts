@@ -186,18 +186,45 @@ export class TransfersController {
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'role', required: false, example: 'HEAD_COACH' })
   @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'license', required: false })
+  @ApiQuery({ name: 'tacticalStyle', required: false })
+  @ApiQuery({ name: 'formationId', required: false })
+  @ApiQuery({ name: 'nationalityId', required: false })
+  @ApiQuery({ name: 'minAge', required: false })
+  @ApiQuery({ name: 'maxAge', required: false })
+  @ApiQuery({ name: 'minOvr', required: false })
+  @ApiQuery({ name: 'maxOvr', required: false })
+  @ApiQuery({ name: 'attributes', required: false })
   async getStaffMarket(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 20,
+    @Query('page') page?: any,
+    @Query('limit') limit?: any,
     @Query('role') role?: string,
     @Query('search') search?: string,
+    @Query('license') license?: string,
+    @Query('tacticalStyle') tacticalStyle?: string,
+    @Query('formationId') formationId?: string,
+    @Query('nationalityId') nationalityId?: string,
+    @Query('minAge') minAge?: any,
+    @Query('maxAge') maxAge?: any,
+    @Query('minOvr') minOvr?: any,
+    @Query('maxOvr') maxOvr?: any,
+    @Query('attributes') attributes?: string,
   ) {
-    return this.transfersService.getStaffMarket(
-      Number(page),
-      Number(limit),
-      role,
-      search,
-    );
+    return this.transfersService.getStaffMarket({
+      page: parseOptionalNumber(page) || 1,
+      limit: parseOptionalNumber(limit) || 20,
+      role: role && role !== 'ALL' && role.trim() ? role.trim() : undefined,
+      search: search && search.trim() ? search.trim() : undefined,
+      license: license && license !== 'ALL' && license.trim() ? license.trim() : undefined,
+      tacticalStyle: tacticalStyle && tacticalStyle !== 'ALL' && tacticalStyle.trim() ? tacticalStyle.trim() : undefined,
+      formationId: formationId && formationId.trim() ? formationId.trim() : undefined,
+      nationalityId: nationalityId && nationalityId.trim() ? nationalityId.trim() : undefined,
+      minAge: parseOptionalNumber(minAge),
+      maxAge: parseOptionalNumber(maxAge),
+      minOvr: parseOptionalNumber(minOvr),
+      maxOvr: parseOptionalNumber(maxOvr),
+      attributes: attributes && attributes.trim() ? attributes.trim() : undefined,
+    });
   }
 
   @Post('hire-staff')

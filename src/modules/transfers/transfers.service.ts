@@ -10,7 +10,7 @@ export class TransfersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getFilterOptions() {
-    const [countries, attributes] = await Promise.all([
+    const [countries, attributes, staffAttributes, formations] = await Promise.all([
       this.prisma.countries.findMany({
         select: { id: true, code: true, name: true, flag_url: true },
         orderBy: { name: 'asc' },
@@ -18,6 +18,14 @@ export class TransfersService {
       this.prisma.attributes.findMany({
         select: { id: true, code: true, name: true, category: true },
         orderBy: { id: 'asc' },
+      }),
+      this.prisma.staff_attribute_types.findMany({
+        select: { id: true, code: true, name: true, category: true, description: true },
+        orderBy: { id: 'asc' },
+      }),
+      this.prisma.formations.findMany({
+        select: { id: true, code: true, name: true },
+        orderBy: { name: 'asc' },
       }),
     ]);
 
@@ -33,6 +41,18 @@ export class TransfersService {
         code: a.code,
         name: a.name,
         category: a.category,
+      })),
+      staffAttributes: staffAttributes.map((sa) => ({
+        id: sa.id.toString(),
+        code: sa.code,
+        name: sa.name,
+        category: sa.category,
+        description: sa.description,
+      })),
+      formations: formations.map((f) => ({
+        id: f.id.toString(),
+        code: f.code,
+        name: f.name,
       })),
     };
   }
@@ -936,9 +956,26 @@ export class TransfersService {
     };
   }
 
-  async getStaffMarket(page: number = 1, limit: number = 20, role?: string, search?: string) {
-    const p = Math.max(1, Number(page) || 1);
-    const l = Math.max(1, Number(limit) || 20);
+  async getStaffMarket(
+    pageOrParams: number | any = 1,
+    limitParam: number = 20,
+    roleParam?: string,
+    searchParam?: string,
+  ) {
+    let params: any = {};
+    if (typeof pageOrParams === 'object' && pageOrParams !== null) {
+      params = pageOrParams;
+    } else {
+      params = {
+        page: Number(pageOrParams) || 1,
+        limit: limitParam,
+        role: roleParam,
+        search: searchParam,
+      };
+    }
+
+    const p = Math.max(1, Number(params.page) || 1);
+    const l = Math.max(1, Number(params.limit) || 20);
     const skip = (p - 1) * l;
 
     // Chỉ lấy staff đang tự do không có câu lạc bộ (không có hợp đồng ACTIVE)
@@ -950,8 +987,8 @@ export class TransfersService {
       },
     };
 
-    if (role && role !== 'ALL') {
-      const r = role.toUpperCase();
+    if (params.role && params.role !== 'ALL') {
+      const r = String(params.role).toUpperCase();
       if (['COACH', 'SCOUT', 'PHYSIO', 'DIRECTOR'].includes(r)) {
         where.staff_type = r;
       } else if (['HEAD_COACH', 'ASSISTANT_COACH', 'HEAD_COACH_YOUTH', 'ASSISTANT_COACH_YOUTH', 'FITNESS_COACH', 'GOALKEEPING_COACH'].includes(r)) {
@@ -965,8 +1002,84 @@ export class TransfersService {
       }
     }
 
-    if (search) {
-      where.name = { contains: search };
+    if (params.license && params.license !== 'ALL') {
+      where.coaching_license = params.license;
+    }
+
+    if (params.tacticalStyle && params.tacticalStyle !== 'ALL') {
+      where.tactical_style = params.tacticalStyle;
+    }
+
+    if (params.formationId && String(params.formationId).trim()) {
+      try {
+        where.preferred_formation_id = BigInt(params.formationId);
+      } catch (e) {}
+    }
+
+    if (params.nationalityId && String(params.nationalityId).trim()) {
+      try {
+        where.nationality_id = BigInt(params.nationalityId);
+      } catch (e) {}
+    }
+
+    const hasMinAge = params.minAge != null && !isNaN(Number(params.minAge));
+    const hasMaxAge = params.maxAge != null && !isNaN(Number(params.maxAge));
+    if (hasMinAge || hasMaxAge) {
+      where.age = {
+        ...(hasMinAge ? { gte: Number(params.minAge) } : {}),
+        ...(hasMaxAge ? { lte: Number(params.maxAge) } : {}),
+      };
+    }
+
+    const hasMinOvr = params.minOvr != null && !isNaN(Number(params.minOvr));
+    const hasMaxOvr = params.maxOvr != null && !isNaN(Number(params.maxOvr));
+    if (hasMinOvr || hasMaxOvr) {
+      where.ovr = {
+        ...(hasMinOvr ? { gte: Number(params.minOvr) } : {}),
+        ...(hasMaxOvr ? { lte: Number(params.maxOvr) } : {}),
+      };
+    }
+
+    if (params.attributes) {
+      try {
+        const parsed = typeof params.attributes === 'string' ? JSON.parse(params.attributes) : params.attributes;
+        if (parsed && typeof parsed === 'object') {
+          const attrConditions: any[] = [];
+          for (const [attrId, minVal] of Object.entries(parsed)) {
+            const val = Number(minVal);
+            if (!isNaN(val) && val > 0 && attrId && String(attrId).trim()) {
+              try {
+                attrConditions.push({
+                  staff_attributes: {
+                    some: {
+                      attribute_id: BigInt(attrId),
+                      value: { gte: val },
+                    },
+                  },
+                });
+              } catch (err) {}
+            }
+          }
+          if (attrConditions.length > 0) {
+            where.AND = [...(where.AND || []), ...attrConditions];
+          }
+        }
+      } catch (e) {
+        console.error('Lỗi phân giải staff attributes filter:', e);
+      }
+    }
+
+    if (params.search && String(params.search).trim()) {
+      const s = String(params.search).trim();
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { name: { contains: s } },
+            { countries: { name: { contains: s } } },
+          ],
+        },
+      ];
     }
 
     const [total, list] = await Promise.all([
