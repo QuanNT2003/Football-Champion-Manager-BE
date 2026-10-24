@@ -16,7 +16,6 @@ model attributes {
   description              String?                    @db.Text
   logo_url                 String?                    @db.VarChar(255)
   player_attribute_history player_attribute_history[]
-  player_attributes        player_attributes[]
   position_attributes      position_attributes[]
 }
 
@@ -1026,16 +1025,48 @@ model player_attribute_history {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model player_attributes {
-  player_id       BigInt     @db.UnsignedBigInt
-  attribute_id    BigInt     @db.UnsignedBigInt
-  value           Int?
-  potential_value Int        @default(0)
-  attributes      attributes @relation(fields: [attribute_id], references: [id], onDelete: Cascade, map: "fk_player_attributes_attribute_id")
-  players         players    @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_attributes_player_id")
-
-  @@id([player_id, attribute_id])
-  @@index([attribute_id], map: "idx_player_attributes_attribute_id")
-  @@index([player_id], map: "idx_player_attributes_player_id")
+  player_id BigInt  @id @db.UnsignedBigInt
+  pac       Int     @default(50)
+  acc       Int     @default(50)
+  sta       Int     @default(50)
+  str       Int     @default(50)
+  agi       Int     @default(50)
+  bal       Int     @default(50)
+  jum       Int     @default(50)
+  nat       Int     @default(50)
+  pwr       Int     @default(50)
+  res       Int     @default(50)
+  fin       Int     @default(50)
+  dri       Int     @default(50)
+  pas       Int     @default(50)
+  tec       Int     @default(50)
+  fir       Int     @default(50)
+  hea       Int     @default(50)
+  tac       Int     @default(50)
+  mar       Int     @default(50)
+  cro       Int     @default(50)
+  lsh       Int     @default(50)
+  dec       Int     @default(50)
+  vis       Int     @default(50)
+  cmp       Int     @default(50)
+  ant       Int     @default(50)
+  otb       Int     @default(50)
+  pos       Int     @default(50)
+  wor       Int     @default(50)
+  det       Int     @default(50)
+  con       Int     @default(50)
+  lea       Int     @default(50)
+  ref       Int     @default(50)
+  han       Int     @default(50)
+  aer       Int     @default(50)
+  cmd       Int     @default(50)
+  ooo       Int     @default(50)
+  kic       Int     @default(50)
+  thr       Int     @default(50)
+  pun       Int     @default(50)
+  rus       Int     @default(50)
+  com       Int     @default(50)
+  players   players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "fk_player_attributes_player_id")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1321,7 +1352,7 @@ model players {
   match_events_match_events_related_player_idToplayers match_events[]               @relation("match_events_related_player_idToplayers")
   match_players                                        match_players[]
   player_attribute_history                             player_attribute_history[]
-  player_attributes                                    player_attributes[]
+  player_attributes                                    player_attributes?
   player_awards                                        player_awards[]
   player_club_history                                  player_club_history[]
   player_contracts                                     player_contracts[]
@@ -1526,7 +1557,7 @@ model staff {
   preferred_formation    formations?            @relation("staff_preferred_formation", fields: [preferred_formation_id], references: [id], map: "fk_staff_preferred_formation_id")
   secondary_formation    formations?            @relation("staff_secondary_formation", fields: [secondary_formation_id], references: [id], map: "fk_staff_secondary_formation_id")
   game_worlds            game_worlds            @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_staff_world_id")
-  staff_attributes       staff_attributes[]
+  staff_attributes       staff_attributes?
   staff_contracts        staff_contracts[]
   staff_offers           staff_offers[]
   training_sessions      training_sessions[]
@@ -1545,7 +1576,6 @@ model staff_attribute_types {
   name                  String                  @default("") @db.VarChar(100)
   category              String                  @default("") @db.VarChar(50)
   description           String?                 @db.Text
-  staff_attributes      staff_attributes[]
   staff_role_attributes staff_role_attributes[]
 
   @@index([category], map: "idx_staff_attribute_types_category")
@@ -1553,15 +1583,28 @@ model staff_attribute_types {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model staff_attributes {
-  staff_id              BigInt                @db.UnsignedBigInt
-  attribute_id          BigInt                @db.UnsignedBigInt
-  value                 Int?
-  staff_attribute_types staff_attribute_types @relation(fields: [attribute_id], references: [id], onDelete: Cascade, map: "fk_staff_attributes_attribute_id")
-  staff                 staff                 @relation(fields: [staff_id], references: [id], onDelete: Cascade, map: "fk_staff_attributes_staff_id")
-
-  @@id([staff_id, attribute_id])
-  @@index([attribute_id], map: "idx_staff_attributes_attribute_id")
-  @@index([staff_id], map: "idx_staff_attributes_staff_id")
+  staff_id        BigInt @id @db.UnsignedBigInt
+  attacking       Int    @default(50)
+  defending       Int    @default(50)
+  tactical        Int    @default(50)
+  technical       Int    @default(50)
+  fitness         Int    @default(50)
+  gk_stopping     Int    @default(50)
+  youth_dev       Int    @default(50)
+  man_management  Int    @default(50)
+  motivating      Int    @default(50)
+  discipline      Int    @default(50)
+  determination   Int    @default(50)
+  adaptability    Int    @default(50)
+  judge_ability   Int    @default(50)
+  judge_potential Int    @default(50)
+  tac_knowledge   Int    @default(50)
+  scout_network   Int    @default(50)
+  physiotherapy   Int    @default(50)
+  sports_science  Int    @default(50)
+  injury_prevent  Int    @default(50)
+  rehabilitation  Int    @default(50)
+  staff           staff  @relation(fields: [staff_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "fk_staff_attributes_staff_id")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

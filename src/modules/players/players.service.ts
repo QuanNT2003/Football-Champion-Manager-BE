@@ -8,43 +8,37 @@ import { PrismaService } from '@/prisma/prisma.service';
  * 3. Fallback trung bình toàn bộ chỉ số nếu chưa cấu hình
  */
 export function calculateDynamicOvr(
-  playerAttributes: { attribute_id: bigint | number; value: number }[],
+  playerAttributes: any,
   positionAttributes: { attribute_id: bigint | number; multiplier?: any; is_key?: boolean }[]
 ): number {
-  if (!playerAttributes || playerAttributes.length === 0) return 50;
+  if (!playerAttributes) return 50;
 
-  const keyAttrs = positionAttributes.filter((pa) => pa.is_key);
-  if (keyAttrs.length > 0) {
-    let sumKey = 0;
-    let countKey = 0;
-    for (const ka of keyAttrs) {
-      const pAttr = playerAttributes.find(
-        (pa) => pa.attribute_id.toString() === ka.attribute_id.toString()
-      );
-      if (pAttr) {
-        sumKey += pAttr.value;
-        countKey++;
+  if (Array.isArray(playerAttributes)) {
+    if (playerAttributes.length === 0) return 50;
+    const keyAttrs = positionAttributes.filter((pa) => pa.is_key);
+    if (keyAttrs.length > 0) {
+      let sumKey = 0;
+      let countKey = 0;
+      for (const ka of keyAttrs) {
+        const pAttr = playerAttributes.find(
+          (pa) => pa.attribute_id.toString() === ka.attribute_id.toString()
+        );
+        if (pAttr) {
+          sumKey += pAttr.value;
+          countKey++;
+        }
       }
+      if (countKey > 0) return Math.round(sumKey / countKey);
     }
-    if (countKey > 0) return Math.round(sumKey / countKey);
+    const total = playerAttributes.reduce((acc, a) => acc + (a.value || 0), 0);
+    return Math.round(total / (playerAttributes.length || 1));
   }
 
-  let sumWeighted = 0;
-  let sumMultiplier = 0;
-  for (const pa of playerAttributes) {
-    const posAttr = positionAttributes.find(
-      (item) => item.attribute_id.toString() === pa.attribute_id.toString()
-    );
-    const mult = posAttr ? Number(posAttr.multiplier) : 1;
-    if (mult > 0) {
-      sumWeighted += pa.value * mult;
-      sumMultiplier += mult;
-    }
-  }
-  if (sumMultiplier > 0) return Math.round(sumWeighted / sumMultiplier);
-
-  const total = playerAttributes.reduce((acc, a) => acc + a.value, 0);
-  return Math.round(total / (playerAttributes.length || 1));
+  // playerAttributes is a single object with 40 attributes: { pac: 60, acc: 59, ... }
+  const keys = Object.keys(playerAttributes).filter((k) => k !== 'player_id');
+  if (keys.length === 0) return 50;
+  const total = keys.reduce((acc, k) => acc + (Number(playerAttributes[k]) || 0), 0);
+  return Math.round(total / keys.length);
 }
 
 @Injectable()
@@ -228,10 +222,7 @@ export class PlayersService {
         player_play_styles: {
           include: { play_styles: true },
         },
-        player_attributes: {
-          include: { attributes: true },
-          orderBy: { attribute_id: 'asc' },
-        },
+        player_attributes: true,
         match_players: {
           include: {
             matches: {
@@ -340,19 +331,23 @@ export class PlayersService {
     }
 
     // Map 40 attributes from player_attributes table in DB
-    const allAttributes = player.player_attributes.map((pa) => {
-      const keyInfo = keyAttrMap.get(pa.attribute_id.toString()) || { is_key: false, multiplier: 1.0, order_no: 0 };
-      const growthDiff = growthMap.get(pa.attribute_id.toString());
+    const metaAttributes = await this.prisma.attributes.findMany({ orderBy: { id: 'asc' } });
+    const pAttrs = (player.player_attributes as any) || {};
+    const allAttributes = metaAttributes.map((attr) => {
+      const colName = attr.code.toLowerCase();
+      const val = pAttrs[colName] ?? 50;
+      const keyInfo = keyAttrMap.get(attr.id.toString()) || { is_key: false, multiplier: 1.0, order_no: 0 };
+      const growthDiff = growthMap.get(attr.id.toString());
       const growthStr = growthDiff !== undefined ? (growthDiff > 0 ? `+${growthDiff}` : `${growthDiff}`) : null;
 
       return {
-        id: pa.attribute_id.toString(),
-        code: pa.attributes.code,
-        name: pa.attributes.name,
-        category: pa.attributes.category,
-        description: pa.attributes.description,
-        value: pa.value ?? 0,
-        potential_value: pa.potential_value ?? 0,
+        id: attr.id.toString(),
+        code: attr.code,
+        name: attr.name,
+        category: attr.category,
+        description: attr.description,
+        value: val,
+        potential_value: val,
         growth: growthStr,
         is_key: keyInfo.is_key,
         multiplier: keyInfo.multiplier,
@@ -739,9 +734,7 @@ export class PlayersService {
       include: {
         countries_players_nationality_idTocountries: { select: { name: true, flag_url: true } },
         player_status: true,
-        player_attributes: {
-          select: { attribute_id: true, value: true },
-        },
+        player_attributes: true,
         player_positions: {
           include: {
             positions: {

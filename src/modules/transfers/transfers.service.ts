@@ -5,6 +5,72 @@ import { calculateDynamicOvr } from '../players/players.service';
 
 import { GetMarketFilterDto } from './dto';
 
+export const PLAYER_ATTR_COL_MAP: Record<string, string> = {
+  '1': 'pac', 'pac': 'pac',
+  '2': 'acc', 'acc': 'acc',
+  '3': 'sta', 'sta': 'sta',
+  '4': 'str', 'str': 'str',
+  '5': 'agi', 'agi': 'agi',
+  '6': 'bal', 'bal': 'bal',
+  '7': 'jum', 'jum': 'jum',
+  '8': 'nat', 'nat': 'nat',
+  '9': 'pwr', 'pwr': 'pwr',
+  '10': 'res', 'res': 'res',
+  '11': 'fin', 'fin': 'fin',
+  '12': 'dri', 'dri': 'dri',
+  '13': 'pas', 'pas': 'pas',
+  '14': 'tec', 'tec': 'tec',
+  '15': 'fir', 'fir': 'fir',
+  '16': 'hea', 'hea': 'hea',
+  '17': 'tac', 'tac': 'tac',
+  '18': 'mar', 'mar': 'mar',
+  '19': 'cro', 'cro': 'cro',
+  '20': 'lsh', 'lsh': 'lsh',
+  '21': 'dec', 'dec': 'dec',
+  '22': 'vis', 'vis': 'vis',
+  '23': 'cmp', 'cmp': 'cmp',
+  '24': 'ant', 'ant': 'ant',
+  '25': 'otb', 'otb': 'otb',
+  '26': 'pos', 'pos': 'pos',
+  '27': 'wor', 'wor': 'wor',
+  '28': 'det', 'det': 'det',
+  '29': 'con', 'con': 'con',
+  '30': 'lea', 'lea': 'lea',
+  '31': 'ref', 'ref': 'ref',
+  '32': 'han', 'han': 'han',
+  '33': 'aer', 'aer': 'aer',
+  '34': 'cmd', 'cmd': 'cmd',
+  '35': 'ooo', 'ooo': 'ooo',
+  '36': 'kic', 'kic': 'kic',
+  '37': 'thr', 'thr': 'thr',
+  '38': 'pun', 'pun': 'pun',
+  '39': 'rus', 'rus': 'rus',
+  '40': 'com', 'com': 'com',
+};
+
+export const STAFF_ATTR_COL_MAP: Record<string, string> = {
+  '1': 'attacking', 'attacking': 'attacking',
+  '2': 'defending', 'defending': 'defending',
+  '3': 'tactical', 'tactical': 'tactical',
+  '4': 'technical', 'technical': 'technical',
+  '5': 'fitness', 'fitness': 'fitness',
+  '6': 'gk_stopping', 'gk_stopping': 'gk_stopping',
+  '7': 'youth_dev', 'youth_dev': 'youth_dev',
+  '8': 'man_management', 'man_management': 'man_management',
+  '9': 'motivating', 'motivating': 'motivating',
+  '10': 'discipline', 'discipline': 'discipline',
+  '11': 'determination', 'determination': 'determination',
+  '12': 'adaptability', 'adaptability': 'adaptability',
+  '13': 'judge_ability', 'judge_ability': 'judge_ability',
+  '14': 'judge_potential', 'judge_potential': 'judge_potential',
+  '15': 'tac_knowledge', 'tac_knowledge': 'tac_knowledge',
+  '16': 'scout_network', 'scout_network': 'scout_network',
+  '17': 'physiotherapy', 'physiotherapy': 'physiotherapy',
+  '18': 'sports_science', 'sports_science': 'sports_science',
+  '19': 'injury_prevent', 'injury_prevent': 'injury_prevent',
+  '20': 'rehabilitation', 'rehabilitation': 'rehabilitation',
+};
+
 @Injectable()
 export class TransfersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -148,22 +214,21 @@ export class TransfersService {
     if (params.attributes) {
       try {
         const parsed = typeof params.attributes === 'string' ? JSON.parse(params.attributes) : params.attributes;
-        const attrConditions: any[] = [];
-        for (const [attrId, minVal] of Object.entries(parsed)) {
-          const val = Number(minVal);
-          if (val > 0) {
-            attrConditions.push({
-              player_attributes: {
-                some: {
-                  attribute_id: BigInt(attrId),
-                  value: { gte: val },
-                },
-              },
-            });
+        if (parsed && typeof parsed === 'object') {
+          const pAttrWhere: Record<string, any> = {};
+          for (const [key, minVal] of Object.entries(parsed)) {
+            const val = Number(minVal);
+            const col = PLAYER_ATTR_COL_MAP[String(key).toLowerCase()];
+            if (col && !isNaN(val) && val > 0) {
+              pAttrWhere[col] = { gte: val };
+            }
           }
-        }
-        if (attrConditions.length > 0) {
-          where.AND = [...(where.AND || []), ...attrConditions];
+          if (Object.keys(pAttrWhere).length > 0) {
+            where.player_attributes = {
+              ...(where.player_attributes || {}),
+              ...pAttrWhere,
+            };
+          }
         }
       } catch (e) {
         console.error('Lỗi phân giải attributes filter:', e);
@@ -243,6 +308,7 @@ export class TransfersService {
               },
             },
           },
+          player_attributes: true,
         },
         orderBy: { market_value: 'desc' },
       }),
@@ -264,6 +330,12 @@ export class TransfersService {
           name: p.clubs_players_current_club_idToclubs.name,
           logo_url: p.clubs_players_current_club_idToclubs.logo_url,
         } : null;
+
+        let playerAttrsObj: any = null;
+        if (p.player_attributes) {
+          const { player_id, ...rest } = p.player_attributes;
+          playerAttrsObj = rest;
+        }
 
         return {
           id: p.id.toString(),
@@ -289,6 +361,8 @@ export class TransfersService {
           nationality: p.countries_players_nationality_idTocountries?.name || 'International',
           nationality_id: p.nationality_id ? p.nationality_id.toString() : null,
           photo_url: p.photo_url || '/assets/players/default.png',
+          attributes: playerAttrsObj,
+          player_attributes: playerAttrsObj,
         };
       }),
     };
@@ -1044,24 +1118,19 @@ export class TransfersService {
       try {
         const parsed = typeof params.attributes === 'string' ? JSON.parse(params.attributes) : params.attributes;
         if (parsed && typeof parsed === 'object') {
-          const attrConditions: any[] = [];
-          for (const [attrId, minVal] of Object.entries(parsed)) {
+          const sAttrWhere: Record<string, any> = {};
+          for (const [key, minVal] of Object.entries(parsed)) {
             const val = Number(minVal);
-            if (!isNaN(val) && val > 0 && attrId && String(attrId).trim()) {
-              try {
-                attrConditions.push({
-                  staff_attributes: {
-                    some: {
-                      attribute_id: BigInt(attrId),
-                      value: { gte: val },
-                    },
-                  },
-                });
-              } catch (err) {}
+            const col = STAFF_ATTR_COL_MAP[String(key).toLowerCase()];
+            if (col && !isNaN(val) && val > 0) {
+              sAttrWhere[col] = { gte: val };
             }
           }
-          if (attrConditions.length > 0) {
-            where.AND = [...(where.AND || []), ...attrConditions];
+          if (Object.keys(sAttrWhere).length > 0) {
+            where.staff_attributes = {
+              ...(where.staff_attributes || {}),
+              ...sAttrWhere,
+            };
           }
         }
       } catch (e) {
@@ -1091,6 +1160,7 @@ export class TransfersService {
         include: {
           countries: { select: { name: true, code: true, flag_url: true } },
           preferred_formation: { select: { id: true, name: true, code: true } },
+          staff_attributes: true,
         },
         orderBy: { reputation: 'desc' },
       }),
@@ -1103,6 +1173,12 @@ export class TransfersService {
       totalPages: Math.ceil(total / l),
       items: list.map((s) => {
         const estimatedWage = Math.round((s.reputation || 5000) * 1.8);
+        let staffAttrsObj: any = null;
+        if (s.staff_attributes) {
+          const { staff_id, ...rest } = s.staff_attributes;
+          staffAttrsObj = rest;
+        }
+
         return {
           id: s.id.toString(),
           name: s.name || 'Staff',
@@ -1125,6 +1201,8 @@ export class TransfersService {
           wage: estimatedWage,
           signingFee: Math.round(estimatedWage * 12),
           photoUrl: s.photo_url || '/assets/staff/default.png',
+          attributes: staffAttrsObj,
+          staff_attributes: staffAttrsObj,
         };
       }),
     };
@@ -1217,13 +1295,15 @@ export class TransfersService {
 
     const roleType = this.mapStaffTypeToRoleAttributeType(staff.staff_type);
 
-    const [staffAttributes, roleAttributes] = await Promise.all([
-      this.prisma.staff_attributes.findMany({
+    const [staffAttrs, roleAttributes, staffAttrTypes] = await Promise.all([
+      this.prisma.staff_attributes.findUnique({
         where: { staff_id: staffId },
-        include: { staff_attribute_types: true },
       }),
       this.prisma.staff_role_attributes.findMany({
         where: { staff_type: roleType },
+      }),
+      this.prisma.staff_attribute_types.findMany({
+        orderBy: { id: 'asc' },
       }),
     ]);
 
@@ -1235,16 +1315,18 @@ export class TransfersService {
       });
     });
 
-    const attributes = staffAttributes.map((sa) => {
-      const type = sa.staff_attribute_types;
-      const roleConfig = roleAttrMap.get(sa.attribute_id.toString());
+    const sAttrs = (staffAttrs as any) || {};
+    const attributes = staffAttrTypes.map((type) => {
+      const colName = type.code.toLowerCase();
+      const val = sAttrs[colName] ?? 50;
+      const roleConfig = roleAttrMap.get(type.id.toString());
       return {
-        id: sa.attribute_id.toString(),
-        code: type?.code || '',
-        name: type?.name || '',
-        category: type?.category || 'COACHING',
-        description: type?.description || '',
-        value: sa.value ?? 50,
+        id: type.id.toString(),
+        code: type.code,
+        name: type.name,
+        category: type.category || 'COACHING',
+        description: type.description || '',
+        value: val,
         is_key: roleConfig?.is_key ?? false,
         multiplier: roleConfig?.multiplier ?? 1.0,
       };
@@ -1535,6 +1617,7 @@ export class TransfersService {
             countries: { select: { id: true, name: true, code: true, flag_url: true } },
             preferred_formation: { select: { id: true, name: true, code: true } },
             secondary_formation: { select: { id: true, name: true, code: true } },
+            staff_attributes: true,
           },
         },
       },
@@ -1545,6 +1628,12 @@ export class TransfersService {
 
     return contracts.map((c) => {
       const s = c.staff;
+      let staffAttrsObj: any = null;
+      if (s.staff_attributes) {
+        const { staff_id, ...rest } = s.staff_attributes;
+        staffAttrsObj = rest;
+      }
+
       return {
         id: s.id.toString(),
         contractId: c.id.toString(),
@@ -1580,6 +1669,8 @@ export class TransfersService {
         startDate: c.start_date,
         endDate: c.end_date,
         status: c.status,
+        attributes: staffAttrsObj,
+        staff_attributes: staffAttrsObj,
       };
     });
   }
