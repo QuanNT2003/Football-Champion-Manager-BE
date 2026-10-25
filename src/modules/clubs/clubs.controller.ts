@@ -94,6 +94,37 @@ export class ClubsController {
     return this.clubsService.getClubNews(BigInt(id), Number(page), Number(limit), newsType, search);
   }
 
+  @Get(':id/squad-groups')
+  @ApiOperation({ summary: 'Lấy danh sách cầu thủ gồm 2 list Đội 1 và Đội Trẻ' })
+  async getClubSquadDetailed(@Param('id') id: string) {
+    return this.clubsService.getClubSquadDetailed(BigInt(id));
+  }
+
+  @Get(':id/matches')
+  @ApiOperation({ summary: 'Lấy danh sách các trận đấu mùa này của CLB' })
+  @ApiQuery({ name: 'seasonId', required: false })
+  async getClubMatches(@Param('id') id: string, @Query('seasonId') seasonId?: string) {
+    return this.clubsService.getClubMatches(BigInt(id), seasonId ? BigInt(seasonId) : undefined);
+  }
+
+  @Get(':id/transfers')
+  @ApiOperation({ summary: 'Lấy lịch sử chuyển nhượng (đến & đi) của CLB' })
+  async getClubTransfers(@Param('id') id: string) {
+    return this.clubsService.getClubTransfers(BigInt(id));
+  }
+
+  @Get(':id/season-history')
+  @ApiOperation({ summary: 'Lấy lịch sử mùa giải (danh hiệu trên đầu, thành tích các mùa phía dưới)' })
+  async getClubSeasonHistory(@Param('id') id: string) {
+    return this.clubsService.getClubSeasonHistory(BigInt(id));
+  }
+
+  @Get(':id/stadium')
+  @ApiOperation({ summary: 'Lấy thông tin chi tiết sân vận động của CLB' })
+  async getClubStadium(@Param('id') id: string) {
+    return this.clubsService.getClubStadium(BigInt(id));
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Lấy thông tin chi tiết một CLB theo ID' })
   async getClubById(@Param('id') id: string) {
