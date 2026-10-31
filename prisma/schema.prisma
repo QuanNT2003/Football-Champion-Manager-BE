@@ -14,7 +14,7 @@ model attributes {
   name                     String                     @default("") @db.VarChar(100)
   category                 String                     @default("") @db.VarChar(30)
   description              String?                    @db.Text
-  logo_url                 String?                    @db.VarChar(255)
+  icon_url                 String?                    @db.VarChar(255)
   player_attribute_history player_attribute_history[]
   position_attributes      position_attributes[]
 }
@@ -981,33 +981,6 @@ model matches {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model personality_traits {
-  id                        BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
-  code                      String                      @unique(map: "uq_personality_traits_code") @default("") @db.VarChar(50)
-  name                      String                      @default("") @db.VarChar(100)
-  description               String?                     @db.Text
-  player_personality_traits player_personality_traits[]
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model personality_types {
-  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  code        String    @unique(map: "uq_personality_types_code") @default("") @db.VarChar(50)
-  name        String    @default("") @db.VarChar(100)
-  description String?   @db.Text
-  players     players[]
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model play_styles {
-  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  code               String               @unique(map: "uq_play_styles_code") @default("") @db.VarChar(50)
-  name               String               @default("") @db.VarChar(100)
-  description        String?              @db.Text
-  player_play_styles player_play_styles[]
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model player_attribute_history {
   id           BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
   player_id    BigInt     @db.UnsignedBigInt
@@ -1033,40 +1006,67 @@ model player_attributes {
   agi       Int     @default(50)
   bal       Int     @default(50)
   jum       Int     @default(50)
-  nat       Int     @default(50)
-  pwr       Int     @default(50)
-  res       Int     @default(50)
   fin       Int     @default(50)
-  dri       Int     @default(50)
-  pas       Int     @default(50)
-  tec       Int     @default(50)
-  fir       Int     @default(50)
+  lsh       Int     @default(50)
   hea       Int     @default(50)
+  dri       Int     @default(50)
+  fir       Int     @default(50)
+  pas       Int     @default(50)
+  cro       Int     @default(50)
+  tec       Int     @default(50)
   tac       Int     @default(50)
   mar       Int     @default(50)
-  cro       Int     @default(50)
-  lsh       Int     @default(50)
-  dec       Int     @default(50)
   vis       Int     @default(50)
+  dec       Int     @default(50)
   cmp       Int     @default(50)
-  ant       Int     @default(50)
-  otb       Int     @default(50)
   pos       Int     @default(50)
+  otb       Int     @default(50)
   wor       Int     @default(50)
-  det       Int     @default(50)
-  con       Int     @default(50)
-  lea       Int     @default(50)
-  ref       Int     @default(50)
-  han       Int     @default(50)
-  aer       Int     @default(50)
-  cmd       Int     @default(50)
-  ooo       Int     @default(50)
-  kic       Int     @default(50)
-  thr       Int     @default(50)
-  pun       Int     @default(50)
-  rus       Int     @default(50)
-  com       Int     @default(50)
+  gk_ref    Int     @default(50)
+  gk_han    Int     @default(50)
+  gk_aer    Int     @default(50)
+  gk_ooo    Int     @default(50)
+  gk_kic    Int     @default(50)
   players   players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "fk_player_attributes_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_mentality {
+  player_id         BigInt  @id @db.UnsignedBigInt
+  professionalism   Int     @default(50)
+  determination     Int     @default(50)
+  complacency       Int     @default(30)
+  leadership        Int     @default(50)
+  temperament       Int     @default(50)
+  pressure_handling Int     @default(50)
+  greed             Int     @default(50)
+  ambition          Int     @default(50)
+  loyalty           Int     @default(50)
+  adaptability      Int     @default(50)
+  injury_proneness  Int     @default(50)
+  players           players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "fk_player_mentality_player_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model player_tactics {
+  player_id          BigInt  @id @db.UnsignedBigInt
+  primary_style      String  @default("POACHER") @db.VarChar(50)
+  secondary_style    String? @db.VarChar(50)
+  shoots_distance    Int     @default(0) @db.TinyInt
+  places_shots       Int     @default(0) @db.TinyInt
+  first_time_shots   Int     @default(0) @db.TinyInt
+  killer_balls       Int     @default(0) @db.TinyInt
+  dictates_tempo     Int     @default(0) @db.TinyInt
+  switches_play      Int     @default(0) @db.TinyInt
+  cuts_inside        Int     @default(0) @db.TinyInt
+  hugs_touchline     Int     @default(0) @db.TinyInt
+  beats_offside      Int     @default(0) @db.TinyInt
+  comes_deep         Int     @default(0) @db.TinyInt
+  dives_into_tackles Int     @default(0) @db.TinyInt
+  tight_marking      Int     @default(0) @db.TinyInt
+  players            players @relation(fields: [player_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "fk_player_tactics_player_id")
+
+  @@index([primary_style], map: "idx_player_tactics_primary_style")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1174,33 +1174,6 @@ model player_performance_bonuses {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model player_personality_traits {
-  player_id          BigInt             @db.UnsignedBigInt
-  trait_id           BigInt             @db.UnsignedBigInt
-  value              Int?
-  players            players            @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_personality_traits_player_id")
-  personality_traits personality_traits @relation(fields: [trait_id], references: [id], onDelete: Cascade, map: "fk_player_personality_traits_trait_id")
-
-  @@id([player_id, trait_id])
-  @@index([player_id], map: "idx_player_personality_traits_player_id")
-  @@index([trait_id], map: "idx_player_personality_traits_trait_id")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model player_play_styles {
-  player_id     BigInt      @db.UnsignedBigInt
-  play_style_id BigInt      @db.UnsignedBigInt
-  level         Int         @default(0)
-  is_primary    Boolean     @default(false)
-  play_styles   play_styles @relation(fields: [play_style_id], references: [id], onDelete: Cascade, map: "fk_player_play_styles_play_style_id")
-  players       players     @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_play_styles_player_id")
-
-  @@id([player_id, play_style_id])
-  @@index([play_style_id], map: "idx_player_play_styles_play_style_id")
-  @@index([player_id], map: "idx_player_play_styles_player_id")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model player_positions {
   player_id    BigInt    @db.UnsignedBigInt
   position_id  BigInt    @db.UnsignedBigInt
@@ -1291,19 +1264,6 @@ model player_suspensions {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model player_tendencies {
-  player_id   BigInt     @db.UnsignedBigInt
-  tendency_id BigInt     @db.UnsignedBigInt
-  value       Int?
-  players     players    @relation(fields: [player_id], references: [id], onDelete: Cascade, map: "fk_player_tendencies_player_id")
-  tendencies  tendencies @relation(fields: [tendency_id], references: [id], onDelete: Cascade, map: "fk_player_tendencies_tendency_id")
-
-  @@id([player_id, tendency_id])
-  @@index([player_id], map: "idx_player_tendencies_player_id")
-  @@index([tendency_id], map: "idx_player_tendencies_tendency_id")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model player_training {
   id                  BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
   training_session_id BigInt            @db.UnsignedBigInt
@@ -1325,7 +1285,6 @@ model players {
   world_id                                             BigInt                       @db.UnsignedBigInt
   nationality_id                                       BigInt                       @db.UnsignedBigInt
   second_nationality_id                                BigInt?                      @db.UnsignedBigInt
-  personality_type_id                                  BigInt                       @db.UnsignedBigInt
   first_name                                           String                       @default("") @db.VarChar(100)
   last_name                                            String                       @default("") @db.VarChar(100)
   birth_season                                         Int                          @default(0)
@@ -1353,21 +1312,19 @@ model players {
   match_players                                        match_players[]
   player_attribute_history                             player_attribute_history[]
   player_attributes                                    player_attributes?
+  player_mentality                                     player_mentality?
+  player_tactics                                       player_tactics?
   player_awards                                        player_awards[]
   player_club_history                                  player_club_history[]
   player_contracts                                     player_contracts[]
   player_performance_bonuses                           player_performance_bonuses[]
-  player_personality_traits                            player_personality_traits[]
-  player_play_styles                                   player_play_styles[]
   player_positions                                     player_positions[]
   player_statistics                                    player_statistics[]
   player_status                                        player_status?
   player_suspensions                                   player_suspensions[]
-  player_tendencies                                    player_tendencies[]
   player_training                                      player_training[]
   clubs_players_current_club_idToclubs                 clubs?                       @relation("players_current_club_idToclubs", fields: [current_club_id], references: [id], onDelete: Cascade, map: "fk_players_current_club_id")
   countries_players_nationality_idTocountries          countries                    @relation("players_nationality_idTocountries", fields: [nationality_id], references: [id], onDelete: Cascade, map: "fk_players_nationality_id")
-  personality_types                                    personality_types            @relation(fields: [personality_type_id], references: [id], onDelete: Cascade, map: "fk_players_personality_type_id")
   countries_players_second_nationality_idTocountries   countries?                   @relation("players_second_nationality_idTocountries", fields: [second_nationality_id], references: [id], onDelete: Cascade, map: "fk_players_second_nationality_id")
   clubs_players_trained_club_idToclubs                 clubs?                       @relation("players_trained_club_idToclubs", fields: [trained_club_id], references: [id], onDelete: Cascade, map: "fk_players_trained_club_id")
   game_worlds                                          game_worlds                  @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_players_world_id")
@@ -1380,7 +1337,6 @@ model players {
   @@index([current_club_id], map: "idx_players_current_club_id")
   @@index([market_value], map: "idx_players_market_value")
   @@index([nationality_id], map: "idx_players_nationality_id")
-  @@index([personality_type_id], map: "idx_players_personality_type_id")
   @@index([second_nationality_id], map: "idx_players_second_nationality_id")
   @@index([current_club_id, squad_type], map: "idx_players_squad_type")
   @@index([trained_club_id], map: "idx_players_trained_club_id")
@@ -1770,15 +1726,6 @@ model tactical_instructions {
   category                     String                         @default("") @db.VarChar(30)
   description                  String?                        @db.Text
   tactic_position_instructions tactic_position_instructions[]
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model tendencies {
-  id                BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
-  code              String              @unique(map: "uq_tendencies_code") @default("") @db.VarChar(50)
-  name              String              @default("") @db.VarChar(100)
-  description       String?             @db.Text
-  player_tendencies player_tendencies[]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

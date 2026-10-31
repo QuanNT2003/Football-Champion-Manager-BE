@@ -218,10 +218,8 @@ export class PlayersService {
             }
           },
         },
-        personality_types: true,
-        player_play_styles: {
-          include: { play_styles: true },
-        },
+        player_mentality: true,
+        player_tactics: true,
         player_attributes: true,
         match_players: {
           include: {
@@ -668,7 +666,9 @@ export class PlayersService {
         days_remaining: player.injuries[0].days_remaining,
         expected_return_date: player.injuries[0].expected_return_date,
       } : null,
-      play_styles: player.player_play_styles.map((ps: any) => ps.play_styles.name),
+      play_styles: [player.player_tactics?.primary_style, player.player_tactics?.secondary_style].filter(Boolean),
+      mentality: player.player_mentality || null,
+      tactics: player.player_tactics || null,
 
       // 5 TABS DATA (100% PURE DATABASE ACCORDING TO SEED DATA)
       skills: {
