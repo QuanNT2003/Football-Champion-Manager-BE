@@ -461,7 +461,8 @@ export class TransfersService {
       }
     }
 
-    const offer = await (this.prisma.transfer_offers as any).create({
+    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: player.world_id } });
+    const offer = await this.prisma.transfer_offers.create({
       data: {
         player_id: playerId,
         from_club_id: fromClubId,
@@ -473,6 +474,8 @@ export class TransfersService {
         is_loan: isLoan,
         proposed_wage: dto.proposed_wage ? Number(dto.proposed_wage) : 0,
         contract_years: dto.contract_years ? Number(dto.contract_years) : 3,
+        season_number: timeline?.season_number,
+        season_day: timeline?.season_day,
       },
     });
 
@@ -552,6 +555,8 @@ export class TransfersService {
         photo_url: true,
         market_value: true,
         reputation: true,
+        ovr: true,
+        current_club_id: true,
         player_positions: {
           include: {
             positions: {
@@ -599,9 +604,9 @@ export class TransfersService {
       }),
     ]);
 
-    const formatOffer = (o: any) => {
+    const formatOffer = (o: (typeof incomingRaw)[number]) => {
       const p = o.players;
-      const posCode = p?.player_positions?.[0]?.positions?.code || 'ST';
+      const position = p?.player_positions.find(pos => pos.is_preferred) ?? p?.player_positions[0];
       return {
         id: o.id.toString(),
         player_id: o.player_id.toString(),
@@ -614,6 +619,8 @@ export class TransfersService {
         currency_type: o.currency_type,
         status: o.status,
         created_at: o.created_at,
+        season_number: o.season_number,
+        season_day: o.season_day,
         is_loan: Boolean(o.is_loan),
         player: p ? {
           id: p.id.toString(),
@@ -623,9 +630,10 @@ export class TransfersService {
           age: p.age,
           reputation: p.reputation,
           ovr: p.ovr || p.reputation || 70,
+          club_id: p.current_club_id?.toString(),
           photo_url: p.photo_url,
           market_value: Number(p.market_value),
-          position: posCode,
+          position: position?.positions.code || 'ST',
           nationality: p.countries_players_nationality_idTocountries?.name || '',
           flag_url: p.countries_players_nationality_idTocountries?.flag_url || null,
         } : null,
@@ -706,7 +714,7 @@ export class TransfersService {
     }
 
     // Lấy thông tin mùa giải & timeline hiện tại
-    const timeline = await this.prisma.server_timeline.findFirst();
+    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: offer.players.world_id } });
     const seasonId = timeline?.season_id;
     const seasonDay = timeline?.season_day || 1;
 
@@ -746,6 +754,7 @@ export class TransfersService {
           is_loan: isLoan,
           loan_end_date: isLoan ? offer.loan_end_date : null,
           season_id: timeline?.season_id ? BigInt(timeline.season_id) : 1n,
+          season_day: timeline?.season_day,
         },
       });
 
@@ -1216,26 +1225,7 @@ export class TransfersService {
       throw new NotFoundException('Không tìm thấy thông tin nhân viên');
     }
 
-    if (staff.staff_type === 'COACH') {
-      const existingHeadCoach = await this.prisma.staff_contracts.findFirst({
-        where: {
-          club_id: clubId,
-          role: 'HEAD_COACH',
-        },
-      });
-
-      if (existingHeadCoach) {
-        await this.prisma.staff_contracts.delete({
-          where: { id: existingHeadCoach.id },
-        });
-      }
-    }
-
-    await this.prisma.staff_contracts.deleteMany({
-      where: { staff_id: staffId },
-    });
-
-    const timeline = await this.prisma.server_timeline.findFirst();
+    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: staff.world_id } });
     const currentSeason = Number(timeline?.season_number || 1);
     const currentDay = timeline?.season_day || 1;
     const startDate = timeline?.real_date ? new Date(timeline.real_date) : this.calculateGameDate(currentSeason, currentDay);
@@ -1243,27 +1233,55 @@ export class TransfersService {
     const endDate = this.calculateGameDate(endSeason, 36);
 
     const weeklyWage = Math.round((staff.reputation || 5000) * 1.8);
-    const newContract = await this.prisma.staff_contracts.create({
-      data: {
-        staff_id: staffId,
-        club_id: clubId,
-        role: staff.staff_type === 'COACH' ? 'HEAD_COACH' : (staff.staff_type as any),
-        squad_type: 'FIRST_TEAM',
-        start_season_id: BigInt(currentSeason),
-        start_season_day: currentDay,
-        end_season_id: BigInt(endSeason),
-        end_season_day: 36,
-        start_date: startDate,
-        end_date: endDate,
-        salary: weeklyWage,
-        salary_currency_id: BigInt(1),
-        status: 'ACTIVE',
-      },
-      include: {
-        staff: true,
-        clubs: true,
-      },
-    });
+    const newContract = await this.prisma.$transaction(async tx => {
+      const role = staff.staff_type === 'COACH' ? 'HEAD_COACH'
+        : staff.staff_type === 'DIRECTOR' ? 'YOUTH_DIRECTOR' : staff.staff_type;
+      const existingContract = await tx.staff_contracts.findFirst({
+        where: { staff_id: staffId, club_id: clubId, status: 'ACTIVE' },
+        include: { staff: true, clubs: true },
+      });
+      if (existingContract) return existingContract;
+
+      await tx.staff_contracts.updateMany({
+        where: {
+          status: 'ACTIVE',
+          OR: [
+            { staff_id: staffId },
+            ...(role === 'HEAD_COACH' ? [{ club_id: clubId, role: 'HEAD_COACH' as const }] : []),
+          ],
+        },
+        data: {
+          status: 'TERMINATED',
+          end_date: startDate,
+          departure_season_number: timeline?.season_number,
+          departure_season_day: timeline?.season_day,
+        },
+      });
+
+      await tx.staff_offers.updateMany({
+        where: { staff_id: staffId, status: 'PENDING' },
+        data: { status: 'CANCELLED', updated_at: new Date() },
+      });
+
+      return tx.staff_contracts.create({
+        data: {
+          staff_id: staffId,
+          club_id: clubId,
+          role,
+          squad_type: 'FIRST_TEAM',
+          start_season_id: BigInt(currentSeason),
+          start_season_day: currentDay,
+          end_season_id: BigInt(endSeason),
+          end_season_day: 36,
+          start_date: startDate,
+          end_date: endDate,
+          salary: weeklyWage,
+          salary_currency_id: BigInt(1),
+          status: 'ACTIVE',
+        },
+        include: { staff: true, clubs: true },
+      });
+    }, { isolationLevel: 'Serializable' });
 
     return {
       message: `Ký hợp đồng thành công với ${staff.name} (${staff.staff_type})!`,
@@ -1519,6 +1537,7 @@ export class TransfersService {
       };
     }
 
+    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: staff.world_id } });
     const offer = await this.prisma.staff_offers.create({
       data: {
         staff_id: staffId,
@@ -1529,6 +1548,8 @@ export class TransfersService {
         contract_years: contractYears,
         signing_bonus: signingBonus,
         status: 'PENDING',
+        season_number: timeline?.season_number,
+        season_day: timeline?.season_day,
       },
     });
 
@@ -1602,6 +1623,103 @@ export class TransfersService {
       country: o.staff.countries,
       photo_url: o.staff.photo_url,
     }));
+  }
+
+  async getClubStaffTransfers(clubId: bigint) {
+    const staffSummary = {
+      id: true,
+      name: true,
+      staff_type: true,
+      coaching_license: true,
+      age: true,
+      ovr: true,
+      photo_url: true,
+    } as const;
+    const clubSummary = { id: true, name: true } as const;
+    const [pendingOffers, contracts] = await Promise.all([
+      this.prisma.staff_offers.findMany({
+        where: {
+          status: 'PENDING',
+          OR: [
+            { club_id: clubId },
+            { current_club_id: clubId, staff: { staff_contracts: { some: { club_id: clubId, status: 'ACTIVE' } } } },
+          ],
+        },
+        include: {
+          staff: { select: staffSummary },
+          clubs_staff_offers_club_idToclubs: { select: clubSummary },
+          clubs_staff_offers_current_club_idToclubs: { select: clubSummary },
+        },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      }),
+      this.prisma.staff_contracts.findMany({
+        where: { club_id: clubId },
+        include: { staff: { select: staffSummary } },
+        orderBy: [{ start_date: 'desc' }, { id: 'desc' }],
+      }),
+    ]);
+
+    const formatStaff = (staff: (typeof contracts)[number]['staff']) => ({
+      ...staff,
+      id: staff.id.toString(),
+    });
+    const formatContract = (contract: (typeof contracts)[number]) => ({
+      id: contract.id.toString(),
+      staff: formatStaff(contract.staff),
+      role: contract.role,
+      wage: Number(contract.salary),
+      status: contract.status,
+    });
+
+    const arrivals: ReturnType<typeof formatOffer>[] = [];
+    const departures: ReturnType<typeof formatOffer>[] = [];
+    function formatOffer(offer: (typeof pendingOffers)[number], club: { id: bigint; name: string } | null) {
+      return {
+        id: offer.id.toString(),
+        staff: formatStaff(offer.staff),
+        club: club ? { id: club.id.toString(), name: club.name } : null,
+        role: offer.role_offered,
+        wage: Number(offer.proposed_wage),
+        years: offer.contract_years,
+        bonus: Number(offer.signing_bonus),
+        compensation: Number(offer.compensation_fee),
+        date: offer.created_at,
+        season_number: offer.season_number,
+        season_day: offer.season_day,
+      };
+    }
+    for (const offer of pendingOffers) {
+      if (offer.club_id === clubId) {
+        arrivals.push(formatOffer(offer, offer.clubs_staff_offers_current_club_idToclubs));
+      } else {
+        departures.push(formatOffer(offer, offer.clubs_staff_offers_club_idToclubs));
+      }
+    }
+
+    return {
+      arrivals: {
+        offers: arrivals,
+        history: contracts.map(contract => ({
+          ...formatContract(contract),
+          date: contract.start_date,
+          season_number: Number(contract.start_season_id),
+          season_day: contract.start_season_day,
+        })),
+      },
+      departures: {
+        offers: departures,
+        history: contracts
+          .flatMap(contract => contract.status !== 'ACTIVE' && contract.end_date ? [{
+            ...formatContract(contract),
+            date: contract.end_date,
+            season_number: contract.departure_season_number
+              ?? (contract.status === 'EXPIRED' ? Number(contract.end_season_id) : null),
+            season_day: contract.departure_season_day
+              ?? (contract.status === 'EXPIRED' ? contract.end_season_day : null),
+          }] : [])
+          .sort((a, b) => b.date.getTime() - a.date.getTime()),
+      },
+    };
   }
 
 
@@ -1968,13 +2086,14 @@ export class TransfersService {
         status: 'ACTIVE',
       },
       orderBy: { id: 'desc' },
+      include: { staff: { select: { world_id: true } } },
     });
 
     if (!contract) {
       throw new BadRequestException('Không tìm thấy hợp đồng hiệu lực của nhân sự để chấm dứt.');
     }
 
-    const timeline = await this.prisma.server_timeline.findFirst();
+    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: contract.staff.world_id } });
     const gameDate = timeline?.real_date ? new Date(timeline.real_date) : new Date();
 
     await this.prisma.staff_contracts.update({
@@ -1982,6 +2101,8 @@ export class TransfersService {
       data: {
         status: 'TERMINATED',
         end_date: gameDate,
+        departure_season_number: timeline?.season_number,
+        departure_season_day: timeline?.season_day,
       },
     });
 

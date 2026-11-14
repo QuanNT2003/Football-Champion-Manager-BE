@@ -1026,6 +1026,14 @@ export class ClubsService {
       ],
     });
 
+    // Older paid transfers recorded the matchday in their accounting entries.
+    const legacyIds = transfers.filter(tr => tr.season_day == null).map(tr => tr.id);
+    const legacyTransactions = legacyIds.length > 0 ? await this.prisma.financial_transactions.findMany({
+      where: { club_id: clubId, reference_type: 'transfers', category: 'TRANSFER_FEE', reference_id: { in: legacyIds } },
+      select: { reference_id: true, season_id: true, season_day: true },
+    }) : [];
+    const legacyDays = new Map(legacyTransactions.map(entry => [`${entry.reference_id}:${entry.season_id}`, entry.season_day]));
+
     const formatTransfer = (tr: typeof transfers[0], isArrival: boolean) => {
       const p = tr.players;
       const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
@@ -1041,6 +1049,7 @@ export class ClubsService {
         currency_type: tr.currency_type,
         transfer_date: tr.transfer_date,
         season_number: tr.seasons?.season_number || 1,
+        season_day: tr.season_day ?? legacyDays.get(`${tr.id}:${tr.season_id}`) ?? null,
         player: {
           id: p.id.toString(),
           name: `${p.first_name} ${p.last_name}`.trim(),

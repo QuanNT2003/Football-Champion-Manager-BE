@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -262,6 +263,17 @@ export class TransfersController {
   @ApiOperation({ summary: 'Lấy danh sách các đề nghị tuyển mộ staff của CLB' })
   async getStaffOffers(@Param('clubId') clubId: string) {
     return this.transfersService.getStaffOffers(BigInt(clubId));
+  }
+
+  @Get('club/:clubId/staff-transfers')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy đề nghị và lịch sử chuyển nhượng nhân sự theo chiều đến và đi' })
+  async getClubStaffTransfers(@CurrentUser() user: AuthUser, @Param('clubId') clubId: string) {
+    if (user.clubId !== clubId) {
+      throw new ForbiddenException('Bạn chỉ có thể xem chuyển nhượng nhân sự của CLB mình');
+    }
+    return this.transfersService.getClubStaffTransfers(BigInt(clubId));
   }
 
   @Put('staff-offers/:id/cancel')
