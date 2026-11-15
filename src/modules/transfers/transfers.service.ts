@@ -1,9 +1,17 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { staff_role_attributes_staff_type } from '@prisma/client';
+import { staff_contracts_role, staff_role_attributes_staff_type, staff_staff_type } from '@prisma/client';
 import { calculateDynamicOvr } from '../players/players.service';
 
 import { GetMarketFilterDto } from './dto';
+
+const defaultStaffRoles: Record<staff_staff_type, staff_contracts_role> = {
+  COACH: 'HEAD_COACH',
+  SCOUT: 'SCOUT',
+  PHYSIO: 'PHYSIO',
+  DIRECTOR: 'YOUTH_DIRECTOR',
+};
+const staffContractRoles = new Set<string>(Object.values(staff_contracts_role));
 
 export const PLAYER_ATTR_COL_MAP: Record<string, string> = {
   '1': 'pac', 'pac': 'pac',
@@ -1234,8 +1242,7 @@ export class TransfersService {
 
     const weeklyWage = Math.round((staff.reputation || 5000) * 1.8);
     const newContract = await this.prisma.$transaction(async tx => {
-      const role = staff.staff_type === 'COACH' ? 'HEAD_COACH'
-        : staff.staff_type === 'DIRECTOR' ? 'YOUTH_DIRECTOR' : staff.staff_type;
+      const role = defaultStaffRoles[staff.staff_type];
       const existingContract = await tx.staff_contracts.findFirst({
         where: { staff_id: staffId, club_id: clubId, status: 'ACTIVE' },
         include: { staff: true, clubs: true },
@@ -1504,7 +1511,16 @@ export class TransfersService {
     const proposedWage = Number(data.proposed_wage) || Math.round((staff.reputation || 5000) * 1.8);
     const contractYears = Math.min(5, Math.max(1, Number(data.contract_years) || 2));
     const signingBonus = Number(data.signing_bonus) || 0;
-    const roleOffered = (data.role_offered as any) || staff.staff_type;
+    const requestedRole = data.role_offered?.trim() || staff.staff_type;
+    let roleOffered: staff_contracts_role;
+    // Older clients can submit a staff category as the contract role.
+    if (requestedRole === 'COACH' || requestedRole === 'DIRECTOR') {
+      roleOffered = defaultStaffRoles[requestedRole];
+    } else if (staffContractRoles.has(requestedRole)) {
+      roleOffered = requestedRole as staff_contracts_role;
+    } else {
+      throw new BadRequestException('Vai trò trong hợp đồng tuyển mộ không hợp lệ.');
+    }
 
     const existing = await this.prisma.staff_offers.findFirst({
       where: {
