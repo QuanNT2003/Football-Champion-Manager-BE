@@ -6,6 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "migrate:training": "node scripts/migrate-training.cjs",
+    "test:training": "npm run build && node --test test/training.test.cjs",
     "test:academy": "npm run build && node --test test/academy.test.cjs",
     "test:academy:db": "npm run build && node test/academy.integration.cjs",
     "build": "nest build",

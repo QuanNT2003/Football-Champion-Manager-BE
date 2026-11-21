@@ -3,42 +3,42 @@ import { PrismaService } from '@/prisma/prisma.service';
 
 /**
  * Tính OVR động 100% từ CSDL:
- * 1. Ưu tiên trung bình các chỉ số cốt lõi của vị trí (is_key = true trong position_attributes)
- * 2. Tính trung bình trọng số theo multiplier của position_attributes
- * 3. Fallback trung bình toàn bộ chỉ số nếu chưa cấu hình
+ * SUM(value * multiplier) / SUM(multiplier), rounded to the nearest integer.
+ * Zero-weight attributes do not contribute; is_key is a UI highlight, not a filter.
+ * Flat attributes need the catalogue code from position_attributes.attributes.
+ * Fall back to an unweighted average only if no usable position weights exist.
  */
 export function calculateDynamicOvr(
   playerAttributes: any,
-  positionAttributes: { attribute_id: bigint | number; multiplier?: any; is_key?: boolean }[]
+  positionAttributes: {
+    attribute_id: bigint | number; multiplier?: any; is_key?: boolean;
+    attributes?: { code: string }; code?: string;
+  }[]
 ): number {
   if (!playerAttributes) return 50;
 
-  if (Array.isArray(playerAttributes)) {
-    if (playerAttributes.length === 0) return 50;
-    const keyAttrs = positionAttributes.filter((pa) => pa.is_key);
-    if (keyAttrs.length > 0) {
-      let sumKey = 0;
-      let countKey = 0;
-      for (const ka of keyAttrs) {
-        const pAttr = playerAttributes.find(
-          (pa) => pa.attribute_id.toString() === ka.attribute_id.toString()
-        );
-        if (pAttr) {
-          sumKey += pAttr.value;
-          countKey++;
-        }
-      }
-      if (countKey > 0) return Math.round(sumKey / countKey);
-    }
-    const total = playerAttributes.reduce((acc, a) => acc + (a.value || 0), 0);
-    return Math.round(total / (playerAttributes.length || 1));
-  }
+  const isLegacyArray = Array.isArray(playerAttributes);
+  const entries: [string, number][] = isLegacyArray
+    ? playerAttributes.filter(a => a.attribute_id != null && a.value != null)
+      .map(a => [String(a.attribute_id), Number(a.value)])
+    : Object.entries(playerAttributes).filter(([key, value]) => key !== 'player_id' && value != null)
+      .map(([key, value]) => [key.toLowerCase(), Number(value)]);
+  const values = new Map(entries.filter(([, value]) => Number.isFinite(value)));
+  if (!values.size) return 50;
 
-  // playerAttributes is a single object with 40 attributes: { pac: 60, acc: 59, ... }
-  const keys = Object.keys(playerAttributes).filter((k) => k !== 'player_id');
-  if (keys.length === 0) return 50;
-  const total = keys.reduce((acc, k) => acc + (Number(playerAttributes[k]) || 0), 0);
-  return Math.round(total / keys.length);
+  let weightedTotal = 0;
+  let totalWeight = 0;
+  for (const config of positionAttributes) {
+    const key = isLegacyArray ? String(config.attribute_id)
+      : (config.attributes?.code ?? config.code ?? '').toLowerCase();
+    const value = values.get(key);
+    const weight = Number(config.multiplier ?? 1);
+    if (value === undefined || !Number.isFinite(weight) || weight <= 0) continue;
+    weightedTotal += value * weight;
+    totalWeight += weight;
+  }
+  if (totalWeight > 0) return Math.round(weightedTotal / totalWeight);
+  return Math.round([...values.values()].reduce((sum, value) => sum + value, 0) / values.size);
 }
 
 @Injectable()
@@ -301,31 +301,12 @@ export class PlayersService {
       });
     }
 
-    // Calculate attribute growth from player_attribute_history:
-    // Growth per attribute = max(new_value) - min(old_value) across history records
+    // History is reset at the player's world season transition. Sum actual
+    // changes so a decrease followed by recovery does not inflate growth.
     const growthMap = new Map<string, number>();
-    if (player.player_attribute_history && player.player_attribute_history.length > 0) {
-      const historyByAttr = new Map<string, { maxNew: number; minOld: number }>();
-      for (const h of player.player_attribute_history) {
-        const attrIdStr = h.attribute_id.toString();
-        const current = historyByAttr.get(attrIdStr);
-        if (!current) {
-          historyByAttr.set(attrIdStr, {
-            maxNew: h.new_value,
-            minOld: h.old_value,
-          });
-        } else {
-          current.maxNew = Math.max(current.maxNew, h.new_value);
-          current.minOld = Math.min(current.minOld, h.old_value);
-        }
-      }
-
-      for (const [attrIdStr, bounds] of historyByAttr.entries()) {
-        const diff = bounds.maxNew - bounds.minOld;
-        if (diff !== 0) {
-          growthMap.set(attrIdStr, diff);
-        }
-      }
+    for (const history of player.player_attribute_history || []) {
+      const key = history.attribute_id.toString();
+      growthMap.set(key, (growthMap.get(key) ?? 0) + history.new_value - history.old_value);
     }
 
     // Map 40 attributes from player_attributes table in DB
@@ -336,7 +317,7 @@ export class PlayersService {
       const val = pAttrs[colName] ?? 50;
       const keyInfo = keyAttrMap.get(attr.id.toString()) || { is_key: false, multiplier: 1.0, order_no: 0 };
       const growthDiff = growthMap.get(attr.id.toString());
-      const growthStr = growthDiff !== undefined ? (growthDiff > 0 ? `+${growthDiff}` : `${growthDiff}`) : null;
+      const growthStr = growthDiff ? (growthDiff > 0 ? `+${growthDiff}` : `${growthDiff}`) : null;
 
       return {
         id: attr.id.toString(),
@@ -454,7 +435,7 @@ export class PlayersService {
       : 0;
 
     // Server timeline for contract & season comparison
-    const timeline = await this.prisma.server_timeline.findFirst();
+    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: player.world_id } });
     const currentSeasonNumber = timeline?.season_number || 1;
 
     // --- TAB 4: TRANSFERS HISTORY (100% PURE DB) ---
@@ -672,6 +653,7 @@ export class PlayersService {
 
       // 5 TABS DATA (100% PURE DATABASE ACCORDING TO SEED DATA)
       skills: {
+        growth_season: currentSeasonNumber,
         // Default 2-column view of Key Attributes according to player's position
         left_column: leftColumnKey,
         right_column: rightColumnKey,
@@ -740,7 +722,7 @@ export class PlayersService {
             positions: {
               include: {
                 position_attributes: {
-                  select: { attribute_id: true, multiplier: true, is_key: true, order_no: true },
+                  select: { attribute_id: true, multiplier: true, is_key: true, order_no: true, attributes: { select: { code: true } } },
                 },
               },
             },

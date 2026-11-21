@@ -1,18 +1,26 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsIn, IsString, Matches } from 'class-validator';
+import { TrainingSquad } from '../training.rules';
 
 export class ScheduleTrainingDto {
-  @ApiProperty({ description: 'ID danh mục bài tập huấn luyện', example: '1' })
-  @IsNotEmpty({ message: 'Thiếu thông tin trainingTypeId' })
-  @IsString()
-  trainingTypeId: string;
+  @ApiProperty({ description: 'Đội tham gia buổi tập', enum: ['FIRST_TEAM', 'YOUTH'] })
+  @IsIn(['FIRST_TEAM', 'YOUTH'])
+  squadType: TrainingSquad;
 
-  @ApiPropertyOptional({ description: 'Cường độ tập luyện (1 - 100)', example: 80, default: 80 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  @Max(100)
-  intensity?: number;
+  @ApiProperty({ description: 'Đúng 6 ID bài tập theo thứ tự ô; được lặp bài', type: [String] })
+  @IsArray()
+  @ArrayMinSize(6)
+  @ArrayMaxSize(6)
+  @IsString({ each: true })
+  @Matches(/^[1-9]\d{0,18}$/, { each: true })
+  trainingTypeIds: string[];
+
+  @ApiProperty({ description: 'Danh sách cầu thủ CLB tham gia buổi tập', type: [String] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Matches(/^[1-9]\d{0,18}$/, { each: true })
+  playerIds: string[];
 }

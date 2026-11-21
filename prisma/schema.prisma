@@ -1744,6 +1744,8 @@ model training_sessions {
   intensity        Int               @default(0)
   coach_staff_id   BigInt?           @db.UnsignedBigInt
   status           String            @default("") @db.VarChar(30)
+  plan             Json?
+  results          Json?
   player_training  player_training[]
   clubs            clubs             @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_training_sessions_club_id")
   staff            staff?            @relation(fields: [coach_staff_id], references: [id], onDelete: Cascade, map: "fk_training_sessions_coach_staff_id")

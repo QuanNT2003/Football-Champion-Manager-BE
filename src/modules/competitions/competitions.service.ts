@@ -1,7 +1,7 @@
 import { SeasonTrophiesService } from './season-trophies.service';
 import { AcademyService } from '../academy/academy.service';
 import { academyContractExpirationWhere } from '../academy/academy.rules';
-import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
 import { InitializeSeasonDto } from './dto/initialize-season.dto';
@@ -3363,6 +3363,9 @@ export class CompetitionsService implements OnModuleInit {
     if (!completedSeason) {
       throw new NotFoundException('Không tìm thấy mùa giải cần chuyển giao');
     }
+    if (completedSeason.world_id !== worldId) {
+      throw new BadRequestException('Mùa giải không thuộc thế giới đang chuyển giao');
+    }
 
     const nextSeasonNumber = dto.newSeasonNumber || (completedSeason.season_number + 1);
 
@@ -3421,9 +3424,11 @@ export class CompetitionsService implements OnModuleInit {
       console.warn('[processSeasonTransition] Lỗi tự động trao cúp mùa giải:', err);
     }
 
-    // 6.6. Xóa toàn bộ lịch sử tăng trưởng chỉ số mùa cũ (bảng player_attribute_history chỉ dùng cho 1 mùa giải)
+    // 6.6. Reset growth only for this world's players; other worlds may still be mid-season.
     try {
-      await this.prisma.player_attribute_history.deleteMany();
+      await this.prisma.player_attribute_history.deleteMany({
+        where: { players: { world_id: worldId } },
+      });
     } catch (err) {
       console.warn('[processSeasonTransition] Lỗi dọn dẹp player_attribute_history:', err);
     }
