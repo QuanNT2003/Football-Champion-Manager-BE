@@ -515,6 +515,7 @@ model countries {
   players_players_second_nationality_idTocountries              players[]              @relation("players_second_nationality_idTocountries")
   scouting_assignments                                          scouting_assignments[]
   staff                                                         staff[]
+  youth_intake_candidates                                       youth_intake_candidates[]
   stage_standings                                               stage_standings[]
   stage_teams                                                   stage_teams[]
 
@@ -1330,6 +1331,7 @@ model players {
   game_worlds                                          game_worlds                  @relation(fields: [world_id], references: [id], onDelete: Cascade, map: "fk_players_world_id")
   youth_intakes                                        youth_intakes?               @relation(fields: [youth_intake_id], references: [id], onDelete: Cascade, map: "fk_players_youth_intake_id")
   scouting_reports                                     scouting_reports[]
+  youth_intake_candidates                              youth_intake_candidates?
   staff                                                staff[]
   transfer_offers                                      transfer_offers[]
   transfers                                            transfers[]
@@ -1363,14 +1365,15 @@ model position_attributes {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model positions {
-  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
-  code                 String                 @unique(map: "uq_positions_code") @default("") @db.VarChar(20)
-  name                 String                 @default("") @db.VarChar(50)
-  category             String                 @default("") @db.VarChar(30)
-  formation_positions  formation_positions[]
-  player_positions     player_positions[]
-  position_attributes  position_attributes[]
-  scouting_assignments scouting_assignments[]
+  id                      BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  code                    String                    @unique(map: "uq_positions_code") @default("") @db.VarChar(20)
+  name                    String                    @default("") @db.VarChar(50)
+  category                String                    @default("") @db.VarChar(30)
+  formation_positions     formation_positions[]
+  player_positions        player_positions[]
+  position_attributes     position_attributes[]
+  scouting_assignments    scouting_assignments[]
+  youth_intake_candidates youth_intake_candidates[]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1834,19 +1837,58 @@ model users {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model youth_intakes {
-  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  club_id        BigInt    @db.UnsignedBigInt
-  season_id      BigInt    @db.UnsignedBigInt
-  intake_date    DateTime  @db.Date
-  player_count   Int       @default(0)
-  quality_rating Int       @default(0)
-  status         String    @default("") @db.VarChar(30)
-  players        players[]
-  clubs          clubs     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_youth_intakes_club_id")
-  seasons        seasons   @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_youth_intakes_season_id")
+  id                      BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  club_id                 BigInt                    @db.UnsignedBigInt
+  season_id               BigInt                    @db.UnsignedBigInt
+  intake_date             DateTime                  @db.Date
+  player_count            Int                       @default(0)
+  quality_rating          Int                       @default(0)
+  /// Academy level when this intake was generated; unknown for legacy intakes.
+  academy_level_snapshot  Int?                      @db.UnsignedTinyInt
+  status                  String                    @default("") @db.VarChar(30)
+  players                 players[]
+  youth_intake_candidates youth_intake_candidates[]
+  clubs                   clubs                     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_youth_intakes_club_id")
+  seasons                 seasons                   @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_youth_intakes_season_id")
 
+  @@unique([club_id, season_id], map: "uq_youth_intakes_club_season")
   @@index([club_id], map: "idx_youth_intakes_club_id")
   @@index([season_id], map: "idx_youth_intakes_season_id")
+}
+
+/// Fixed recruitment pool for a seasonal intake. Create a players record only upon signing.
+model youth_intake_candidates {
+  id                  BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  youth_intake_id     BigInt                         @db.UnsignedBigInt
+  nationality_id      BigInt                         @db.UnsignedBigInt
+  primary_position_id BigInt                         @db.UnsignedBigInt
+  first_name          String                         @db.VarChar(100)
+  last_name           String                         @db.VarChar(100)
+  /// Age at generation (14-16); this snapshot does not age with signed players.
+  age                 Int                            @db.UnsignedTinyInt
+  ovr                 Int                            @db.UnsignedTinyInt
+  potential           Int                            @db.UnsignedTinyInt
+  /// Persist all remaining generated data: physical profile, birth season/day,
+  /// photo, secondary positions, attributes, mentality and tactics. Never reroll on signing.
+  profile_data        Json
+  status              youth_intake_candidates_status @default(AVAILABLE)
+  signed_player_id    BigInt?                        @unique(map: "uq_youth_candidates_signed_player") @db.UnsignedBigInt
+  created_at          DateTime                       @default(now()) @db.DateTime(0)
+  signed_at           DateTime?                      @db.DateTime(0)
+  youth_intakes       youth_intakes                  @relation(fields: [youth_intake_id], references: [id], onDelete: Cascade, map: "fk_youth_candidates_intake")
+  countries           countries                      @relation(fields: [nationality_id], references: [id], onDelete: Restrict, map: "fk_youth_candidates_nationality")
+  positions           positions                      @relation(fields: [primary_position_id], references: [id], onDelete: Restrict, map: "fk_youth_candidates_position")
+  players             players?                       @relation(fields: [signed_player_id], references: [id], onDelete: SetNull, map: "fk_youth_candidates_signed_player")
+
+  @@index([youth_intake_id, status], map: "idx_youth_candidates_intake_status")
+  @@index([nationality_id], map: "idx_youth_candidates_nationality")
+  @@index([primary_position_id], map: "idx_youth_candidates_position")
+}
+
+enum youth_intake_candidates_status {
+  AVAILABLE
+  SIGNED
+  EXPIRED
 }
 
 model staff_offers {

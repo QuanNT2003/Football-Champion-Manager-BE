@@ -1,4 +1,6 @@
 import { SeasonTrophiesService } from './season-trophies.service';
+import { AcademyService } from '../academy/academy.service';
+import { academyContractExpirationWhere } from '../academy/academy.rules';
 import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { GenerateFixturesDto } from './dto/generate-fixtures.dto';
@@ -14,6 +16,7 @@ export class CompetitionsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly continentalCoefficientService: ContinentalCoefficientService,
     private readonly seasonTrophiesService: SeasonTrophiesService,
+    private readonly academyService: AcademyService,
   ) {}
 
   async onModuleInit() {
@@ -1926,6 +1929,7 @@ export class CompetitionsService implements OnModuleInit {
     }
 
     await this.ensureServerTimeline(worldId, targetSeason);
+    await this.academyService.initializeSeason(targetSeason.id);
     await this.ensurePlayerStatisticsForSeason(targetSeason.id);
 
     // 2. Phân loại giải đấu: Quốc nội (Domestic Tiers 1..5) và Châu lục (Continental C1, C2, C3)
@@ -2791,6 +2795,10 @@ export class CompetitionsService implements OnModuleInit {
     let expiredLoansCount = 0;
     let expiredContractsCount = 0;
     let retiredPlayersCount = 0;
+    const completedSeason = await this.prisma.seasons.findFirst({
+      where: { id: completedSeasonId, world_id: worldId }, select: { season_number: true },
+    });
+    if (!completedSeason) throw new NotFoundException('Không tìm thấy mùa giải trong thế giới này');
 
     // 1. Cầu thủ hết hạn hợp đồng cho mượn (trả về CLB mẹ parent_club_id)
     const expiredLoanContracts = await this.prisma.player_contracts.findMany({
@@ -2868,11 +2876,7 @@ export class CompetitionsService implements OnModuleInit {
 
     // 2. Cầu thủ hết hạn hợp đồng chính thức (chuyển thành tự do)
     const expiredRegularContracts = await this.prisma.player_contracts.findMany({
-      where: {
-        is_loan_contract: false,
-        status: 'ACTIVE',
-        end_season_id: { lte: completedSeasonId },
-      },
+      where: academyContractExpirationWhere(worldId, completedSeasonId, completedSeason.season_number),
     });
 
     for (const contract of expiredRegularContracts) {
@@ -3441,6 +3445,7 @@ export class CompetitionsService implements OnModuleInit {
       where: { id: completedSeason.id },
       data: { status: 'COMPLETED' },
     });
+    await this.academyService.expireSeason(completedSeason.id);
 
     // 8. Khởi tạo Mùa giải mới & Sinh toàn bộ lịch đấu Day 1
     let newSeasonResult: any = null;

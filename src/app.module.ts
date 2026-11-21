@@ -12,6 +12,7 @@ import { CompetitionsModule } from './modules/competitions/competitions.module';
 import { TransfersModule } from './modules/transfers/transfers.module';
 import { FinancesModule } from './modules/finances/finances.module';
 import { TrainingModule } from './modules/training/training.module';
+import { AcademyModule } from './modules/academy/academy.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { TrainingModule } from './modules/training/training.module';
     TransfersModule,
     FinancesModule,
     TrainingModule,
+    AcademyModule,
   ],
 })
 export class AppModule {}

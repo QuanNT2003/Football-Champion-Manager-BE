@@ -15,6 +15,39 @@
 
 ---
 
+## Học viện bóng đá trẻ
+
+Màn hình `/academy` có trong cả `footballChampion_FE` và `footballChampion_FEv2`, truy cập từ menu **Học viện trẻ**.
+
+- Hiển thị đội trẻ U19/U21. Nút **Chiêu mộ** chỉ bật khi kỳ chuyển nhượng mở; API kiểm tra lại quyền quản lý CLB và cả hai cờ chuyển nhượng của mùa/timeline.
+- Khi khởi tạo mùa, chốt cấp học viện và chỉ tiêu cho tất cả CLB, kể cả CLB chưa có người quản lý. Server khởi động cũng bổ sung các lứa còn thiếu.
+- Chỉ tiêu `5 + floor(level / 2)`: cấp 1 có 5; 2–3 có 6; 4–5 có 7; 6–7 có 8; 8–9 có 9; cấp 10 có 10.
+- Tuổi 14–16. Xác suất PA từ 80 của mỗi ứng viên là `level × 3%`, tối đa 30%. Đây là xác suất độc lập, không phải số tài năng bảo đảm trong một lứa.
+- OVR từ `20 + 2 × level` đến `34 + 2 × level`, cộng 2 điểm mỗi tuổi trên 14 và không vượt PA. PA thường từ `45 + 2 × level` đến 79; nhóm tài năng cao có PA 80–99.
+- Lần đầu mở tuyển sinh sinh và lưu toàn bộ hồ sơ theo cấp đã chốt. Mở lại hoặc sang kỳ chuyển nhượng giữa mùa không sinh lại. Ký một người giảm một ứng viên; `player_count` giữ số ban đầu.
+- Ký miễn phí, hợp đồng 3 mùa tính cả mùa ký, lương tuần `max(100, OVR × 10)`. Tạo đủ cầu thủ U21, vị trí, attributes, mentality, tactics, trạng thái, hợp đồng, thống kê và tin CLB trong cùng transaction.
+- Hợp đồng học viện dùng `squad_role = ACADEMY` và lưu số thứ tự mùa trong các cột hợp đồng `*_season_id`; xử lý hết hạn/gia hạn không phụ thuộc ID database liên tiếp.
+- Nâng cấp học viện áp dụng cho lứa mùa sau. Chuyển mùa đánh dấu ứng viên chưa ký là EXPIRED, giữ cầu thủ đã ký và các lứa lịch sử.
+
+API yêu cầu JWT và người đang quản lý CLB:
+
+| Method | Endpoint | Chức năng |
+| --- | --- | --- |
+| GET | `/clubs/:clubId/academy` | Đội trẻ, cấp học viện, chỉ tiêu và trạng thái tuyển sinh |
+| POST | `/clubs/:clubId/academy/recruitment` | Mở lại danh sách ứng viên của mùa |
+| POST | `/clubs/:clubId/academy/candidates/:candidateId/sign` | Ký ứng viên vào U21 |
+
+Với database cũ, chạy một lần từ thư mục backend:
+
+```powershell
+npx prisma db execute --file prisma/youth-intake-candidates.sql --schema prisma/schema.prisma
+npm run prisma:generate
+```
+
+SQL có truy vấn kiểm tra lứa trùng CLB/mùa trước khi thêm unique; không tự xóa/gộp dữ liệu. Các lứa cũ thiếu snapshot được giữ nguyên để chuyển đổi có chủ đích, không tự tạo lại ứng viên.
+
+`npm run test:academy` build và kiểm thử nghiệp vụ. `npm run test:academy:db` kiểm thử MySQL bằng thế giới/CLB riêng rồi rollback toàn bộ dữ liệu kiểm thử; cần database đã migrate và có dữ liệu người dùng, CLB, tiền tệ SOFT hoạt động, học viện cấp 10.
+
 ## 🏛️ Kiến Trúc Phân Hệ (12 Modules)
 
 | Phân hệ (Module) | Mô tả & Chức năng chính |

@@ -6,6 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "test:academy": "npm run build && node --test test/academy.test.cjs",
+    "test:academy:db": "npm run build && node test/academy.integration.cjs",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
     "dev": "nest start --watch",

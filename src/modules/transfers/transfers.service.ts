@@ -1834,7 +1834,9 @@ export class TransfersService {
     const additionalSeasons = Math.max(1, Math.min(5, Number(dto.additional_seasons) || 1));
     const newEndSeason = Number(contract.end_season_id || 1) + additionalSeasons;
     const newSalary = Number(dto.proposed_wage) > 0 ? Number(dto.proposed_wage) : Number(contract.salary);
-    const newEndDate = this.calculateGameDate(newEndSeason, 36);
+    const newEndDate = contract.squad_role === 'ACADEMY' && contract.end_date
+      ? new Date(contract.end_date.getTime() + additionalSeasons * 36 * 86400000)
+      : this.calculateGameDate(newEndSeason, 36);
 
     const updated = await this.prisma.player_contracts.update({
       where: { id: contract.id },
