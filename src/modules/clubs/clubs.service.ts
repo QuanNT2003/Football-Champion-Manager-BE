@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { formatKickoffTime } from '@/common/match-schedule';
 
 @Injectable()
 export class ClubsService {
@@ -618,13 +619,7 @@ export class ClubsService {
     const fin = club.financial_accounts?.[0] || null;
     const isHomeNext = nextMatch ? nextMatch.home_club_id === clubId : true;
 
-    let kickoffFormatted = '20:00';
-    if (nextMatch?.kickoff_time) {
-      const ko = new Date(nextMatch.kickoff_time);
-      const hh = String(ko.getUTCHours()).padStart(2, '0');
-      const mm = String(ko.getUTCMinutes()).padStart(2, '0');
-      kickoffFormatted = `${hh}:${mm}`;
-    }
+    const kickoffFormatted = formatKickoffTime(nextMatch?.kickoff_time, '20:00');
 
       // 6. Recent club news (Top 5 tin tức mới nhất của CLB)
       const recentNewsRaw = await this.prisma.club_news.findMany({
@@ -921,7 +916,6 @@ export class ClubsService {
         },
       },
       orderBy: [
-        { season_day: 'asc' },
         { match_date: 'asc' },
         { kickoff_time: 'asc' },
         { id: 'asc' },
@@ -947,13 +941,7 @@ export class ClubsService {
         }
       }
 
-      let kickoffTime = '20:00';
-      if (m.kickoff_time) {
-        const ko = new Date(m.kickoff_time);
-        const hh = String(ko.getUTCHours()).padStart(2, '0');
-        const mm = String(ko.getUTCMinutes()).padStart(2, '0');
-        kickoffTime = `${hh}:${mm}`;
-      }
+      const kickoffTime = formatKickoffTime(m.kickoff_time, '20:00');
 
       return {
         id: m.id.toString(),

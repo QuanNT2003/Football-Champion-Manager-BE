@@ -37,16 +37,12 @@ API yêu cầu JWT và người đang quản lý CLB:
 | POST | `/clubs/:clubId/academy/recruitment` | Mở lại danh sách ứng viên của mùa |
 | POST | `/clubs/:clubId/academy/candidates/:candidateId/sign` | Ký ứng viên vào U21 |
 
-Với database cũ, chạy một lần từ thư mục backend:
+Cấu trúc database được quản lý tập trung trong `../qkaito_football_champion_schema.sql`.
+Mọi thay đổi bảng, cột, index và khóa ngoại cập nhật vào file schema này.
+Backend không tự sửa cấu trúc database khi khởi động.
+Các lứa cũ thiếu snapshot được giữ nguyên, không tự tạo lại ứng viên.
 
-```powershell
-npx prisma db execute --file prisma/youth-intake-candidates.sql --schema prisma/schema.prisma
-npm run prisma:generate
-```
-
-SQL có truy vấn kiểm tra lứa trùng CLB/mùa trước khi thêm unique; không tự xóa/gộp dữ liệu. Các lứa cũ thiếu snapshot được giữ nguyên để chuyển đổi có chủ đích, không tự tạo lại ứng viên.
-
-`npm run test:academy` build và kiểm thử nghiệp vụ. `npm run test:academy:db` kiểm thử MySQL bằng thế giới/CLB riêng rồi rollback toàn bộ dữ liệu kiểm thử; cần database đã migrate và có dữ liệu người dùng, CLB, tiền tệ SOFT hoạt động, học viện cấp 10.
+`npm run test:academy` build và kiểm thử nghiệp vụ. `npm run test:academy:db` kiểm thử MySQL bằng thế giới/CLB riêng rồi rollback toàn bộ dữ liệu kiểm thử; cần database có cấu trúc khớp schema chính và có dữ liệu người dùng, CLB, tiền tệ SOFT hoạt động, học viện cấp 10.
 
 ## 🏛️ Kiến Trúc Phân Hệ (12 Modules)
 
@@ -100,6 +96,29 @@ npm run build
 # Chạy bản build sản xuất
 npm run start:prod
 ```
+
+## Giờ thi đấu
+
+- League: 19:00, 19:30, 20:00, 20:30, 21:00 giờ địa phương.
+- Cúp quốc gia, Siêu cúp và cúp châu lục: 10:00, 10:30, 11:00, 11:30, 12:00 giờ địa phương.
+- U21: 17:00 giờ địa phương.
+
+Vòng bảng U21 đá vòng tròn **một lượt**: 8 bảng × 4 đội, mỗi đội 3 trận vào
+Day 7, 12, 17 (mỗi ngày một trận). Tổng vòng bảng 48 trận; không có lượt về.
+
+Backend dùng múi giờ IANA theo quốc gia chủ nhà và ngày thi đấu, bao gồm giờ mùa hè.
+Quốc gia có nhiều múi giờ dùng múi giờ đại diện trong `src/common/match-schedule.ts`.
+Chung kết chưa có sân trung lập dùng quốc gia CLB được xếp chủ nhà.
+
+`match_date` và `kickoff_time` lưu ngày/giờ server Việt Nam (UTC+7), có điều chỉnh ngày
+khi quy đổi qua nửa đêm. `season_day` vẫn là ngày vòng đấu theo lịch địa phương.
+API trả `kickoff_time` dạng `HH:mm`; frontend hiển thị trực tiếp, không cộng múi giờ lần nữa.
+Cron chuyển ngày chạy lúc 00:00 `Asia/Ho_Chi_Minh`.
+
+Luồng khởi động Day 1 và chuyển mùa vẫn gọi bộ sinh lịch hiện tại. Quy tắc giờ mới
+áp dụng khi tạo lịch; bản cập nhật không tự đổi các trận đã lưu trong database.
+
+Kiểm thử: `npm run test:scheduling`.
 
 ---
 

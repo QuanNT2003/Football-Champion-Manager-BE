@@ -1,3 +1,7 @@
+import {
+  CUP_KICKOFF_SLOTS, LEAGUE_KICKOFF_SLOTS, YOUTH_KICKOFF_SLOTS,
+  getMatchScheduleFromLocalSlot, formatKickoffTime,
+} from '@/common/match-schedule';
 import { SeasonTrophiesService } from './season-trophies.service';
 import { AcademyService } from '../academy/academy.service';
 import { academyContractExpirationWhere } from '../academy/academy.rules';
@@ -34,10 +38,9 @@ export class CompetitionsService implements OnModuleInit {
   }
 
 
-  private readonly leagueLocalKickoffSlots = ['19:30', '20:00', '20:30', '21:00', '21:30'];
-  private readonly cupLocalKickoffSlots = ['10:00', '10:30', '11:00', '11:30', '12:00'];
-  private readonly youthLocalKickoffSlots = ['17:00', '17:15', '17:30'];
-  private readonly serverUtcOffset = 7 * 60;
+  private readonly leagueLocalKickoffSlots = LEAGUE_KICKOFF_SLOTS;
+  private readonly cupLocalKickoffSlots = CUP_KICKOFF_SLOTS;
+  private readonly youthLocalKickoffSlots = YOUTH_KICKOFF_SLOTS;
   // 34 match days: First half Day 3-19 (17 days), Mid-season break Day 20-21, Second half Day 22-38 (17 days)
   // 30 match days (Season 36 days): First half Day 3-17 (15 days), Mid-season break Day 18-19, Second half Day 20-34 (15 days)
   private readonly leagueSeasonDays = [
@@ -46,49 +49,6 @@ export class CompetitionsService implements OnModuleInit {
   ];
   private readonly cupBusySeasonDays = new Set([3, 5, 6, 7, 11, 17, 23, 29, 35]);
 
-  private readonly countryUtcOffsetByCode: Record<string, number> = {
-    ARG: -180,
-    BRA: -180,
-    CHL: -240,
-    COL: -300,
-    MEX: -360,
-    USA: -300,
-    CAN: -300,
-    ENG: 0,
-    FRA: 60,
-    GER: 60,
-    ESP: 60,
-    ITA: 60,
-    NED: 60,
-    POR: 0,
-    RUS: 180,
-    TUR: 180,
-    VIE: 420,
-    THA: 420,
-    IDN: 420,
-    MAS: 480,
-    SIN: 480,
-    CHN: 480,
-    JPN: 540,
-    KOR: 540,
-    AUS: 600,
-    NZL: 720,
-    EGY: 120,
-    RSA: 120,
-    NGA: 60,
-    MAR: 60,
-  };
-
-  private readonly continentUtcOffset: Record<string, number> = {
-    ASIA: 420,
-    EUROPE: 60,
-    AFRICA: 120,
-    'NORTH AMERICA': -300,
-    'SOUTH AMERICA': -180,
-    OCEANIA: 600,
-  };
-
-  
   async getCountries(search?: string) {
     const where: any = {};
     if (search && search.trim()) {
@@ -879,9 +839,12 @@ export class CompetitionsService implements OnModuleInit {
 
   /**
    * Thuật toán Berger Tables (Round-Robin Fixture Generator)
-   * Sinh danh sách các cặp đấu vòng tròn 2 lượt (Lượt đi & Lượt về)
+   * Mặc định vòng tròn 2 lượt; giải vòng tròn 1 lượt tắt doubleRoundRobin.
    */
-  private generateBergerPairings(teamIds: bigint[]): Array<{ round: number; home: bigint; away: bigint }> {
+  private generateBergerPairings(
+    teamIds: bigint[],
+    options: { doubleRoundRobin?: boolean } = {},
+  ): Array<{ round: number; home: bigint; away: bigint }> {
     if (teamIds.length < 2) return [];
 
     const teams: (bigint | null)[] = [...teamIds];
@@ -947,6 +910,8 @@ export class CompetitionsService implements OnModuleInit {
       }
     }
 
+    if (options.doubleRoundRobin === false) return pairings;
+
     // 2. Lượt về (Second Leg / Return Leg): Đảo ngược sân nhà - sân khách
     // Sử dụng thứ tự vòng xoay [2, 3, ..., numRounds, 1] giúp loại bỏ chuỗi nhiều trận cùng sân
     // Đảm bảo 100% các đội đều có lịch thi đấu xen kẽ H-A-H-A (tối đa 2 trận cùng sân)
@@ -974,34 +939,6 @@ export class CompetitionsService implements OnModuleInit {
 
   private getSeasonDate(season: { start_date: Date }, seasonDay: number) {
     return new Date(season.start_date.getTime() + (seasonDay - 1) * 24 * 60 * 60 * 1000);
-  }
-
-  private getCountryUtcOffset(country?: { code?: string | null; continent?: string | null } | null) {
-    const code = country?.code?.toUpperCase();
-    if (code && this.countryUtcOffsetByCode[code] !== undefined) {
-      return this.countryUtcOffsetByCode[code];
-    }
-
-    const continent = country?.continent?.toUpperCase();
-    return continent && this.continentUtcOffset[continent] !== undefined
-      ? this.continentUtcOffset[continent]
-      : this.serverUtcOffset;
-  }
-
-  private getKickoffTimeFromLocalSlot(
-    slots: string[],
-    slotSeed: number,
-    country?: { code?: string | null; continent?: string | null } | null,
-  ) {
-    const slot = slots[Math.abs(slotSeed) % slots.length];
-    const [localHour, localMinute] = slot.split(':').map(Number);
-    const localMinutes = localHour * 60 + localMinute;
-    const countryOffset = this.getCountryUtcOffset(country);
-    const serverMinutes = (localMinutes - countryOffset + this.serverUtcOffset + 24 * 60) % (24 * 60);
-    const serverHour = Math.floor(serverMinutes / 60);
-    const serverMinute = serverMinutes % 60;
-
-    return new Date(Date.UTC(1970, 0, 1, serverHour, serverMinute, 0));
   }
 
   private getLeagueRoundDays(teamCount: number, totalRounds: number): number[] {
@@ -1369,7 +1306,6 @@ export class CompetitionsService implements OnModuleInit {
             const awayId = p.away;
             const sId = stadiumMap.get(homeId.toString()) || null;
             const country = clubCountryMap.get(homeId.toString());
-            const kickoff_time = this.getKickoffTimeFromLocalSlot(this.leagueLocalKickoffSlots, Number(homeId + awayId + BigInt(p.round)), country);
 
             this.reserveMatchDay(teamDailyLoad, seasonDay, homeId, awayId);
 
@@ -1380,8 +1316,12 @@ export class CompetitionsService implements OnModuleInit {
               group_id: group.id,
               season_id: season.id,
               season_day: seasonDay,
-              match_date: matchDate,
-              kickoff_time,
+              ...getMatchScheduleFromLocalSlot(
+                this.leagueLocalKickoffSlots,
+                Number(homeId + awayId + BigInt(p.round)),
+                country,
+                matchDate,
+              ),
               home_club_id: homeId,
               away_club_id: awayId,
               stadium_id: sId,
@@ -1456,11 +1396,6 @@ export class CompetitionsService implements OnModuleInit {
             const seasonDay = 3; // Cố định Day 3 Siêu Cúp Quốc Gia
             const round = await this.ensureStageRound(stage.id, season, 1, seasonDay, 'Final');
             const matchDate = this.getSeasonDate(season, seasonDay);
-            const kickoff_time = this.getKickoffTimeFromLocalSlot(
-              this.cupLocalKickoffSlots,
-              Number(topClubs[0].id + topClubs[1].id),
-              clubCountryMap.get(topClubs[0].id.toString()),
-            );
             this.reserveMatchDay(teamDailyLoad, seasonDay, topClubs[0].id, topClubs[1].id);
             superCupMatches.push({
               competition_season_id: cs.id,
@@ -1469,8 +1404,12 @@ export class CompetitionsService implements OnModuleInit {
               group_id: group.id,
               season_id: season.id,
               season_day: seasonDay,
-              match_date: matchDate,
-              kickoff_time,
+              ...getMatchScheduleFromLocalSlot(
+                this.cupLocalKickoffSlots,
+                Number(topClubs[0].id + topClubs[1].id),
+                clubCountryMap.get(topClubs[0].id.toString()),
+                matchDate,
+              ),
               home_club_id: topClubs[0].id,
               away_club_id: topClubs[1].id,
               stadium_id: stadiumMap.get(topClubs[0].id.toString()) || null,
@@ -1571,11 +1510,6 @@ export class CompetitionsService implements OnModuleInit {
             for (let i = 0; i < numMatches; i++) {
               const home = tier4Clubs[i];
               const away = tier4Clubs[tier4Clubs.length - 1 - i];
-              const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                this.cupLocalKickoffSlots,
-                i + Number(home.id + away.id),
-                clubCountryMap.get(home.id.toString()),
-              );
               this.reserveMatchDay(teamDailyLoad, seasonDay, home.id, away.id);
               cupMatches.push({
                 competition_season_id: cs.id,
@@ -1584,8 +1518,12 @@ export class CompetitionsService implements OnModuleInit {
                 group_id: group.id,
                 season_id: season.id,
                 season_day: seasonDay,
-                match_date: matchDate,
-                kickoff_time,
+                ...getMatchScheduleFromLocalSlot(
+                  this.cupLocalKickoffSlots,
+                  i + Number(home.id + away.id),
+                  clubCountryMap.get(home.id.toString()),
+                  matchDate,
+                ),
                 home_club_id: home.id,
                 away_club_id: away.id,
                 stadium_id: stadiumMap.get(home.id.toString()) || null,
@@ -1690,11 +1628,6 @@ export class CompetitionsService implements OnModuleInit {
           const pairings = this.generateBergerPairings(groupClubIds);
           for (const p of pairings) {
             const matchDay = contCupDays[p.round - 1] || contCupDays[0];
-            const kickoff_time = this.getKickoffTimeFromLocalSlot(
-              this.cupLocalKickoffSlots,
-              Number(p.home + p.away + BigInt(p.round)),
-              clubCountryMap.get(p.home.toString()),
-            );
             this.reserveMatchDay(teamDailyLoad, matchDay, p.home, p.away);
             contMatches.push({
               competition_season_id: cs.id,
@@ -1703,8 +1636,12 @@ export class CompetitionsService implements OnModuleInit {
               group_id: group.id,
               season_id: season.id,
               season_day: matchDay,
-              match_date: this.getSeasonDate(season, matchDay),
-              kickoff_time,
+              ...getMatchScheduleFromLocalSlot(
+                this.cupLocalKickoffSlots,
+                Number(p.home + p.away + BigInt(p.round)),
+                clubCountryMap.get(p.home.toString()),
+                this.getSeasonDate(season, matchDay),
+              ),
               home_club_id: p.home,
               away_club_id: p.away,
               stadium_id: stadiumMap.get(p.home.toString()) || null,
@@ -1825,26 +1762,28 @@ export class CompetitionsService implements OnModuleInit {
               await this.ensureStageParticipants(stage.id, groupsClubs[gIdx], group.id, 'Youth Cup Group Entry');
 
               const groupClubIds = groupsClubs[gIdx].map((cl) => cl.id);
-              const pairings = this.generateBergerPairings(groupClubIds);
+              const pairings = this.generateBergerPairings(groupClubIds, { doubleRoundRobin: false });
 
               for (const p of pairings) {
-                const matchDay = youthGroupDays[p.round - 1] || youthGroupDays[0];
+                const matchDay = youthGroupDays[p.round - 1];
                 const roundObj = groupRounds.get(p.round);
-                const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                  this.youthLocalKickoffSlots,
-                  gIdx + Number(p.home + p.away + BigInt(p.round)),
-                  clubCountryMap.get(p.home.toString()),
-                );
+                if (!matchDay || !roundObj) {
+                  throw new BadRequestException(`Vòng bảng U21 có lượt đấu ${p.round} ngoài lịch 3 lượt đã cấu hình`);
+                }
                 this.reserveMatchDay(teamDailyLoad, matchDay, p.home, p.away);
                 youthMatches.push({
                   competition_season_id: cs.id,
                   stage_id: stage.id,
-                  round_id: roundObj?.id,
+                  round_id: roundObj.id,
                   group_id: group.id,
                   season_id: season.id,
                   season_day: matchDay,
-                  match_date: this.getSeasonDate(season, matchDay),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.youthLocalKickoffSlots,
+                    gIdx + Number(p.home + p.away + BigInt(p.round)),
+                    clubCountryMap.get(p.home.toString()),
+                    this.getSeasonDate(season, matchDay),
+                  ),
                   home_club_id: p.home,
                   away_club_id: p.away,
                   stadium_id: stadiumMap.get(p.home.toString()) || null,
@@ -3519,6 +3458,11 @@ export class CompetitionsService implements OnModuleInit {
     const countries = await this.prisma.countries.findMany({ select: { id: true, name: true, code: true, continent: true } });
     const clubCountryMap = new Map<string, { code?: string | null; continent?: string | null }>();
     countries.forEach((c) => clubCountryMap.set(c.id.toString(), { code: c.code, continent: c.continent }));
+    const hostClubs = await this.prisma.clubs.findMany({
+      where: { world_id: season.world_id },
+      select: { id: true, countries: { select: { code: true } } },
+    });
+    const hostCountryMap = new Map(hostClubs.map(club => [club.id.toString(), club.countries]));
 
     // =========================================================================
     // 1. TIẾN VÒNG CÚP QUỐC GIA (DOMESTIC_CUP - 9 VÒNG KNOCKOUT)
@@ -3564,11 +3508,6 @@ export class CompetitionsService implements OnModuleInit {
 
         for (let i = 0; i < pairedTeams.length; i++) {
           const p = pairedTeams[i];
-          const kickoff_time = this.getKickoffTimeFromLocalSlot(
-            this.cupLocalKickoffSlots,
-            i + Number(p.home + p.away),
-            countryObj,
-          );
           newMatches.push({
             competition_season_id: cs.id,
             stage_id: stage.id,
@@ -3576,8 +3515,12 @@ export class CompetitionsService implements OnModuleInit {
             group_id: group.id,
             season_id: season.id,
             season_day: targetDay,
-            match_date: matchDate,
-            kickoff_time,
+            ...getMatchScheduleFromLocalSlot(
+              this.cupLocalKickoffSlots,
+              i + Number(p.home + p.away),
+              countryObj,
+              matchDate,
+            ),
             home_club_id: p.home,
             away_club_id: p.away,
             stadium_id: null,
@@ -3876,10 +3819,6 @@ export class CompetitionsService implements OnModuleInit {
               for (let i = 0; i < 8; i++) {
                 const firstTeam = firstPlaces[i];
                 const secondTeam = secondPlaces[(i + 1) % 8]; // Nhất bảng này gặp Nhì bảng khác
-                const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                  this.cupLocalKickoffSlots,
-                  i + Number(firstTeam + secondTeam),
-                );
 
                 // Lượt đi Day 25: Sân đội nhì
                 matches16.push({
@@ -3889,8 +3828,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 25,
-                  match_date: this.getSeasonDate(season, 25),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.cupLocalKickoffSlots,
+                    i + Number(firstTeam + secondTeam),
+                    hostCountryMap.get(secondTeam.toString()),
+                    this.getSeasonDate(season, 25),
+                  ),
                   home_club_id: secondTeam,
                   away_club_id: firstTeam,
                   stadium_id: null,
@@ -3907,8 +3850,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 26,
-                  match_date: this.getSeasonDate(season, 26),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.cupLocalKickoffSlots,
+                    i + Number(firstTeam + secondTeam),
+                    hostCountryMap.get(firstTeam.toString()),
+                    this.getSeasonDate(season, 26),
+                  ),
                   home_club_id: firstTeam,
                   away_club_id: secondTeam,
                   stadium_id: null,
@@ -3947,7 +3894,6 @@ export class CompetitionsService implements OnModuleInit {
               for (let i = 0; i < 4; i++) {
                 const tA = winners8[i];
                 const tB = winners8[7 - i];
-                const kickoff_time = this.getKickoffTimeFromLocalSlot(this.cupLocalKickoffSlots, i + Number(tA + tB));
                 matchesQF.push({
                   competition_season_id: cs.id,
                   stage_id: knockoutStage.id,
@@ -3955,8 +3901,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 28,
-                  match_date: this.getSeasonDate(season, 28),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.cupLocalKickoffSlots,
+                    i + Number(tA + tB),
+                    hostCountryMap.get(tA.toString()),
+                    this.getSeasonDate(season, 28),
+                  ),
                   home_club_id: tA,
                   away_club_id: tB,
                   stadium_id: null,
@@ -3971,8 +3921,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 29,
-                  match_date: this.getSeasonDate(season, 29),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.cupLocalKickoffSlots,
+                    i + Number(tA + tB),
+                    hostCountryMap.get(tB.toString()),
+                    this.getSeasonDate(season, 29),
+                  ),
                   home_club_id: tB,
                   away_club_id: tA,
                   stadium_id: null,
@@ -4010,7 +3964,6 @@ export class CompetitionsService implements OnModuleInit {
               for (let i = 0; i < 2; i++) {
                 const tA = winners4[i];
                 const tB = winners4[3 - i];
-                const kickoff_time = this.getKickoffTimeFromLocalSlot(this.cupLocalKickoffSlots, i + Number(tA + tB));
                 matchesSF.push({
                   competition_season_id: cs.id,
                   stage_id: knockoutStage.id,
@@ -4018,8 +3971,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 31,
-                  match_date: this.getSeasonDate(season, 31),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.cupLocalKickoffSlots,
+                    i + Number(tA + tB),
+                    hostCountryMap.get(tA.toString()),
+                    this.getSeasonDate(season, 31),
+                  ),
                   home_club_id: tA,
                   away_club_id: tB,
                   stadium_id: null,
@@ -4034,8 +3991,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 32,
-                  match_date: this.getSeasonDate(season, 32),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.cupLocalKickoffSlots,
+                    i + Number(tA + tB),
+                    hostCountryMap.get(tB.toString()),
+                    this.getSeasonDate(season, 32),
+                  ),
                   home_club_id: tB,
                   away_club_id: tA,
                   stadium_id: null,
@@ -4068,7 +4029,6 @@ export class CompetitionsService implements OnModuleInit {
             }
             if (finalists.length === 2) {
               const rFinal = await this.ensureStageRound(knockoutStage.id, season, 7, 34, 'Continental Cup Final');
-              const kickoff_time = this.getKickoffTimeFromLocalSlot(this.cupLocalKickoffSlots, Number(finalists[0] + finalists[1]));
               await this.prisma.matches.create({
                 data: {
                   competition_season_id: cs.id,
@@ -4077,8 +4037,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 34,
-                  match_date: this.getSeasonDate(season, 34),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.cupLocalKickoffSlots,
+                    Number(finalists[0] + finalists[1]),
+                    hostCountryMap.get(finalists[0].toString()),
+                    this.getSeasonDate(season, 34),
+                  ),
                   home_club_id: finalists[0],
                   away_club_id: finalists[1],
                   stadium_id: null,
@@ -4201,11 +4165,6 @@ export class CompetitionsService implements OnModuleInit {
 
               for (let i = 0; i < pairings.length; i++) {
                 const pair = pairings[i];
-                const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                  this.youthLocalKickoffSlots,
-                  i + Number(pair.home + pair.away),
-                  countryObj,
-                );
                 matches16.push({
                   competition_season_id: cs.id,
                   stage_id: knockoutStage.id,
@@ -4213,8 +4172,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 20,
-                  match_date: this.getSeasonDate(season, 20),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.youthLocalKickoffSlots,
+                    i + Number(pair.home + pair.away),
+                    countryObj,
+                    this.getSeasonDate(season, 20),
+                  ),
                   home_club_id: pair.home,
                   away_club_id: pair.away,
                   stadium_id: null,
@@ -4249,11 +4212,6 @@ export class CompetitionsService implements OnModuleInit {
               for (let i = 0; i < 4; i++) {
                 const home = winners8[i * 2];
                 const away = winners8[i * 2 + 1];
-                const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                  this.youthLocalKickoffSlots,
-                  i + Number(home + away),
-                  countryObj,
-                );
                 matchesQF.push({
                   competition_season_id: cs.id,
                   stage_id: knockoutStage.id,
@@ -4261,8 +4219,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 23,
-                  match_date: this.getSeasonDate(season, 23),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.youthLocalKickoffSlots,
+                    i + Number(home + away),
+                    countryObj,
+                    this.getSeasonDate(season, 23),
+                  ),
                   home_club_id: home,
                   away_club_id: away,
                   stadium_id: null,
@@ -4297,11 +4259,6 @@ export class CompetitionsService implements OnModuleInit {
               for (let i = 0; i < 2; i++) {
                 const home = winners4[i * 2];
                 const away = winners4[i * 2 + 1];
-                const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                  this.youthLocalKickoffSlots,
-                  i + Number(home + away),
-                  countryObj,
-                );
                 matchesSF.push({
                   competition_season_id: cs.id,
                   stage_id: knockoutStage.id,
@@ -4309,8 +4266,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 27,
-                  match_date: this.getSeasonDate(season, 27),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.youthLocalKickoffSlots,
+                    i + Number(home + away),
+                    countryObj,
+                    this.getSeasonDate(season, 27),
+                  ),
                   home_club_id: home,
                   away_club_id: away,
                   stadium_id: null,
@@ -4340,11 +4301,6 @@ export class CompetitionsService implements OnModuleInit {
             const finalists = sfMatches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             if (finalists.length === 2) {
               const rFinal = await this.ensureStageRound(knockoutStage.id, season, 4, 33, 'Youth Cup Final');
-              const kickoff_time = this.getKickoffTimeFromLocalSlot(
-                this.youthLocalKickoffSlots,
-                Number(finalists[0] + finalists[1]),
-                countryObj,
-              );
               await this.prisma.matches.create({
                 data: {
                   competition_season_id: cs.id,
@@ -4353,8 +4309,12 @@ export class CompetitionsService implements OnModuleInit {
                   group_id: null,
                   season_id: season.id,
                   season_day: 33,
-                  match_date: this.getSeasonDate(season, 33),
-                  kickoff_time,
+                  ...getMatchScheduleFromLocalSlot(
+                    this.youthLocalKickoffSlots,
+                    Number(finalists[0] + finalists[1]),
+                    countryObj,
+                    this.getSeasonDate(season, 33),
+                  ),
                   home_club_id: finalists[0],
                   away_club_id: finalists[1],
                   stadium_id: null,
@@ -4514,7 +4474,7 @@ export class CompetitionsService implements OnModuleInit {
         id: m.id.toString(),
         seasonDay: m.season_day,
         matchDate: m.match_date ? m.match_date.toISOString().split('T')[0] : null,
-        kickoffTime: m.kickoff_time ? m.kickoff_time.toISOString().split('T')[1]?.slice(0, 5) || '10:00' : '10:00',
+        kickoffTime: formatKickoffTime(m.kickoff_time, '10:00'),
         status: m.status,
         groupName: m.stage_groups?.name || null,
         homeClub: m.clubs_matches_home_club_idToclubs

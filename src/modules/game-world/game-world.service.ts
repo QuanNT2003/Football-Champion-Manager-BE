@@ -2,6 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CompetitionsService } from '../competitions/competitions.service';
+import { GAME_TIME_ZONE } from '@/common/match-schedule';
 
 @Injectable()
 export class GameWorldService implements OnApplicationBootstrap {
@@ -24,7 +25,7 @@ export class GameWorldService implements OnApplicationBootstrap {
   /**
    * Cron Job tự động chạy mỗi nửa đêm: Tiến 1 ngày trong game
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: GAME_TIME_ZONE })
   async handleAutomaticMidnightCycle() {
     this.logger.log('Online Game Server: Tự động chạy chu kỳ chuyển ngày nửa đêm (Midnight Cycle)...');
     await this.advanceDay(1n);

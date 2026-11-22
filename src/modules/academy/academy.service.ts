@@ -26,7 +26,7 @@ export class AcademyService implements OnApplicationBootstrap {
       const seasons = await this.prisma.seasons.findMany({ where: { status: 'ACTIVE' } });
       for (const season of seasons) await this.initializeSeason(season.id);
     } catch (error) {
-      this.logger.warn(`Không thể khởi tạo học viện. Kiểm tra migration youth-intake-candidates.sql: ${error.message}`);
+      this.logger.warn(`Không thể khởi tạo học viện. Kiểm tra cấu trúc DB theo qkaito_football_champion_schema.sql: ${error.message}`);
     }
   }
 

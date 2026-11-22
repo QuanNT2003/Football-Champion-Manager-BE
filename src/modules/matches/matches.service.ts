@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MatchSimulatorService } from './match-simulator.service';
+import { formatKickoffTime } from '@/common/match-schedule';
 
 @Injectable()
 export class MatchesService {
@@ -42,7 +43,7 @@ export class MatchesService {
         where,
         skip,
         take: l,
-        orderBy: [{ season_day: 'asc' }, { id: 'asc' }],
+        orderBy: [{ match_date: 'asc' }, { kickoff_time: 'asc' }, { id: 'asc' }],
         include: {
           competition_seasons: { select: { id: true, name: true } },
           competition_stages: { select: { id: true, name: true } },
@@ -67,7 +68,7 @@ export class MatchesService {
         id: m.id.toString(),
         season_day: m.season_day,
         match_date: m.match_date,
-        kickoff_time: m.kickoff_time,
+        kickoff_time: formatKickoffTime(m.kickoff_time),
         status: m.status,
         competitionSeason: m.competition_seasons ? {
           id: m.competition_seasons.id.toString(),
@@ -146,7 +147,7 @@ export class MatchesService {
       status: match.status,
       season_day: match.season_day,
       match_date: match.match_date,
-      kickoff_time: match.kickoff_time,
+      kickoff_time: formatKickoffTime(match.kickoff_time),
       competitionSeason: match.competition_seasons ? {
         id: match.competition_seasons.id.toString(),
         name: match.competition_seasons.name,
