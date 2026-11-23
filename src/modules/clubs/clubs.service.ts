@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { formatKickoffTime } from '@/common/match-schedule';
+import { FACILITY_UPGRADE_ACTIVE, FACILITY_UPGRADE_DAYS, STADIUM_CAPACITY_INCREMENT, STADIUM_UPGRADE_COST, assertConstructionSlot, facilityUpgradeDetails, stadiumUpgradeDetails, upgradeTiming } from '@/common/facility-upgrades';
 
 @Injectable()
 export class ClubsService {
@@ -76,7 +77,7 @@ export class ClubsService {
           },
         },
         cities: true,
-        stadiums: true,
+        stadiums: { orderBy: { id: 'asc' } },
         users: { select: { id: true, username: true, email: true, avatar_url: true, created_at: true, status: true } },
         competitions: true,
         financial_accounts: true,
@@ -105,6 +106,8 @@ export class ClubsService {
     const trophiesCount = await this.prisma.club_trophies.count({ where: { club_id: clubId } });
     const fin = club.financial_accounts?.[0] || null;
     const confed = club.countries?.confederations_countries_confederation_idToconfederations;
+    const upgradeDetails = await facilityUpgradeDetails(this.prisma, club.facilities);
+    const stadiumUpgrade = club.stadiums[0] ? await stadiumUpgradeDetails(this.prisma, club.stadiums[0]) : null;
 
     return {
       id: club.id.toString(),
@@ -153,6 +156,7 @@ export class ClubsService {
         capacity: club.stadiums[0].capacity,
         condition: Number(club.stadiums[0].condition) || 100,
         image_url: club.stadiums[0].image_url || null,
+        ...stadiumUpgrade,
       } : null,
       manager: club.users ? {
         id: club.users.id.toString(),
@@ -176,6 +180,7 @@ export class ClubsService {
         code: f.facility_types?.code,
         current_level: f.facility_levels?.level || 1,
         status: f.status,
+        ...upgradeDetails.get(f.id),
       })),
     };
   }
@@ -357,98 +362,114 @@ export class ClubsService {
   }
 
   async getFacilities(clubId: bigint) {
-    return this.prisma.facilities.findMany({
+    const facilities = await this.prisma.facilities.findMany({
       where: { club_id: clubId },
       include: {
         facility_types: true,
         facility_levels: true,
       },
     });
+    const upgrades = await facilityUpgradeDetails(this.prisma, facilities);
+    return facilities.map(facility => ({ ...facility, ...upgrades.get(facility.id) }));
+  }
+
+  async upgradeStadium(userId: bigint, clubId: bigint) {
+    const initial = await this.prisma.clubs.findUnique({ where: { id: clubId }, select: { world_id: true } });
+    if (!initial) throw new NotFoundException('Không tìm thấy câu lạc bộ');
+    return this.prisma.$transaction(async tx => {
+      // Same lock order and shared construction slot as facility upgrades.
+      await tx.$queryRaw`SELECT id FROM clubs WHERE id = ${clubId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM seasons WHERE world_id = ${initial.world_id} AND status = 'ACTIVE' ORDER BY season_number DESC LIMIT 1 FOR UPDATE`;
+      const club = await tx.clubs.findUnique({ where: { id: clubId }, include: { financial_accounts: true } });
+      if (!club || club.owner_user_id !== userId) throw new BadRequestException('Bạn không có quyền quản lý CLB này');
+      const season = await tx.seasons.findFirst({ where: { world_id: club.world_id, status: 'ACTIVE' }, orderBy: { season_number: 'desc' } });
+      if (!season) throw new BadRequestException('Thế giới chưa có mùa giải đang hoạt động');
+      await assertConstructionSlot(tx, clubId);
+      const stadium = await tx.stadiums.findFirst({ where: { club_id: clubId }, orderBy: { id: 'asc' } });
+      if (!stadium) throw new NotFoundException('CLB chưa có sân vận động');
+      const targetCapacity = stadium.capacity + STADIUM_CAPACITY_INCREMENT;
+      if (stadium.capacity < 0 || targetCapacity > 2147483647) throw new BadRequestException('Sức chứa sân không hợp lệ');
+      const fin = club.financial_accounts[0];
+      const charged = fin && await tx.financial_accounts.updateMany({
+        where: { id: fin.id, balance_cash: { gte: STADIUM_UPGRADE_COST } },
+        data: { balance_cash: { decrement: STADIUM_UPGRADE_COST } },
+      });
+      if (!charged?.count) throw new BadRequestException('Không đủ ngân sách tiền mặt. Nâng sân vận động cần 10.000.000 CASH');
+      const upgrade = await tx.facility_upgrades.create({ data: {
+        facility_id: null, from_level_id: null, to_level_id: null,
+        stadium_id: stadium.id, from_capacity: stadium.capacity, to_capacity: targetCapacity, cost: STADIUM_UPGRADE_COST,
+        start_season_id: season.id, start_season_day: season.current_day,
+        upgrade_days: FACILITY_UPGRADE_DAYS, days_remaining: FACILITY_UPGRADE_DAYS,
+        completion_season_day: null,
+        started_at: new Date(), status: FACILITY_UPGRADE_ACTIVE,
+      } });
+      await tx.financial_transactions.create({ data: {
+        club_id: clubId, financial_account_id: fin.id, type: 'FACILITY_UPGRADE', category: 'INFRASTRUCTURE',
+        amount: STADIUM_UPGRADE_COST, currency_type: 'CASH', reference_type: 'STADIUM', reference_id: stadium.id,
+        description: `Mở rộng ${stadium.name}: ${stadium.capacity} → ${targetCapacity} chỗ (48 giờ)`,
+        season_id: season.id, season_day: season.current_day, transaction_date: new Date(),
+        idempotency_key: `STADIUM_UPGRADE_${upgrade.id}`,
+      } });
+      return {
+        message: 'Đã khởi công mở rộng sân vận động. Hoàn tất sau 48 giờ.',
+        cost: STADIUM_UPGRADE_COST, from_capacity: stadium.capacity, to_capacity: targetCapacity,
+        upgrade_days: FACILITY_UPGRADE_DAYS, ...upgradeTiming(upgrade),
+        remaining_cash: Number(fin.balance_cash) - STADIUM_UPGRADE_COST,
+      };
+    }, { timeout: 15000, isolationLevel: 'ReadCommitted' });
   }
 
   async upgradeFacility(userId: bigint, clubId: bigint, facilityId: bigint) {
-    const club = await this.prisma.clubs.findFirst({
-      where: { id: clubId, owner_user_id: userId },
-      include: { financial_accounts: true },
-    });
+    const initial = await this.prisma.clubs.findUnique({ where: { id: clubId }, select: { world_id: true } });
+    if (!initial) throw new NotFoundException('Không tìm thấy câu lạc bộ');
 
-    if (!club) {
-      throw new BadRequestException('Bạn không có quyền quản lý CLB này');
-    }
+    return this.prisma.$transaction(async tx => {
+      // Day advancement and construction share the season lock. The club lock
+      // serializes requests for DIFFERENT buildings belonging to the same club.
+      await tx.$queryRaw`SELECT id FROM clubs WHERE id = ${clubId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM seasons WHERE world_id = ${initial.world_id} AND status = 'ACTIVE' ORDER BY season_number DESC LIMIT 1 FOR UPDATE`;
+      const club = await tx.clubs.findUnique({ where: { id: clubId }, include: { financial_accounts: true } });
+      if (!club || club.owner_user_id !== userId) throw new BadRequestException('Bạn không có quyền quản lý CLB này');
+      const season = await tx.seasons.findFirst({ where: { world_id: club.world_id, status: 'ACTIVE' }, orderBy: { season_number: 'desc' } });
+      if (!season) throw new BadRequestException('Thế giới chưa có mùa giải đang hoạt động');
+      await assertConstructionSlot(tx, clubId);
 
-    const facility = await this.prisma.facilities.findUnique({
-      where: { id: facilityId },
-      include: { facility_types: true, facility_levels: true },
-    });
-
-    if (!facility || facility.club_id !== clubId) {
-      throw new NotFoundException('Không tìm thấy cơ sở vật chất');
-    }
-
-    const currentLevel = facility.facility_levels?.level || 0;
-    const nextLevel = currentLevel + 1;
-    const levelConfig = await this.prisma.facility_levels.findFirst({
-      where: {
-        facility_type_id: facility.facility_type_id,
-        level: nextLevel,
-      },
-    });
-
-    if (!levelConfig) {
-      throw new BadRequestException('Cơ sở vật chất này đã đạt cấp độ tối đa');
-    }
-
-    const costCash = Number(levelConfig.cost);
-    const fin = club.financial_accounts?.[0];
-    const currentCash = Number(fin?.balance_cash || 0);
-
-    if (!fin || currentCash < costCash) {
-      throw new BadRequestException(
-        `Không đủ ngân sách tiền mặt. Cần: ${costCash.toLocaleString()} CASH, Hiện có: ${currentCash.toLocaleString()} CASH`,
-      );
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.financial_accounts.update({
-        where: { id: fin.id },
+      const facility = await tx.facilities.findUnique({ where: { id: facilityId }, include: { facility_types: true, facility_levels: true } });
+      if (!facility || facility.club_id !== clubId) throw new NotFoundException('Không tìm thấy cơ sở vật chất');
+      if (!['OPERATIONAL', 'ACTIVE'].includes(facility.status)) throw new BadRequestException('Công trình chưa sẵn sàng để nâng cấp');
+      const nextLevel = facility.facility_levels.level + 1;
+      const levelConfig = await tx.facility_levels.findFirst({ where: { facility_type_id: facility.facility_type_id, level: nextLevel } });
+      if (!levelConfig) throw new BadRequestException('Cơ sở vật chất này đã đạt cấp độ tối đa');
+      const costCash = Number(levelConfig.cost);
+      if (!Number.isFinite(costCash) || costCash < 0) throw new BadRequestException('Chi phí nâng cấp không hợp lệ');
+      const fin = club.financial_accounts[0];
+      const charged = fin && await tx.financial_accounts.updateMany({
+        where: { id: fin.id, balance_cash: { gte: costCash } },
         data: { balance_cash: { decrement: costCash } },
-      }),
-      this.prisma.facilities.update({
-        where: { id: facilityId },
-        data: { facility_level_id: levelConfig.id },
-      }),
-      this.prisma.facility_upgrades.create({
-        data: {
-          facility_id: facilityId,
-          from_level_id: facility.facility_level_id,
-          to_level_id: levelConfig.id,
-          cost: costCash,
-          started_at: new Date(),
-          status: 'COMPLETED',
-        },
-      }),
-      this.prisma.financial_transactions.create({
-        data: {
-          club_id: clubId,
-          financial_account_id: fin.id,
-          type: 'FACILITY_UPGRADE',
-          category: 'INFRASTRUCTURE',
-          amount: costCash,
-          currency_type: 'CASH',
-          reference_type: 'FACILITY',
-          reference_id: facilityId,
-          description: `Nâng cấp ${facility.facility_types?.name} lên cấp ${nextLevel}`,
-          transaction_date: new Date(),
-          idempotency_key: `FACILITY_UPGRADE_${facilityId}_LVL_${nextLevel}_${Date.now()}`,
-        },
-      }),
-    ]);
-
-    return {
-      message: `Đã nâng cấp thành công ${facility.facility_types?.name} lên Cấp ${nextLevel}!`,
-      new_level: nextLevel,
-      remaining_cash: currentCash - costCash,
-    };
+      });
+      if (!charged?.count) throw new BadRequestException(`Không đủ ngân sách tiền mặt. Cần: ${costCash.toLocaleString()} CASH`);
+      const upgrade = await tx.facility_upgrades.create({ data: {
+        facility_id: facilityId, from_level_id: facility.facility_level_id, to_level_id: levelConfig.id,
+        cost: costCash, start_season_id: season.id, start_season_day: season.current_day,
+        upgrade_days: FACILITY_UPGRADE_DAYS, days_remaining: FACILITY_UPGRADE_DAYS,
+        completion_season_day: null,
+        started_at: new Date(), status: FACILITY_UPGRADE_ACTIVE,
+      } });
+      // Retain the old level and its benefits throughout construction.
+      await tx.facilities.update({ where: { id: facilityId }, data: { status: 'UPGRADING' } });
+      await tx.financial_transactions.create({ data: {
+        club_id: clubId, financial_account_id: fin.id, type: 'FACILITY_UPGRADE', category: 'INFRASTRUCTURE',
+        amount: costCash, currency_type: 'CASH', reference_type: 'FACILITY', reference_id: facilityId,
+        description: `Khởi công nâng cấp ${facility.facility_types.name} lên cấp ${nextLevel} (48 giờ)`,
+        season_id: season.id, season_day: season.current_day, transaction_date: new Date(),
+        idempotency_key: `FACILITY_UPGRADE_${upgrade.id}`,
+      } });
+      return {
+        message: `Đã bắt đầu nâng cấp ${facility.facility_types.name}. Hoàn tất sau 48 giờ.`,
+        target_level: nextLevel, cost: costCash, upgrade_days: FACILITY_UPGRADE_DAYS,
+        ...upgradeTiming(upgrade), remaining_cash: Number(fin.balance_cash) - costCash,
+      };
+    }, { timeout: 15000, isolationLevel: 'ReadCommitted' });
   }
 
     async getClubDashboard(clubId: bigint) {
@@ -1162,7 +1183,9 @@ export class ClubsService {
   async getClubStadium(clubId: bigint) {
     const stadium = await this.prisma.stadiums.findFirst({
       where: { club_id: clubId },
+      orderBy: { id: 'asc' },
     });
+    const stadiumUpgrade = stadium ? await stadiumUpgradeDetails(this.prisma, stadium) : null;
 
     const recentMatchesCount = await this.prisma.matches.count({
       where: {
@@ -1235,18 +1258,13 @@ export class ClubsService {
       }
     };
 
+    const upgradeDetails = await facilityUpgradeDetails(this.prisma, dbFacilities);
     const formattedFacilities = await Promise.all(
       dbFacilities.map(async (f) => {
         const currentLevel = f.facility_levels?.level || 1;
         const meta = getFacilityMeta(f.facility_types?.code || '');
 
-        // Lấy thông tin cấp tiếp theo
-        const nextLevelConfig = await this.prisma.facility_levels.findFirst({
-          where: {
-            facility_type_id: f.facility_type_id,
-            level: currentLevel + 1,
-          },
-        });
+        const upgrade = upgradeDetails.get(f.id);
 
         return {
           id: f.id.toString(),
@@ -1255,12 +1273,11 @@ export class ClubsService {
           name: f.facility_types?.name || 'Cơ sở hạ tầng',
           description: f.facility_types?.description || '',
           level: currentLevel,
-          max_level: 10,
+          ...upgrade,
           level_name: f.facility_levels?.name || `Cấp ${currentLevel}`,
           cost: Number(f.facility_levels?.cost || 0),
-          upgrade_days: f.facility_levels?.upgrade_days || 7,
-          next_cost: nextLevelConfig ? Number(nextLevelConfig.cost) : null,
-          next_upgrade_days: nextLevelConfig ? nextLevelConfig.upgrade_days : null,
+          next_cost: upgrade.upgrade_cost,
+          next_upgrade_days: upgrade.upgrade_cost != null ? FACILITY_UPGRADE_DAYS : null,
           status: f.status || 'OPERATIONAL',
           icon: meta.icon,
           badgeColor: meta.badgeColor,
@@ -1273,6 +1290,7 @@ export class ClubsService {
       id: stadium?.id ? stadium.id.toString() : '1',
       club_id: clubId.toString(),
       name: stadium?.name || 'Sân Vận Động Trung Tâm',
+      ...stadiumUpgrade,
       capacity,
       condition,
       image_url: stadium?.image_url || 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&w=1200&q=80',

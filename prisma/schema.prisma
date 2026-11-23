@@ -618,9 +618,12 @@ model facility_types {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model facility_upgrades {
   id                                                               BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
-  facility_id                                                      BigInt          @db.UnsignedBigInt
-  from_level_id                                                    BigInt          @db.UnsignedBigInt
-  to_level_id                                                      BigInt          @db.UnsignedBigInt
+  facility_id                                                      BigInt?         @db.UnsignedBigInt
+  from_level_id                                                    BigInt?         @db.UnsignedBigInt
+  to_level_id                                                      BigInt?         @db.UnsignedBigInt
+  stadium_id                                                       BigInt?         @db.UnsignedBigInt
+  from_capacity                                                    Int?
+  to_capacity                                                      Int?
   cost                                                             Decimal         @default(0.00) @db.Decimal(18, 2)
   start_season_id                                                  BigInt?         @db.UnsignedBigInt
   start_season_day                                                 Int             @default(1)
@@ -630,13 +633,16 @@ model facility_upgrades {
   started_at                                                       DateTime        @db.DateTime(0)
   completed_at                                                     DateTime?       @db.DateTime(0)
   status                                                           String          @default("") @db.VarChar(30)
-  facilities                                                       facilities      @relation(fields: [facility_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_facility_id")
-  facility_levels_facility_upgrades_from_level_idTofacility_levels facility_levels @relation("facility_upgrades_from_level_idTofacility_levels", fields: [from_level_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_from_level_id")
-  facility_levels_facility_upgrades_to_level_idTofacility_levels   facility_levels @relation("facility_upgrades_to_level_idTofacility_levels", fields: [to_level_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_to_level_id")
+  facilities                                                       facilities?     @relation(fields: [facility_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_facility_id")
+  stadiums                                                         stadiums?       @relation(fields: [stadium_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_stadium_id")
+  facility_levels_facility_upgrades_from_level_idTofacility_levels facility_levels? @relation("facility_upgrades_from_level_idTofacility_levels", fields: [from_level_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_from_level_id")
+  facility_levels_facility_upgrades_to_level_idTofacility_levels   facility_levels? @relation("facility_upgrades_to_level_idTofacility_levels", fields: [to_level_id], references: [id], onDelete: Cascade, map: "fk_facility_upgrades_to_level_id")
 
   @@index([facility_id], map: "idx_facility_upgrades_facility_id")
   @@index([from_level_id], map: "idx_facility_upgrades_from_level_id")
   @@index([to_level_id], map: "idx_facility_upgrades_to_level_id")
+  @@index([stadium_id, status], map: "idx_facility_upgrades_stadium_status")
+  // The service validates the construction target; MySQL CHECK conflicts with cascading foreign keys.
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -1486,6 +1492,7 @@ model stadiums {
   condition Decimal   @default(0.0000) @db.Decimal(10, 4)
   image_url String?   @db.VarChar(255)
   matches   matches[]
+  facility_upgrades facility_upgrades[]
   clubs     clubs     @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_stadiums_club_id")
 
   @@index([club_id], map: "idx_stadiums_club_id")

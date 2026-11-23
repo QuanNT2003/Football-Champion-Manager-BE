@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CompetitionsService } from '../competitions/competitions.service';
@@ -168,15 +168,16 @@ export class GameWorldService implements OnApplicationBootstrap {
       const isTransferWindowOpen = (nextDay <= 2) || (nextDay >= 18 && nextDay <= 19);
 
       // Tiếp tục ngày tiếp theo trong mùa hiện tại
-      await this.prisma.seasons.update({
-        where: { id: season.id },
-        data: { 
-          current_day: nextDay,
-          is_transfer_window_open: isTransferWindowOpen,
-        },
-      });
-
-      await this.prisma.$executeRaw`
+      await this.prisma.$transaction(async tx => {
+        const advanced = await tx.seasons.updateMany({
+          where: { id: season.id, current_day: season.current_day, status: 'ACTIVE' },
+          data: {
+            current_day: nextDay,
+            is_transfer_window_open: isTransferWindowOpen,
+          },
+        });
+        if (!advanced.count) throw new ConflictException('Ngày game đã được xử lý bởi một yêu cầu khác');
+        await tx.$executeRaw`
         UPDATE server_timeline 
         SET season_day = ${nextDay},
             world_day = world_day + 1,
@@ -184,7 +185,8 @@ export class GameWorldService implements OnApplicationBootstrap {
             is_transfer_window_open = ${isTransferWindowOpen},
             updated_at = NOW()
         WHERE world_id = ${worldId}
-      `;
+        `;
+      }, { timeout: 20000 });
 
       // Ở các ngày sau kỳ chuyển nhượng: Tự động hủy các offer chưa có kết quả (PENDING -> CANCELLED)
       if (!isTransferWindowOpen) {
@@ -243,8 +245,10 @@ export class GameWorldService implements OnApplicationBootstrap {
     `;
 
     await this.prisma.$executeRaw`
-      UPDATE financial_accounts
-      SET cash_balance = cash_balance + 25000
+      UPDATE financial_accounts fa
+      JOIN clubs c ON c.id = fa.club_id
+      SET fa.balance_cash = fa.balance_cash + 25000
+      WHERE c.world_id = ${worldId}
     `;
 
     return {

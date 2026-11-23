@@ -44,6 +44,23 @@ Các lứa cũ thiếu snapshot được giữ nguyên, không tự tạo lại 
 
 `npm run test:academy` build và kiểm thử nghiệp vụ. `npm run test:academy:db` kiểm thử MySQL bằng thế giới/CLB riêng rồi rollback toàn bộ dữ liệu kiểm thử; cần database có cấu trúc khớp schema chính và có dữ liệu người dùng, CLB, tiền tệ SOFT hoạt động, học viện cấp 10.
 
+## Nâng cấp cơ sở vật chất
+
+- `POST /clubs/:id/facilities/:facilityId/upgrade` kiểm tra quyền quản lý, trừ CASH theo `facility_levels.cost` của cấp tiếp theo và tạo công trình `IN_PROGRESS` trong cùng transaction. Mỗi CLB chỉ có một công trình đang thi công; khóa hàng CLB và mùa giải ngăn hai yêu cầu đồng thời thu phí hai lần.
+- Mọi công trình mất cố định **48 giờ thực tính từ `started_at`**, không phụ thuộc chuyển ngày game hoặc chuyển mùa. Ví dụ khởi công 23:00 ngày 23/11: đến 00:00 ngày 24/11 vẫn còn 47 giờ, hạn hoàn tất là 23:00 ngày 25/11. `upgrade_days = 2` lưu thời lượng; `completion_season_day` không còn dùng để chốt công trình mới.
+- `FacilityUpgradeScheduler` kiểm tra mỗi phút cho tất cả world và chạy ngay khi khởi động để chốt công trình quá hạn lúc server tắt. Các công trình đủ 48 giờ được cập nhật trong transaction riêng sau khi khóa CLB; lỗi một công trình được ghi log và thử lại lượt sau. Khi khởi công công trình mới, backend cũng chốt công trình cũ đã đủ giờ trước khi kiểm tra lượt thi công.
+- Trong lúc thi công, facility giữ cấp cũ. Khi đủ 48 giờ, hệ thống cập nhật cấp mới, `OPERATIONAL`, lịch sử `COMPLETED` và `completed_at`; không thu thêm phí. Chỉ dòng còn `IN_PROGRESS` được chốt nên chạy lại hoặc nhiều server không tăng cấp/cộng chỗ hai lần.
+- API trả `active_upgrade` gồm `started_at`, `completes_at = started_at + 48h`, `server_time`, `remaining_seconds`, `days_remaining` làm tròn lên theo thời gian thực. Frontend đếm ngược giờ/phút/giây mỗi giây và tải lại dữ liệu khi đang thi công để nhận kết quả đã chốt.
+- Cả nâng cơ sở và nâng sân dùng chung bảng `facility_upgrades`. `npm run test:facilities` kiểm thử tính phí, chống nâng đồng thời, rollback, tiến ngày, chuyển mùa và metadata bằng database giả lập.
+
+### Mở rộng sân vận động
+
+- `POST /clubs/:id/stadium/upgrade`: phí cố định **10.000.000 CASH**, tăng **5.000 chỗ/lần**, thi công **đủ 48 giờ thực**. Có thể mở rộng nhiều lần; số lượng ảnh minh họa không giới hạn số lần nâng. Sân đang thi công vẫn dùng sức chứa cũ.
+- `stadiums.capacity` là sức chứa đã hoàn tất và đang phục vụ trận đấu. Dùng lại `facility_upgrades`, bổ sung `stadium_id`, `from_capacity`, `to_capacity`. Mỗi dòng tham chiếu đúng một đối tượng: nâng cơ sở dùng `facility_id`, `from_level_id`, `to_level_id`; nâng sân dùng `stadium_id`, sức chứa trước/sau, còn ba cột cơ sở để NULL. Backend ghi đúng bộ tham chiếu theo loại nâng cấp; không dùng CHECK trên các cột khóa ngoại CASCADE vì MySQL báo lỗi 3823.
+- Khi khởi công, trong một transaction: khóa CLB và mùa, kiểm tra không có nâng cấp sân hoặc cơ sở khác, trừ tiền, lưu lịch sử mở rộng và một dòng `financial_transactions` (`type = FACILITY_UPGRADE`, `reference_type = STADIUM`, `reference_id = stadium_id`). Không cập nhật sức chứa lúc này.
+- Khi đã qua `started_at + 48h`, scheduler cộng `5000` vào `stadiums.capacity` và chốt dòng `facility_upgrades` thành `COMPLETED` trong cùng transaction. Xử lý lại không cộng thêm chỗ hoặc thu thêm tiền. API chi tiết sân/CLB trả sức chứa hiện tại, sức chứa đích và hạn hoàn tất.
+- Đổi sang thời gian thực dùng các cột hiện có, không cần migration hoặc import lại database. Các dòng đang `IN_PROGRESS` tính hạn từ `started_at` đã lưu; lịch sử đã `COMPLETED` giữ nguyên. Schema chuẩn trong `../qkaito_football_champion_schema.sql` tiếp tục dùng cho khởi tạo database mới.
+
 ## 🏛️ Kiến Trúc Phân Hệ (12 Modules)
 
 | Phân hệ (Module) | Mô tả & Chức năng chính |

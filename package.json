@@ -6,6 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "test:facilities": "npm run build && node --test test/facilities.test.cjs",
     "test:training": "npm run build && node --test test/training.test.cjs",
     "test:academy": "npm run build && node --test test/academy.test.cjs",
     "test:academy:db": "npm run build && node test/academy.integration.cjs",

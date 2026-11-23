@@ -160,4 +160,12 @@ export class ClubsController {
       BigInt(facilityId),
     );
   }
+
+  @Post(':id/stadium/upgrade')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mở rộng sân vận động thêm 5.000 chỗ, phí 10 triệu CASH, thi công đủ 48 giờ kể từ khởi công' })
+  async upgradeStadium(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.clubsService.upgradeStadium(BigInt(user.id), BigInt(id));
+  }
 }
