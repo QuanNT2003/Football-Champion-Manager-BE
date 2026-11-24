@@ -6,13 +6,16 @@ import { ScheduleTrainingDto } from './dto';
 import {
   agePenalty, categoryCoachAttribute, coachTrainingSquad, drillAttributes, DRILL_GAIN_WEIGHTS, FITNESS_PER_DRILL, groupCoaches,
   recommendation, recommendedStyle, rollDrill, TRAINING_COST, TRAINING_SLOTS,
-  trainingChance, TrainingSquad,
+  trainingChance, trainingMentality, TrainingSquad,
 } from './training.rules';
 
 type Db = Prisma.TransactionClient;
-const playerInclude = { player_attributes: true, player_status: true } as const;
+const playerInclude = {
+  player_attributes: true, player_status: true,
+} as const;
 const trainingPlayerInclude = {
   ...playerInclude,
+  player_mentality: { select: { professionalism: true, determination: true, ambition: true, complacency: true } },
   player_positions: {
     orderBy: { position_id: 'asc' as const },
     include: { positions: { include: {
@@ -20,6 +23,37 @@ const trainingPlayerInclude = {
     } } },
   },
 } as const;
+
+const jsonObject = (value: Prisma.JsonValue): Prisma.JsonObject | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+const jsonObjects = (value: Prisma.JsonValue | undefined): Prisma.JsonObject[] =>
+  Array.isArray(value) ? value.map(jsonObject).filter((item): item is Prisma.JsonObject => !!item) : [];
+
+/** Keep formula inputs and probability snapshots in storage, outside the player API. */
+function publicSession<T extends { plan: Prisma.JsonValue; results: Prisma.JsonValue }>(session: T) {
+  const plan = jsonObject(session.plan);
+  const results = jsonObject(session.results);
+  return {
+    ...session,
+    plan: plan ? {
+      squadType: plan.squadType, level: plan.level,
+      drills: jsonObjects(plan.drills).map(drill => ({
+        slot: drill.slot, id: drill.id, code: drill.code, name: drill.name,
+        category: drill.category, attributes: drill.attributes,
+      })),
+    } : null,
+    results: results ? {
+      completedAt: results.completedAt,
+      players: jsonObjects(results.players).map(player => ({
+        id: player.id, name: player.name, fitnessBefore: player.fitnessBefore, fitnessAfter: player.fitnessAfter,
+        drills: jsonObjects(player.drills).map(drill => ({
+          slot: drill.slot, code: drill.code,
+          gains: jsonObjects(drill.gains).map(gain => ({ attribute: gain.attribute, from: gain.from, to: gain.to })),
+        })),
+      })),
+    } : null,
+  };
+}
 
 @Injectable()
 export class TrainingService {
@@ -80,21 +114,18 @@ export class TrainingService {
       this.prisma.players.findMany({ where: { current_club_id: clubId, ...squadFilter }, include: playerInclude, orderBy: { id: 'asc' } }),
     ]);
     return {
-      squadType, baseChance: 30, slots: TRAINING_SLOTS, fitnessPerDrill: FITNESS_PER_DRILL, fitnessCost: TRAINING_COST,
-      ...environment, types,
+      squadType, slots: TRAINING_SLOTS, fitnessPerDrill: FITNESS_PER_DRILL, fitnessCost: TRAINING_COST,
+      level: environment.level, headCoach: environment.headCoach, types,
       recommendation: { style: environment.style, headCoach: environment.headCoach, trainingTypeIds: recommendation(environment.style, types) },
       players: players.map(player => {
-        const penalty = agePenalty(player.age, player.squad_type);
         const fitness = player.player_status?.fitness ?? 0;
         return {
           id: player.id.toString(), name: `${player.first_name} ${player.last_name}`.trim(),
-          age: player.age, squadType: player.squad_type, fitness, agePenalty: penalty,
+          age: player.age, squadType: player.squad_type, fitness,
           eligible: !!player.player_attributes && !!player.player_status && fitness >= TRAINING_COST
             && !player.player_status.is_injured && !player.player_status.is_on_national_duty,
           isInjured: player.player_status?.is_injured ?? false,
           onNationalDuty: player.player_status?.is_on_national_duty ?? false,
-          chances: Object.fromEntries(Object.entries(environment.coaches).map(([category, coach]) =>
-            [category, trainingChance(environment.level, coach.skill, penalty)])),
         };
       }),
     };
@@ -102,9 +133,10 @@ export class TrainingService {
 
   async getClubSessions(userId: bigint, clubId: bigint) {
     await this.ownedClub(this.prisma, userId, clubId);
-    return this.prisma.training_sessions.findMany({
+    const sessions = await this.prisma.training_sessions.findMany({
       where: { club_id: clubId }, include: { training_types: true }, orderBy: { id: 'desc' }, take: 20,
     });
+    return sessions.map(publicSession);
   }
 
   async scheduleSession(userId: bigint, clubId: bigint, dto: ScheduleTrainingDto) {
@@ -167,25 +199,40 @@ export class TrainingService {
           plan: {
             squadType: dto.squadType, level: environment.level, levelBonus: environment.levelBonus, drills: plan,
             chanceScope: 'DRILL', gainCountWeights: [...DRILL_GAIN_WEIGHTS],
+            chanceFormula: 'MENTALITY_V3',
           },
         },
       });
       const results = [];
       for (const player of players) {
         const attributes = { ...player.player_attributes };
+        const position = player.player_positions.find(p => p.is_preferred) || player.player_positions[0];
+        const weights = position?.positions.position_attributes ?? [];
+        let ovr = Math.max(player.ovr, calculateDynamicOvr(attributes, weights));
         const penalty = agePenalty(player.age, player.squad_type);
+        const mentality = trainingMentality(player.age, player.player_mentality);
         const drills = plan.map(drill => {
-          const chance = trainingChance(environment.level, drill.coach.skill, penalty);
-          const gains = rollDrill(attributes, drillAttributes[drill.code], chance);
+          const chance = trainingChance(environment.level, drill.coach.skill, penalty, mentality.totalBonus);
+          const gains: ReturnType<typeof rollDrill> = [];
+          if (ovr < player.potential) {
+            // Roll on a copy, then accept individual gains only while below the potential ceiling.
+            const proposed = rollDrill({ ...attributes }, drillAttributes[drill.code], chance);
+            for (const gain of proposed) {
+              if (ovr >= player.potential) break;
+              const nextOvr = calculateDynamicOvr({ ...attributes, [gain.attribute]: gain.to }, weights);
+              if (nextOvr > player.potential) continue;
+              attributes[gain.attribute] = gain.to;
+              ovr = nextOvr;
+              gains.push(gain);
+            }
+          }
           return { slot: drill.slot, code: drill.code, chance, gains };
         });
         const gains = drills.flatMap(drill => drill.gains);
         const data = Object.fromEntries([...new Set(gains.map(gain => gain.attribute))].map(key => [key, attributes[key]]));
         if (gains.length) {
           await tx.player_attributes.update({ where: { player_id: player.id }, data });
-          const position = player.player_positions.find(p => p.is_preferred) || player.player_positions[0];
-          const weights = position?.positions.position_attributes ?? [];
-          await tx.players.update({ where: { id: player.id }, data: { ovr: calculateDynamicOvr(attributes, weights) } });
+          await tx.players.update({ where: { id: player.id }, data: { ovr } });
           await tx.player_attribute_history.createMany({ data: drills.flatMap(drill => drill.gains.map(gain => ({
             player_id: player.id, attribute_id: attributeIds.get(gain.attribute), old_value: gain.from, new_value: gain.to,
             reason: `TRAINING:${session.id}:SLOT:${drill.slot}:${drill.code}`,
@@ -201,13 +248,15 @@ export class TrainingService {
         } });
         results.push({
           id: player.id.toString(), name: `${player.first_name} ${player.last_name}`.trim(),
-          agePenalty: penalty, fitnessBefore, fitnessAfter: fitnessBefore - TRAINING_COST, drills,
+          age: player.age, agePenalty: penalty, mentality,
+          potential: player.potential, ovrBefore: player.ovr, ovrAfter: gains.length ? ovr : player.ovr,
+          fitnessBefore, fitnessAfter: fitnessBefore - TRAINING_COST, drills,
         });
       }
       const saved = await tx.training_sessions.update({
         where: { id: session.id }, data: { results: { completedAt: new Date().toISOString(), players: results } },
       });
-      return { message: 'Đã hoàn thành 6 bài tập', session: saved };
+      return { message: 'Đã hoàn thành 6 bài tập', session: publicSession(saved) };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 30000 });
   }
 }

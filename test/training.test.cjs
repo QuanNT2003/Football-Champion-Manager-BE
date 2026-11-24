@@ -5,7 +5,7 @@ require('tsconfig-paths').register({ baseUrl: './dist', paths: { '@/*': ['*'] } 
 const { validate } = require('class-validator');
 const { ScheduleTrainingDto } = require('../dist/modules/training/dto');
 const { TrainingService } = require('../dist/modules/training/training.service');
-const { agePenalty, trainingChance, rollDrill, groupCoaches, coachTrainingSquad, recommendedStyle, recommendation, drillAttributes } = require('../dist/modules/training/training.rules');
+const { agePenalty, trainingChance, trainingMentality, rollDrill, groupCoaches, coachTrainingSquad, recommendedStyle, recommendation, drillAttributes } = require('../dist/modules/training/training.rules');
 
 const attributeKeys = [...new Set(Object.values(drillAttributes).flat())];
 function fixture() {
@@ -15,9 +15,10 @@ function fixture() {
     timeline: { world_id: 9n, season_id: 7n, season_day: 8 },
     club: { id: 10n, world_id: 9n, owner_user_id: 100n },
     players: [1n, 2n].map((id, i) => ({
-      id, current_club_id: 10n, first_name: 'Player', last_name: String(id), age: i ? 20 : 25, squad_type: i ? 'YOUTH_U21' : 'FIRST_TEAM', ovr: 50,
+      id, current_club_id: 10n, first_name: 'Player', last_name: String(id), age: i ? 20 : 25, squad_type: i ? 'YOUTH_U21' : 'FIRST_TEAM', ovr: 50, potential: 100,
       player_attributes: { player_id: id, ...Object.fromEntries(attributeKeys.map(key => [key, 50])) },
       player_status: { player_id: id, fitness: 100, is_injured: false, is_on_national_duty: false },
+      player_mentality: { professionalism: 50, determination: 50, ambition: 50, complacency: 50 },
       player_positions: [],
     })),
     sessions: [], history: [], participation: [], tactics: [],
@@ -42,7 +43,11 @@ function fixture() {
     training_types: { findMany: async () => state.types },
     attributes: { findMany: async () => attributeKeys.map((code, i) => ({ id: BigInt(i + 1), code: code.toUpperCase() })) },
     players: {
-      findMany: async ({ where }) => state.players.filter(p => p.current_club_id === where.current_club_id && (!where.id || where.id.in.includes(p.id)) && (!where.squad_type || where.squad_type.in.includes(p.squad_type))),
+      findMany: async ({ where, include }) => {
+        if (where.id) assert.deepEqual(include.player_mentality.select, { professionalism: true, determination: true, ambition: true, complacency: true });
+        else assert.equal(include.player_mentality, undefined, 'overview does not load hidden mentality');
+        return state.players.filter(p => p.current_club_id === where.current_club_id && (!where.id || where.id.in.includes(p.id)) && (!where.squad_type || where.squad_type.in.includes(p.squad_type)));
+      },
       update: async ({ where, data }) => Object.assign(state.players.find(p => p.id === where.id), data),
     },
     player_attributes: { update: async ({ where, data }) => Object.assign(state.players.find(p => p.id === where.player_id).player_attributes, data) },
@@ -77,6 +82,15 @@ function fixture() {
 }
 const plan = (playerIds = ['1'], squadType = 'FIRST_TEAM') => ({ squadType, trainingTypeIds: ['1', '2', '1', '2', '1', '2'], playerIds });
 
+function assertNoTrainingInternals(value) {
+  if (!value || typeof value !== 'object') return;
+  const hidden = ['chance', 'chances', 'baseChance', 'levelBonus', 'agePenalty', 'mentality', 'mentalityBonus', 'coaches', 'coach', 'chanceFormula', 'chanceScope', 'gainCountWeights'];
+  for (const [key, child] of Object.entries(value)) {
+    assert.ok(!hidden.includes(key), `Player API must not expose ${key}`);
+    assertNoTrainingInternals(child);
+  }
+}
+
 // Formula examples also pin down the overlapping age-25 boundary.
 test('centre, coaching and age produce the stated probabilities', () => {
   assert.equal(trainingChance(1, 60, agePenalty(25, 'FIRST_TEAM')), 42);
@@ -91,6 +105,123 @@ test('centre, coaching and age produce the stated probabilities', () => {
   assert.equal(trainingChance(1, 63, 0), 42.6);
   assert.equal(trainingChance(30, 100, 0), 100);
   assert.equal(trainingChance(1, 0, 100), 0);
+});
+
+test('development uses the full average divided by age factor, with 50 determining only the sign', () => {
+  for (const [age, divisor] of [[19, 5], [20, 4], [21, 4], [22, 4], [25, 4], [26, 2], [30, 2], [31, 4]]) {
+    for (const average of [1, 30, 42, 49, 50, 51, 58, 70, 100]) {
+      const result = trainingMentality(age, { professionalism: average, determination: average, ambition: average, complacency: 50 });
+      assert.equal(result.average, average);
+      assert.equal(result.ageDivisor, divisor);
+      const expected = Math.sign(average - 50) * average / divisor;
+      assert.equal(result.developmentBonus, expected);
+      assert.equal(result.totalBonus, expected - (age >= 22 ? 25 : 0));
+    }
+  }
+  const mixed = trainingMentality(25, { professionalism: 90, determination: 30, ambition: 60, complacency: 50 });
+  assert.equal(mixed.average, 60);
+  assert.equal(mixed.developmentBonus, 15);
+  assert.ok(Math.abs(trainingMentality(20, { professionalism: 51 }).developmentBonus - 151 / 12) < 1e-12);
+});
+
+test('complacency always subtracts half its full score from age 22, including below and at 50', () => {
+  for (const age of [19, 20, 21, 22, 25, 26, 30, 31]) {
+    for (const complacency of [1, 30, 40, 49, 50, 51, 60, 70, 100]) {
+      const result = trainingMentality(age, { complacency });
+      const expected = age >= 22 ? -complacency / 2 : 0;
+      assert.equal(result.complacencyBonus, expected);
+      assert.equal(result.totalBonus, expected);
+    }
+  }
+  assert.equal(trainingMentality(25, { professionalism: 70, determination: 70, ambition: 70, complacency: 70 }).totalBonus, -17.5);
+});
+
+test('confirmed examples use signed development and an unconditional complacency deduction from age 22', () => {
+  const withAverage = average => ({ professionalism: average, determination: average, ambition: average });
+  assert.equal(trainingMentality(25, withAverage(58)).developmentBonus, 14.5);
+  assert.equal(trainingMentality(25, withAverage(42)).developmentBonus, -10.5);
+  assert.equal(trainingMentality(22, { complacency: 60 }).complacencyBonus, -30);
+  assert.equal(trainingMentality(22, { complacency: 40 }).complacencyBonus, -20);
+  assert.equal(trainingMentality(22, { complacency: 50 }).complacencyBonus, -25);
+  assert.equal(trainingMentality(21, { complacency: 60 }).complacencyBonus, 0);
+  assert.equal(trainingMentality(25, { ...withAverage(50), complacency: 50 }).totalBonus, -25);
+});
+
+test('missing mentality uses default scores of 50 and chance clamps only after all adjustments', () => {
+  assert.equal(trainingMentality(26).totalBonus, -25);
+  assert.equal(trainingMentality(26, null).totalBonus, -25);
+  assert.equal(trainingMentality(21, null).totalBonus, 0);
+  assert.equal(trainingMentality(26, { professionalism: NaN, determination: Infinity }).totalBonus, -25);
+  assert.equal(trainingMentality(26, { professionalism: 101 }).professionalism, 100);
+  assert.equal(trainingMentality(26, { complacency: -1 }).complacency, 1);
+  assert.equal(trainingChance(1, 63, 0, 2.5), 45.1);
+  assert.equal(trainingChance(1, 0, 50, 25), 5);
+  assert.equal(trainingChance(12, 100, 0, -10), 95);
+  assert.equal(trainingChance(1, 0, 25, -25), 0);
+  assert.equal(trainingChance(12, 100, 0, 25), 100);
+});
+
+test('both squads apply mentality internally without exposing formulas in player responses', async () => {
+  const originalRandom = Math.random;
+  // 30% lies between the positive and negative chances for both squads.
+  Math.random = () => 0.30;
+  try {
+    for (const squad of ['FIRST_TEAM', 'YOUTH']) {
+      for (const positive of [true, false]) {
+        const f = fixture();
+        const player = f.state().players[squad === 'FIRST_TEAM' ? 0 : 1];
+        player.age = squad === 'FIRST_TEAM' ? 25 : 22;
+        player.player_mentality = {
+          professionalism: positive ? 70 : 30, determination: positive ? 70 : 30,
+          ambition: positive ? 70 : 30, complacency: positive ? 30 : 70,
+        };
+        const before = structuredClone(player.player_mentality);
+        const overview = await f.service.getOverview(100n, 10n, squad);
+        assertNoTrainingInternals(overview);
+        const { session } = await f.service.scheduleSession(100n, 10n, plan([String(player.id)], squad));
+        assertNoTrainingInternals(session);
+        assertNoTrainingInternals(await f.service.getClubSessions(100n, 10n));
+        const saved = f.state().sessions[0];
+        const result = saved.results.players[0];
+        assert.equal(saved.plan.chanceFormula, 'MENTALITY_V3');
+        assert.equal(result.age, player.age);
+        assert.deepEqual(result.mentality, trainingMentality(player.age, before));
+        assert.equal(result.mentality.totalBonus, positive ? 2.5 : -42.5);
+        for (const drill of result.drills) {
+          const category = f.state().types.find(type => type.code === drill.code).category;
+          const base = (category === 'ATTACKING' ? 42 : 46) - (squad === 'YOUTH' ? 10 : 0);
+          assert.equal(drill.chance, Math.min(100, Math.max(0, base + (positive ? 2.5 : -42.5))));
+          assert.equal(drill.gains.length, positive ? 1 : 0);
+        }
+        assert.equal(f.state().history.length, positive ? 6 : 0);
+        assert.equal(player.player_status.fitness, 88);
+        assert.deepEqual(player.player_mentality, before);
+        player.player_mentality.professionalism = 99;
+        assert.equal(result.mentality.professionalism, before.professionalism);
+      }
+    }
+  } finally { Math.random = originalRandom; }
+});
+
+test('legacy players without mentality can still train using default trait scores', async () => {
+  const f = fixture();
+  f.state().players[0].player_mentality = null;
+  const overview = await f.service.getOverview(100n, 10n);
+  assertNoTrainingInternals(overview);
+  const { session } = await f.service.scheduleSession(100n, 10n, plan());
+  assertNoTrainingInternals(session);
+  assert.equal(f.state().sessions[0].results.players[0].mentality.totalBonus, -25);
+  assert.equal(f.state().sessions[0].results.players[0].drills[0].chance, 17);
+});
+
+test('legacy sessions with null snapshots remain readable without modifying stored history', async () => {
+  const f = fixture();
+  f.state().sessions.push({ id: 1n, plan: null, results: null });
+  const before = structuredClone(f.state().sessions);
+  const sessions = await f.service.getClubSessions(100n, 10n);
+  assert.deepEqual(sessions, before);
+  assert.deepEqual(f.state().sessions, before);
+  assertNoTrainingInternals(sessions);
 });
 
 test('coaching uses one best relevant specialist, excluding scouts and unrelated specialist roles', () => {
@@ -184,8 +315,8 @@ test('training applies all six ordered drills, charges fitness once and persists
   try {
     const overview = await f.service.getOverview(100n, 10n);
     const youthOverview = await f.service.getOverview(100n, 10n, 'YOUTH');
-    assert.equal(overview.players[0].chances.ATTACKING, 42);
-    assert.equal(youthOverview.players[0].chances.ATTACKING, 32);
+    assertNoTrainingInternals(overview);
+    assertNoTrainingInternals(youthOverview);
     const result = await f.service.scheduleSession(100n, 10n, plan());
     const youthResult = await f.service.scheduleSession(100n, 10n, plan(['2'], 'YOUTH'));
     const state = f.state();
@@ -202,16 +333,16 @@ test('training applies all six ordered drills, charges fitness once and persists
     }
     assert.equal(state.history.length, 12);
     assert.equal(state.participation.length, 2);
-    assert.equal(result.session.results.players[0].drills[0].chance, overview.players[0].chances.ATTACKING);
-    assert.equal(youthResult.session.results.players[0].drills[0].chance, youthOverview.players[0].chances.ATTACKING);
+    assert.equal(state.sessions[0].results.players[0].drills[0].chance, 17);
+    assert.equal(state.sessions[1].results.players[0].drills[0].chance, 32);
     assert.equal(result.session.plan.squadType, 'FIRST_TEAM');
     assert.equal(youthResult.session.plan.squadType, 'YOUTH');
     assert.equal(result.session.results.players[0].fitnessAfter, 88);
-    assert.equal(result.session.plan.chanceScope, 'DRILL');
-    assert.deepEqual(result.session.plan.gainCountWeights, [85, 10, 5]);
+    assert.equal(state.sessions[0].plan.chanceScope, 'DRILL');
+    assert.deepEqual(state.sessions[0].plan.gainCountWeights, [85, 10, 5]);
     assert.ok(result.session.results.players.every(p => p.drills.every(d => d.gains.length === 1)));
     assert.ok(state.participation.every(p => p.performance === 6));
-    assert.deepEqual(await f.service.getClubSessions(100n, 10n), state.sessions);
+    assert.deepEqual(await f.service.getClubSessions(100n, 10n), [result.session, youthResult.session]);
   } finally { Math.random = originalRandom; }
 });
 
@@ -269,6 +400,124 @@ test('gains in zero-weight attributes do not dilute the selected position OVR', 
     await f.service.scheduleSession(100n, 10n, plan());
     assert.equal(player.player_attributes.fin, 53);
     assert.equal(player.ovr, 80);
+  } finally { Math.random = originalRandom; }
+});
+
+test('players at or above potential never gain, in either squad, but still pay session fitness', async () => {
+  const originalRandom = Math.random;
+  Math.random = () => { throw new Error('A capped player must not roll for growth'); };
+  try {
+    for (const squad of ['FIRST_TEAM', 'YOUTH']) {
+      for (const [ovr, potential] of [[50, 50], [60, 55], [50, 0]]) {
+        const f = fixture();
+        const player = f.state().players[squad === 'FIRST_TEAM' ? 0 : 1];
+        Object.assign(player, { ovr, potential });
+        const before = structuredClone(player.player_attributes);
+        const { session } = await f.service.scheduleSession(100n, 10n, plan([String(player.id)], squad));
+        assert.ok(session.results.players[0].drills.every(drill => drill.gains.length === 0));
+        assert.deepEqual(player.player_attributes, before);
+        assert.equal(player.ovr, ovr);
+        assert.equal(player.potential, potential);
+        assert.equal(player.player_status.fitness, 88);
+        assert.equal(f.state().history.length, 0);
+        assert.equal(f.state().participation[0].performance, 0);
+        assertNoTrainingInternals(session);
+        assert.equal(session.results.players[0].potential, undefined);
+        assert.equal(session.results.players[0].ovrBefore, undefined);
+        assert.equal(session.results.players[0].ovrAfter, undefined);
+        assert.equal(f.state().sessions[0].results.players[0].potential, potential);
+        assert.equal(f.state().sessions[0].results.players[0].ovrAfter, ovr);
+      }
+    }
+  } finally { Math.random = originalRandom; }
+});
+
+test('reaching potential mid-session stops later drills and every subsequent session', async () => {
+  const f = fixture();
+  const player = f.state().players[0];
+  player.potential = 52;
+  player.player_positions = [{ is_preferred: true, positions: { position_attributes: [
+    { attribute_id: 1n, multiplier: 1, attributes: { code: 'FIN' } },
+  ] } }];
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    const { session } = await f.service.scheduleSession(100n, 10n, plan());
+    assert.deepEqual(session.results.players[0].drills.map(drill => drill.gains.length), [1, 1, 1, 0, 0, 0]);
+    assert.equal(player.player_attributes.fin, 52);
+    assert.equal(player.player_attributes.tac, 51);
+    assert.equal(player.ovr, 52);
+    assert.equal(f.state().history.length, 3);
+    assert.equal(f.state().participation[0].performance, 3);
+    const before = structuredClone(player.player_attributes);
+    Math.random = () => { throw new Error('No more growth after reaching potential'); };
+    const second = await f.service.scheduleSession(100n, 10n, plan());
+    assert.ok(second.session.results.players[0].drills.every(drill => drill.gains.length === 0));
+    assert.deepEqual(player.player_attributes, before);
+    assert.equal(player.ovr, 52);
+    assert.equal(player.player_status.fitness, 76);
+    assert.equal(f.state().history.length, 3);
+  } finally { Math.random = originalRandom; }
+});
+
+test('a multi-attribute drill stops immediately when rounded weighted OVR reaches potential', async () => {
+  const f = fixture();
+  const player = f.state().players[0];
+  player.potential = 51;
+  player.player_positions = [{ is_preferred: true, positions: { position_attributes: [
+    { attribute_id: 1n, multiplier: 1, attributes: { code: 'FIN' } },
+    { attribute_id: 2n, multiplier: 1, attributes: { code: 'CMP' } },
+    { attribute_id: 3n, multiplier: 1, attributes: { code: 'OTB' } },
+  ] } }];
+  const originalRandom = Math.random;
+  let draw = 0;
+  Math.random = () => draw++ % 5 === 1 ? 0.96 : 0;
+  try {
+    const { session } = await f.service.scheduleSession(100n, 10n, plan());
+    assert.deepEqual(session.results.players[0].drills.map(drill => drill.gains.length), [2, 0, 0, 0, 0, 0]);
+    assert.equal(player.player_attributes.fin, 51);
+    assert.equal(player.player_attributes.cmp, 51);
+    assert.equal(player.player_attributes.otb, 50);
+    assert.equal(player.ovr, 51);
+    assert.equal(f.state().history.length, 2);
+    assert.equal(f.state().participation[0].performance, 2);
+    assert.equal(draw, 5);
+    assert.equal(player.player_status.fitness, 88);
+  } finally { Math.random = originalRandom; }
+});
+
+test('potential also caps fallback OVR when no position weights exist', async () => {
+  const f = fixture();
+  const player = f.state().players[0];
+  player.potential = 51;
+  const originalRandom = Math.random;
+  let draw = 0;
+  Math.random = () => draw++ % 5 === 1 ? 0.96 : 0;
+  try {
+    const { session } = await f.service.scheduleSession(100n, 10n, plan());
+    assert.equal(player.ovr, 51);
+    assert.equal(f.state().history.length, 14);
+    assert.deepEqual(session.results.players[0].drills.map(drill => drill.gains.length), [3, 3, 3, 3, 2, 0]);
+    assert.equal(f.state().participation[0].performance, 14);
+  } finally { Math.random = originalRandom; }
+});
+
+test('recalculated OVR already at potential blocks growth even when stored OVR is stale', async () => {
+  const f = fixture();
+  const player = f.state().players[0];
+  player.potential = 60;
+  player.player_attributes.fin = 60;
+  player.player_positions = [{ is_preferred: true, positions: { position_attributes: [
+    { attribute_id: 1n, multiplier: 1, attributes: { code: 'FIN' } },
+  ] } }];
+  const before = structuredClone(player.player_attributes);
+  const originalRandom = Math.random;
+  Math.random = () => { throw new Error('Current weighted OVR has already reached potential'); };
+  try {
+    const { session } = await f.service.scheduleSession(100n, 10n, plan());
+    assert.ok(session.results.players[0].drills.every(drill => drill.gains.length === 0));
+    assert.deepEqual(player.player_attributes, before);
+    assert.equal(f.state().history.length, 0);
   } finally { Math.random = originalRandom; }
 });
 
@@ -459,7 +708,7 @@ test('coaches stay with their team, including youth roles on legacy first-team-t
   assert.equal(coachTrainingSquad({ role: 'ASSISTANT_COACH', squad_type: 'RESERVES' }), null);
 });
 
-test('overview separates rosters, head coaches, group bonuses and active tactics by team', async () => {
+test('overview separates rosters, head coaches and active tactics without revealing bonuses', async () => {
   const f = fixture();
   const head = (id, role, squad_type, attacking) => ({ staff_id: BigInt(id), role, squad_type, staff: { name: role, staff_type: 'COACH', tactical_style: 'BALANCED', staff_attributes: { attacking } } });
   f.staffContracts.push(head(31, 'HEAD_COACH', 'FIRST_TEAM', 50), head(32, 'HEAD_COACH_YOUTH', 'FIRST_TEAM', 90));
@@ -473,12 +722,10 @@ test('overview separates rosters, head coaches, group bonuses and active tactics
   assert.deepEqual(youth.players.map(p => p.id), ['2']);
   assert.equal(first.headCoach.id, '31');
   assert.equal(youth.headCoach.id, '32');
-  assert.equal(first.coaches.ATTACKING.skill, 60);
-  assert.equal(youth.coaches.ATTACKING.skill, 90);
   assert.equal(first.recommendation.style, 'TIKI_TAKA');
   assert.equal(youth.recommendation.style, 'COUNTER_ATTACK');
-  assert.equal(first.players[0].chances.ATTACKING, 42);
-  assert.equal(youth.players[0].chances.ATTACKING, 38);
+  assertNoTrainingInternals(first);
+  assertNoTrainingInternals(youth);
 });
 
 test('youth training records only youth participants and the youth head coach', async () => {
@@ -488,7 +735,7 @@ test('youth training records only youth participants and the youth head coach', 
   assert.equal(result.session.coach_staff_id, 32n);
   assert.equal(result.session.plan.squadType, 'YOUTH');
   assert.deepEqual(result.session.results.players.map(p => p.id), ['2']);
-  assert.equal(result.session.results.players[0].drills[0].chance, 38);
+  assert.equal(f.state().sessions[0].results.players[0].drills[0].chance, 38);
   assert.equal(f.state().players[0].player_status.fitness, 100);
   assert.equal(f.state().players[1].player_status.fitness, 88);
 });
@@ -498,8 +745,9 @@ test('missing youth coaches do not borrow first-team coaching bonuses or head co
   f.staffContracts.splice(1);
   const youth = await f.service.getOverview(100n, 10n, 'YOUTH');
   assert.equal(youth.headCoach, null);
-  assert.equal(youth.coaches.ATTACKING.bonus, 0);
-  assert.equal(youth.players[0].chances.ATTACKING, 20);
+  assertNoTrainingInternals(youth);
+  await f.service.scheduleSession(100n, 10n, plan(['2'], 'YOUTH'));
+  assert.equal(f.state().sessions[0].results.players[0].drills[0].chance, 20);
 });
 
 test('cross-team, mixed-team, missing and unsupported squad submissions have no side effects', async () => {

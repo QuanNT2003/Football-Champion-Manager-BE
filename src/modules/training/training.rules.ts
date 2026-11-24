@@ -42,9 +42,30 @@ export function agePenalty(age: number, squadType: string): number {
   return 0;
 }
 
-export function trainingChance(level: number, coachSkill: number, penalty: number) {
+type TrainingMentality = Partial<Record<'professionalism' | 'determination' | 'ambition' | 'complacency', number>>;
+
+/** Mentality changes drill success in percentage points; the traits themselves stay fixed. */
+export function trainingMentality(age: number, mentality?: TrainingMentality | null) {
+  const value = (key: keyof TrainingMentality) => {
+    const raw = mentality?.[key];
+    return typeof raw === 'number' && Number.isFinite(raw) ? Math.min(100, Math.max(1, raw)) : 50;
+  };
+  const traits = {
+    professionalism: value('professionalism'), determination: value('determination'),
+    ambition: value('ambition'), complacency: value('complacency'),
+  };
+  const average = (traits.professionalism + traits.determination + traits.ambition) / 3;
+  // Age 25 belongs to 20–25; the stronger effect starts at 26 and ends at 30.
+  const ageDivisor = age < 20 ? 5 : age <= 25 || age > 30 ? 4 : 2;
+  // Use the full score for magnitude; 50 only determines the sign (exactly 50 is neutral).
+  const developmentBonus = average > 50 ? average / ageDivisor : average < 50 ? -average / ageDivisor : 0;
+  const complacencyBonus = age < 22 ? 0 : -traits.complacency / 2;
+  return { ...traits, average, ageDivisor, developmentBonus, complacencyBonus, totalBonus: developmentBonus + complacencyBonus };
+}
+
+export function trainingChance(level: number, coachSkill: number, penalty: number, mentalityBonus = 0) {
   const levelBonus = (Math.max(1, level) - 1) * 5;
-  return Math.min(100, Math.max(0, 30 + levelBonus + coachSkill / 5 - penalty));
+  return Math.min(100, Math.max(0, 30 + levelBonus + coachSkill / 5 - penalty + mentalityBonus));
 }
 
 type CoachContract = {
