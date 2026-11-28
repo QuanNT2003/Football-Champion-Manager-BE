@@ -10,6 +10,7 @@ interface ResultContext extends DisciplineMatch {
   stage_id: bigint | null; group_id: bigint | null; tie_id: bigint | null;
   match_date: Date; season_day: number; match_type: string;
   competition_stages?: { stage_type: string } | null;
+  competition_seasons?: { name: string } | null;
 }
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 
@@ -90,6 +91,12 @@ export class MatchResultService {
             days_remaining: s.injuryDays, expected_return_season_day: match.season_day + s.injuryDays,
             start_date: match.match_date, expected_return_date: returnDate, status: 'ACTIVE',
           } });
+          await tx.club_news.create({ data: {
+            club_id: BigInt(team.id), season_id: match.season_id, news_type: 'INJURY',
+            title: `Chấn thương: ${row.player.name}`,
+            content: `${row.player.name} chấn thương trong trận ${input.home.name} ${result.homeScore}-${result.awayScore} ${input.away.name}, dự kiến nghỉ ${s.injuryDays} ngày.`,
+            published_at: new Date(),
+          } });
         }
         let yellowBan = false;
         if (match.season_id && match.competition_season_id && match.match_type !== 'FRIENDLY') {
@@ -111,11 +118,19 @@ export class MatchResultService {
           else await tx.player_statistics.create({ data: { ...where, ...totals } });
         }
         if (match.match_type !== 'FRIENDLY' && (s.redCards || yellowBan)) {
+          const bannedMatches = s.redCards && s.yellowCards !== 2 ? 2 : 1;
+          const reason = s.redCards ? s.yellowCards === 2 ? 'hai thẻ vàng' : 'thẻ đỏ trực tiếp' : 'tích lũy thẻ vàng';
           await tx.player_suspensions.create({ data: {
             player_id: playerId, competition_season_id: match.competition_season_id, match_id: match.id,
             reason: s.redCards ? s.yellowCards === 2 ? 'SECOND_YELLOW' : 'RED_CARD' : 'YELLOW_ACCUMULATION',
-            matches_banned: s.redCards && s.yellowCards !== 2 ? 2 : 1,
+            matches_banned: bannedMatches,
             start_date: match.match_date, status: 'ACTIVE',
+          } });
+          await tx.club_news.create({ data: {
+            club_id: BigInt(team.id), season_id: match.season_id, news_type: 'SUSPENSION',
+            title: `Treo giò: ${row.player.name}`,
+            content: `${row.player.name} bị treo giò ${bannedMatches} trận do ${reason} sau trận ${input.home.name} ${result.homeScore}-${result.awayScore} ${input.away.name}${match.competition_seasons?.name ? ` tại ${match.competition_seasons.name}` : ''}. Án phạt áp dụng trong phạm vi giải đấu theo quy định kỷ luật.`,
+            published_at: new Date(),
           } });
           bansToRefresh.add(playerId);
         }
@@ -136,6 +151,27 @@ export class MatchResultService {
         away_score: sameHome ? result.aggregateAway : result.aggregateHome,
         winner_club_id: result.winnerClubId ? BigInt(result.winnerClubId) : null,
         status: input.rules.decidingLeg ? 'FINISHED' : 'IN_PROGRESS',
+      } });
+    }
+    const score = `${input.home.name} ${result.homeScore}-${result.awayScore} ${input.away.name}`;
+    const details = [
+      `${match.competition_seasons?.name || 'Trận đấu'}, ngày ${match.season_day}.`,
+      `Kết quả: ${score}.`,
+    ];
+    if (result.resultType === 'EXTRA_TIME' || result.resultType === 'PENALTIES') {
+      details.push(`Sau 90 phút: ${result.homeRegularScore}-${result.awayRegularScore}.`);
+    }
+    if (result.homePenaltyScore != null && result.awayPenaltyScore != null) {
+      details.push(`Luân lưu: ${result.homePenaltyScore}-${result.awayPenaltyScore} (không cộng vào tỷ số trận đấu).`);
+    }
+    if (input.rules.priorHomeAwayGoals != null) {
+      details.push(`Tổng tỷ số hai lượt: ${result.aggregateHome}-${result.aggregateAway}.`);
+    }
+    for (const side of ['home', 'away'] as const) {
+      await tx.club_news.create({ data: {
+        club_id: BigInt(input[side].id), season_id: match.season_id, news_type: 'MATCH_RESULT',
+        title: `Kết quả trận đấu: ${score}`.slice(0, 255),
+        content: details.join(' '), published_at: new Date(),
       } });
     }
   }

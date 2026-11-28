@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { coachTacticDefaults, PreparedPosition, SavedPosition, selectMatchLineup } from './match-lineup.rules';
 import { banAppliesToMatch, DisciplineMatch, suspensionCompetition } from '../players/discipline-scope';
+import { squadAgeLimit, squadPlayerWhere } from '../players/squad-eligibility';
 
 interface LineupMatch extends DisciplineMatch {
   id: bigint;
@@ -34,16 +35,17 @@ export class MatchLineupService {
     // Stable lock order also covers concurrent fixtures with reversed home/away.
     const clubIds = [match.home_club_id, match.away_club_id].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
     for (const clubId of clubIds) await tx.$queryRaw`SELECT id FROM clubs WHERE id = ${clubId} FOR UPDATE`;
-    const home = await this.prepareClubLineup(tx, match, match.home_club_id, squadType, ageLimit);
-    const away = await this.prepareClubLineup(tx, match, match.away_club_id, squadType, ageLimit);
+    const home = await this.prepareClubLineup(tx, match, match.home_club_id, squadType);
+    const away = await this.prepareClubLineup(tx, match, match.away_club_id, squadType);
     return { home, away };
   }
 
   private async prepareClubLineup(
     tx: Prisma.TransactionClient, match: LineupMatch, clubId: bigint,
-    squadType: 'FIRST_TEAM' | 'YOUTH_U19' | 'YOUTH_U21', ageLimit: number | null,
+    squadType: 'FIRST_TEAM' | 'YOUTH_U19' | 'YOUTH_U21',
   ) {
     const matchId = match.id;
+    const ageLimit = squadAgeLimit(squadType);
     const existing = await tx.match_lineups.findFirst({
       where: { match_id: matchId, club_id: clubId }, orderBy: { id: 'asc' },
       include: { formations: { include: formationInclude }, match_players: { orderBy: { id: 'asc' } } },
@@ -76,7 +78,8 @@ export class MatchLineupService {
     const players = await tx.players.findMany({
       where: {
         current_club_id: clubId,
-        ...(ageLimit ? { age: { lte: ageLimit } } : { squad_type: 'FIRST_TEAM' }),
+        ...squadPlayerWhere(squadType),
+        ...(ageLimit ? { age: { lte: ageLimit } } : {}),
       },
       include: {
         player_status: true, player_positions: { include: { positions: true } },

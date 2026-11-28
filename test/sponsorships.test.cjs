@@ -9,7 +9,7 @@ function fixture() {
   let state = {
     club: { id: 10n, world_id: 9n, owner_user_id: 100n, reputation: 3000 },
     season: { id: 7n, world_id: 9n, season_number: 1, name: 'Season 1', start_date: new Date('2026-01-01'), end_date: null, current_day: 8, status: 'ACTIVE' },
-    level: 3, cash: 5000000, rows: [], ledger: [], failLedger: false, account: true,
+    level: 3, cash: 5000000, rows: [], ledger: [], news: [], failLedger: false, failNews: false, account: true,
     currency: { id: 1n, code: 'CASH', type: 'SOFT', is_active: true },
   };
   const sponsors = Array.from({ length: 12 }, (_, i) => ({ id: BigInt(i + 1), reputation: i * 800, name: `Sponsor ${i + 1}`, industry: 'Sport', description: 'Test brand', logo_url: null }));
@@ -57,6 +57,10 @@ function fixture() {
       assert.ok(!state.ledger.some(row => row.idempotency_key === data.idempotency_key));
       state.ledger.push(data); return data;
     } },
+    club_news: { create: async ({ data }) => {
+      if (state.failNews) throw new Error('news failed');
+      state.news.push(data); return data;
+    } },
   };
   let tail = Promise.resolve();
   const prisma = { $transaction: async work => {
@@ -83,6 +87,7 @@ test('offers are persisted once even when opened concurrently; upgrades do not r
   f.state.level = 10;
   assert.deepEqual((await f.service.openOffers(100n, 10n)).offers, a.offers);
   assert.equal(f.state.ledger.length, 0);
+  assert.equal(f.state.news.length, 0);
   assert.equal(f.state.cash, 5000000);
   assert.match(f.locks[0], /clubs.*FOR UPDATE/);
   assert.match(f.locks[1], /seasons.*FOR UPDATE/);
@@ -102,8 +107,16 @@ test('signing credits the stored amount once and records the current season', as
   assert.equal(f.state.ledger[0].season_id, 7n);
   assert.equal(f.state.ledger[0].reference_id, offer.id);
   assert.equal(f.state.ledger[0].currency_type, 'CASH');
+  assert.equal(f.state.news.length, 1);
+  assert.equal(f.state.news[0].club_id, 10n);
+  assert.equal(f.state.news[0].season_id, 7n);
+  assert.equal(f.state.news[0].news_type, 'SPONSORSHIP');
+  assert.ok(f.state.news[0].title.includes(offer.name));
+  assert.ok(f.state.news[0].content.includes(offer.amount.toLocaleString('vi-VN')));
+  assert.ok(f.state.news[0].published_at instanceof Date);
   await assert.rejects(f.service.sign(100n, 10n, offer.id), /đã được ký/);
   assert.equal(f.state.cash, 5000000 + offer.amount);
+  assert.equal(f.state.news.length, 1);
 });
 
 test('concurrent duplicate signing pays exactly once', async () => {
@@ -112,6 +125,7 @@ test('concurrent duplicate signing pays exactly once', async () => {
   const results = await Promise.allSettled([f.service.sign(100n, 10n, offers[0].id), f.service.sign(100n, 10n, offers[0].id)]);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(f.state.ledger.length, 1);
+  assert.equal(f.state.news.length, 1);
 });
 
 test('concurrent signatures cannot exceed four; expired signatures still consume the season quota', async () => {
@@ -127,15 +141,17 @@ test('concurrent signatures cannot exceed four; expired signatures still consume
   await assert.rejects(f.service.sign(100n, 10n, result.offers[0].id), /tối đa 4/);
 });
 
-test('ledger or account failure leaves the offer unsigned and balance unchanged', async () => {
-  for (const failure of ['ledger', 'account']) {
+test('ledger, news or account failure leaves the offer unsigned and balance unchanged', async () => {
+  for (const failure of ['ledger', 'news', 'account']) {
     const f = fixture();
     const { offers } = await f.service.openOffers(100n, 10n);
     f.state.failLedger = failure === 'ledger'; f.state.account = failure !== 'account';
+    f.state.failNews = failure === 'news';
     await assert.rejects(f.service.sign(100n, 10n, offers[0].id));
     assert.equal(f.state.cash, 5000000);
     assert.equal(f.state.rows.filter(row => row.status === 'ACTIVE').length, 0);
     assert.equal(f.state.ledger.length, 0);
+    assert.equal(f.state.news.length, 0);
   }
 });
 

@@ -6,6 +6,7 @@ import { coachTacticDefaults } from '../matches/match-lineup.rules';
 import { normalizeInstructions } from '../matches/tactic-normalizer';
 import { TACTICAL_RULEBOOK } from '../matches/tactical-rulebook';
 import { loadYellowCards, yellowCardMatchScopes, YellowCardAccumulation } from '../players/player-yellow-cards';
+import { playerBelongsToSquad, squadPlayerWhere } from '../players/squad-eligibility';
 
 @Injectable()
 export class TacticsService {
@@ -29,8 +30,8 @@ export class TacticsService {
     });
   }
 
-  private formatPlayerData(p: any, defaultPos?: string, nextMatch?: DisciplineMatch | null, yellowCards?: YellowCardAccumulation[]) {
-    if (!p) return null;
+  private formatPlayerData(p: any, defaultPos?: string, nextMatch?: DisciplineMatch | null, yellowCards?: YellowCardAccumulation[], squadType = 'FIRST_TEAM') {
+    if (!p || !playerBelongsToSquad(p, squadType)) return null;
     const naturalPos = p.player_positions?.find((pp: any) => pp.is_natural)?.positions?.code;
     return {
       id: p.id.toString(),
@@ -55,11 +56,9 @@ export class TacticsService {
       headCoachContract = await this.prisma.staff_contracts.findFirst({
         where: {
           club_id: clubId,
-          OR: [
-            { squad_type: (squadType as any), role: 'HEAD_COACH_YOUTH' },
-            { role: 'HEAD_COACH_YOUTH' },
-            { squad_type: (squadType as any) },
-          ],
+          status: 'ACTIVE',
+          role: 'HEAD_COACH_YOUTH',
+          squad_type: { in: [(squadType as any), 'FIRST_TEAM'] },
         },
         include: {
           staff: {
@@ -92,6 +91,8 @@ export class TacticsService {
         where: {
           club_id: clubId,
           role: 'HEAD_COACH',
+          status: 'ACTIVE',
+          squad_type: 'FIRST_TEAM',
         },
       include: {
         staff: {
@@ -173,20 +174,14 @@ export class TacticsService {
           data: {
             club_id: clubId,
             squad_type: (squadType as any) || 'FIRST_TEAM',
-            name: squadType === 'YOUTH_U21' ? 'Đội hình trẻ U21' : 'Đội hình chính',
+            name: squadType === 'FIRST_TEAM' ? 'Đội hình chính' : `Đội hình trẻ ${squadType === 'YOUTH_U19' ? 'U19' : 'U21'}`,
             formation_id: defaultFormationId,
             ...coachTacticDefaults(headCoachContract?.staff?.tactical_style || 'BALANCED'),
           },
         });
 
-        // Lấy 20 cầu thủ đầu tiên của CLB để xếp 11 đá chính và 9 ghế dự bị
-        const playerWhere: any = { current_club_id: clubId };
-        if (squadType === 'YOUTH_U21') {
-          playerWhere.OR = [
-            { squad_type: 'YOUTH_U21' },
-            { age: { lte: 21 } },
-          ];
-        }
+        // Select only the registered squad, including the youth age limit.
+        const playerWhere = { current_club_id: clubId, ...squadPlayerWhere(squadType) };
         const clubPlayers = await this.prisma.players.findMany({
           where: playerWhere,
           take: 20,
@@ -261,6 +256,7 @@ export class TacticsService {
                     photo_url: true,
                     age: true,
                     preferred_foot: true,
+                    squad_type: true,
                     player_positions: {
                       include: { positions: true },
                     },
@@ -292,7 +288,7 @@ export class TacticsService {
     const formattedStartingPositions = startingPositionsRaw.map((pos) => ({
       ...pos,
       instructions: (pos.tactic_position_instructions || []).filter(i => i.value !== 0).map(i => i.tactical_instructions.code),
-      players: this.formatPlayerData(pos.players, pos.formation_positions?.slot_code, nextMatch, yellowCards.get(pos.players?.id)),
+      players: this.formatPlayerData(pos.players, pos.formation_positions?.slot_code, nextMatch, yellowCards.get(pos.players?.id), squadType),
     }));
 
     // Sắp xếp 9 ghế dự bị theo order_no (1..9), nếu ghế nào chưa có cầu thủ thì players = null
@@ -304,7 +300,7 @@ export class TacticsService {
           id: foundSub.id.toString(),
           order_no: seat,
           lineup_role: 'SUBSTITUTE',
-          players: this.formatPlayerData(foundSub.players, undefined, nextMatch, yellowCards.get(foundSub.players?.id)),
+          players: this.formatPlayerData(foundSub.players, undefined, nextMatch, yellowCards.get(foundSub.players?.id), squadType),
         });
       } else {
         formattedSubstitutes.push({

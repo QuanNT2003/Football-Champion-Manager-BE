@@ -127,6 +127,12 @@ export class MatchSimulatorService {
         description: `Doanh thu bán vé trận đấu (${attendance.toLocaleString()} khán giả)`,
         transaction_date: match.match_date, idempotency_key: `MATCH_TICKET_${matchId}`,
       } });
+      await tx.club_news.create({ data: {
+        club_id: homeClub.id, season_id: match.season_id, news_type: 'FINANCE',
+        title: `Doanh thu vé: ${homeClub.name} - ${awayClub.name}`.slice(0, 255),
+        content: `Trận ${homeClub.name} - ${awayClub.name}: ${attendance.toLocaleString('vi-VN')} khán giả, doanh thu bán vé ${ticketRevenue.toLocaleString('vi-VN')} CASH đã được cộng vào ngân sách CLB.`,
+        published_at: new Date(),
+      } });
     }
     this.logger.log(`Match ${matchId}: ${homeClub.name} ${result.homeScore}-${result.awayScore} ${awayClub.name} (${result.resultType})`);
     const byId = new Map([...input.home.players, ...input.away.players].map(p => [p.id, p]));

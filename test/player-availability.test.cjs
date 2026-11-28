@@ -166,6 +166,27 @@ test('player profile exposes remaining bans and the longest active injury even w
   assert.equal(f.historyQueries(), 1); assert.doesNotThrow(() => JSON.stringify(detail));
 });
 
+test('owner profile exposes stored status values including independent fatigue and zero scores', async () => {
+  const f = profileFixture();
+  Object.assign(f.player.player_status, { fitness: 0, condition: 80, form: 74, morale: 91,
+    fatigue: 45, match_sharpness: 0, happiness: 63, is_on_national_duty: true });
+  const detail = await f.service.getPlayerById(7n, 5n);
+  assert.equal(detail.is_own_club, true);
+  for (const key of ['fitness', 'condition', 'form', 'morale', 'fatigue', 'match_sharpness', 'happiness', 'is_on_national_duty']) {
+    assert.equal(detail.status[key], f.player.player_status[key]);
+  }
+});
+
+test('other clubs and anonymous viewers do not receive new internal status fields', async () => {
+  const f = profileFixture();
+  Object.assign(f.player.player_status, { fatigue: 45, match_sharpness: 81, happiness: 63, is_on_national_duty: true });
+  for (const viewer of [999n, undefined]) {
+    const detail = await f.service.getPlayerById(7n, viewer);
+    assert.equal(detail.is_own_club, false);
+    for (const key of ['fatigue', 'match_sharpness', 'happiness', 'is_on_national_duty']) assert.ok(!(key in detail.status));
+  }
+});
+
 test('non-owner profile keeps public restrictions but does not fetch or expose confidential injury history', async () => {
   const f = profileFixture(), detail = await f.service.getPlayerById(7n, 999n);
   assert.equal(detail.status.suspensions.length, 2); assert.equal(detail.status.injury_days_remaining, 9);
@@ -242,4 +263,46 @@ test('league and Super Cup warnings form one cycle, clear at three, and never re
   cards = (await loadYellowCards(f.tx, [7n], yellowCardMatchScopes([superCup]))).get(7n);
   assert.equal(cards[0].count, 1);
   assert.equal(cards[0].total, 4);
+});
+
+test('Tactics auto-fill selects the registered squad for senior, U21 and U19 and hides old cross-squad assignments', async () => {
+  const { formation, player } = require('./helpers/match-lineup-fixture.cjs');
+  const form = formation(1n);
+  const roster = ['FIRST_TEAM', 'YOUTH_U21', 'YOUTH_U19'].flatMap((type, group) =>
+    Array.from({ length: 22 }, (_, i) => ({ ...player(BigInt(100 * group + i + 1), 5n, i), squad_type: type, age: type === 'YOUTH_U21' ? 20 : 18 })));
+  for (const type of ['FIRST_TEAM', 'YOUTH_U21', 'YOUTH_U19']) {
+    let tactic = null, sequence = 1n;
+    const positions = [];
+    const db = {
+      matches: { findFirst: async () => null },
+      staff_contracts: { findFirst: async ({ where }) => { assert.equal(where.status, 'ACTIVE'); return null; } },
+      formations: { findFirst: async () => form, findUnique: async () => form },
+      club_tactics: {
+        findFirst: async () => tactic,
+        create: async ({ data }) => (tactic = { id: 1n, ...data }),
+        findUnique: async () => ({ ...tactic, club_tactic_positions: positions.map(pos => ({ ...pos,
+          players: roster.find(p => p.id === pos.player_id), formation_positions: form.formation_positions.find(slot => slot.id === pos.formation_position_id),
+        })) }),
+      },
+      players: { findMany: async ({ where, take }) => {
+        assert.equal(where.current_club_id, 5n);
+        assert.equal(where.OR, undefined);
+        assert.equal(where.squad_type, type);
+        assert.equal(where.age, undefined); // Squad membership comes from the stored marker.
+        return roster.filter(p => p.squad_type === where.squad_type).slice(0, take);
+      } },
+      club_tactic_positions: { create: async ({ data }) => { positions.push({ id: sequence++, ...data }); } },
+    };
+    const service = new TacticsService(db);
+    const result = await service.getClubTactic(5n, type);
+    const selected = [...result.club_tactic_positions, ...result.substitutes].map(pos => pos.players).filter(Boolean);
+    assert.equal(selected.length, 20);
+    assert.ok(selected.every(p => p.squad_type === type));
+    if (type !== 'FIRST_TEAM') {
+      const corrupt = { id: 1n, club_tactic_positions: [{ id: 1n, formation_position_id: 100n, lineup_role: 'STARTING', players: roster[0] }] };
+      db.club_tactics.findFirst = async () => corrupt;
+      const repairedView = await service.getClubTactic(5n, type);
+      assert.equal(repairedView.club_tactic_positions[0].players, null);
+    }
+  }
 });

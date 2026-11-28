@@ -110,6 +110,12 @@ export class SponsorshipsService {
         description: `Tài trợ ${offer.sponsors.name} - ${season.name}`, season_id: season.id, season_day: season.current_day,
         transaction_date: new Date(), idempotency_key: `SPONSORSHIP_${offer.id}`,
       } });
+      await tx.club_news.create({ data: {
+        club_id: clubId, season_id: season.id, news_type: 'SPONSORSHIP',
+        title: `Ký hợp đồng tài trợ với ${offer.sponsors.name}`,
+        content: `CLB đã ký hợp đồng tài trợ với ${offer.sponsors.name} trong ${season.name}, nhận ${Number(offer.amount).toLocaleString('vi-VN')} CASH vào ngân sách.`,
+        thumbnail_url: offer.sponsors.logo_url, published_at: new Date(),
+      } });
       return this.summary(tx, context);
     }, { isolationLevel: 'ReadCommitted' });
   }

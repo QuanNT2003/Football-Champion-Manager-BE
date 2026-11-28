@@ -645,6 +645,12 @@ export class PlayersService {
         fitness: player.player_status?.fitness,
         form: player.player_status?.form,
         morale: player.player_status?.morale,
+        ...(isOwner ? {
+          fatigue: player.player_status?.fatigue,
+          match_sharpness: player.player_status?.match_sharpness,
+          happiness: player.player_status?.happiness,
+          is_on_national_duty: Boolean(player.player_status?.is_on_national_duty),
+        } : {}),
         is_transfer_listed: Boolean(player.player_status?.is_transfer_listed),
         is_loan_listed: Boolean(player.player_status?.is_loan_listed),
         asking_price: player.player_status?.asking_price,

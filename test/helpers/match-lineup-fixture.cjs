@@ -42,7 +42,7 @@ function fixture() {
     players: [10n, 20n].flatMap((clubId, team) => Array.from({ length: 22 }, (_, i) => player(BigInt(team * 100 + i + 1), clubId, i))),
     tactics: [], positions: [], lineups: [], matchPlayers: [], events: [], transactions: [], balance: 0,
     locks: [], queries: [], rankBatches: [], rankHistory: [], failEvents: false,
-    stats: [], bans: [], injuries: [], standings: [],
+    stats: [], bans: [], injuries: [], standings: [], news: [], failNews: false,
     clubs: [
       { id: 10n, world_id: 1n, ranking_points: 1000, world_rank: 2, previous_world_rank: 0 },
       { id: 20n, world_id: 1n, ranking_points: 1000, world_rank: 3, previous_world_rank: 0 },
@@ -106,7 +106,9 @@ function fixture() {
     formations: { findUnique: async ({ where }) => form(where.id), findFirst: async () => state.formations[0] || null },
     players: { findMany: async ({ where }) => {
       state.queries.push(structuredClone(where));
-      return state.players.filter(p => p.current_club_id === where.current_club_id && (!where.squad_type || p.squad_type === where.squad_type) && (!where.age || p.age <= where.age.lte)).map(p => ({ ...p, player_suspensions: state.bans.filter(b => b.player_id === p.id && b.status === 'ACTIVE').map(b => ({ ...b, competition_seasons: state.competitions.find(c => c.id === b.competition_season_id) || null })) }));
+      return state.players.filter(p => p.current_club_id === where.current_club_id && (!where.squad_type ||
+        (typeof where.squad_type === 'string' ? p.squad_type === where.squad_type : where.squad_type.in.includes(p.squad_type))) &&
+        (!where.age || p.age <= where.age.lte)).map(p => ({ ...p, player_suspensions: state.bans.filter(b => b.player_id === p.id && b.status === 'ACTIVE').map(b => ({ ...b, competition_seasons: state.competitions.find(c => c.id === b.competition_season_id) || null })) }));
     } },
     club_tactics: {
       findFirst: async ({ where }) => hydrateTactic(state.tactics.find(t => t.club_id === where.club_id && t.squad_type === where.squad_type)),
@@ -176,6 +178,10 @@ function fixture() {
     },
     financial_accounts: { update: async ({ data }) => { state.balance += data.balance_cash.increment; } },
     financial_transactions: { create: async ({ data }) => { state.transactions.push(data); } },
+    club_news: { create: async ({ data }) => {
+      if (state.failNews || state.failNewsType === data.news_type) throw new Error('news persistence failed');
+      const row = { id: id(), ...data }; state.news.push(row); return row;
+    } },
   };
   let tail = Promise.resolve();
   const db = { $transaction: work => {

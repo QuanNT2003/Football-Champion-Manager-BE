@@ -119,13 +119,13 @@ test('can field eleven players with an empty bench; unknown medical status is un
   await assert.rejects(g.prepare(), /Không đủ 11/);
 });
 
-test('U21 uses age eligibility, its own tactic and active youth head coach', async () => {
+test('U21 uses registered youth players, its own tactic and active youth head coach', async () => {
   const f = fixture();
   const senior = f.addTactic();
   const before = structuredClone(senior);
   Object.assign(f.state().match.competition_seasons.competitions, { is_youth: true, age_limit: 21, participant_type: 'YOUTH_CLUB' });
   for (const p of f.state().players) { p.age = 21; p.squad_type = 'YOUTH_U21'; }
-  const seniorStar = player(900n, 10n, 1); seniorStar.age = 22; seniorStar.ovr = 100;
+  const seniorStar = player(900n, 10n, 1); seniorStar.age = 18; seniorStar.ovr = 100;
   f.state().players.push(seniorStar);
   f.state().players[1].squad_type = 'FIRST_TEAM';
   f.state().coaches.unshift({ id: 100n, club_id: 10n, role: 'HEAD_COACH_YOUTH', squad_type: 'YOUTH_U21', status: 'ACTIVE',
@@ -135,21 +135,58 @@ test('U21 uses age eligibility, its own tactic and active youth head coach', asy
   assert.equal(youth.formation_id, 1n);
   assert.equal(youth.passing_style, 'DIRECT');
   assert.ok(result.home.starters.every(p => p.age <= 21));
+  assert.ok([...result.home.starters, ...result.home.substitutes].every(p => p.squad_type === 'YOUTH_U21'));
   assert.ok(!result.home.starters.some(p => p.id === 900n));
   assert.deepEqual(senior, before);
-  assert.ok(f.state().queries.every(q => q.age.lte === 21 && !q.squad_type));
+  assert.ok(f.state().queries.every(q => q.age.lte === 21 && q.squad_type === 'YOUTH_U21'));
 });
 
 test('U19 respects its age limit and missing youth configuration fails before writing', async () => {
   const f = fixture();
   Object.assign(f.state().match.competition_seasons.competitions, { is_youth: true, age_limit: 19 });
   for (const p of f.state().players) { p.age = 19; p.squad_type = 'YOUTH_U19'; }
-  await f.prepare();
+  f.state().players.push({ ...player(9000n, 10n, 1), squad_type: 'YOUTH_U21', age: 20, ovr: 100 });
+  f.state().players.push({ ...player(9001n, 10n, 1), squad_type: 'FIRST_TEAM', age: 18, ovr: 100 });
+  f.state().players.push({ ...player(9002n, 10n, 1), squad_type: 'YOUTH_U21', age: 18, ovr: 100 });
+  const prepared = await f.prepare();
+  assert.ok([...prepared.home.starters, ...prepared.home.substitutes].every(p => p.age <= 19 && p.squad_type === 'YOUTH_U19'));
   assert.ok(f.state().tactics.every(t => t.squad_type === 'YOUTH_U19'));
   const g = fixture();
   g.state().match.competition_seasons.competitions.is_youth = true;
   await assert.rejects(g.prepare(), /giới hạn tuổi/);
   assert.equal(g.state().tactics.length, 0);
+});
+
+test('youth fixtures repair senior players saved by the old auto-fill, including submitted lineups', async () => {
+  const f = fixture();
+  const senior = f.addTactic(), seniorBefore = structuredClone(senior);
+  const seniors = [...f.state().players];
+  for (const p of seniors) { p.age = 18; p.ovr = 100; }
+  for (const clubId of [10n, 20n]) for (let i = 0; i < 22; i++) {
+    f.state().players.push({ ...player(10000n + clubId * 100n + BigInt(i), clubId, i), age: 20, squad_type: 'YOUTH_U21' });
+  }
+  Object.assign(f.state().match.competition_seasons.competitions, { is_youth: true, age_limit: 21 });
+  const invalidYouth = { ...senior.tactic, id: 9000n, squad_type: 'YOUTH_U21' };
+  f.state().tactics.push(invalidYouth);
+  f.state().positions.push(...senior.positions.map((row, i) => ({ ...row, id: 9100n + BigInt(i), tactic_id: invalidYouth.id })));
+  let ready = await f.prepare();
+  assert.ok([...ready.home.starters, ...ready.home.substitutes].every(p => p.squad_type === 'YOUTH_U21'));
+  assert.deepEqual(senior, seniorBefore);
+  const oldRow = f.state().matchPlayers.find(p => p.lineup_id === ready.home.lineupId && p.started);
+  oldRow.player_id = seniors[0].id;
+  ready = await f.prepare();
+  assert.ok([...ready.home.starters, ...ready.home.substitutes].every(p => p.squad_type === 'YOUTH_U21'));
+  assert.ok(f.state().matchPlayers.every(row => !seniors.some(p => p.id === row.player_id)));
+});
+
+test('too few youth players cannot be filled using age-eligible first-team players', async () => {
+  const f = fixture();
+  for (const p of f.state().players) p.age = 18;
+  Object.assign(f.state().match.competition_seasons.competitions, { is_youth: true, age_limit: 21 });
+  await assert.rejects(f.prepare(), /Không đủ 11/);
+  assert.equal(f.state().tactics.length, 0);
+  assert.equal(f.state().lineups.length, 0);
+  assert.equal(f.state().positions.length, 0);
 });
 
 test('ignores inactive coaches and falls back when no head coach exists', async () => {

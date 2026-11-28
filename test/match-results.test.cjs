@@ -147,6 +147,36 @@ test('retry and simultaneous simulator calls do not duplicate statistics, events
   assert.deepEqual(f.state().events, before.events);
   assert.deepEqual(f.state().players, before.players);
   assert.deepEqual(f.state().clubs, before.clubs);
+  assert.deepEqual(f.state().news, before.news);
+});
+
+test('match results notify both clubs and ticket income only notifies the credited club', async () => {
+  const f = fixture();
+  const result = await f.simulator.simulateMatch(50n);
+  const news = f.state().news;
+  const reports = news.filter(row => row.news_type === 'MATCH_RESULT');
+  assert.deepEqual(reports.map(row => row.club_id).sort(), [10n, 20n]);
+  for (const row of reports) {
+    assert.equal(row.season_id, 7n);
+    assert.ok(row.title.includes(`Home ${result.homeScore}-${result.awayScore} Away`));
+    assert.ok(row.content.includes('Test League'));
+    assert.ok(!row.content.includes('Tổng tỷ số hai lượt'));
+    assert.ok(row.published_at instanceof Date);
+  }
+  const income = news.filter(row => row.news_type === 'FINANCE');
+  assert.equal(income.length, 1);
+  assert.equal(income[0].club_id, 10n);
+  assert.equal(income[0].season_id, 7n);
+  assert.ok(income[0].content.includes(Number(f.state().transactions[0].amount).toLocaleString('vi-VN')));
+});
+
+test('news failure rolls back the match and its financial and player consequences', async () => {
+  for (const newsType of ['MATCH_RESULT', 'FINANCE']) {
+    const f = fixture(); f.state().failNewsType = newsType;
+    const before = structuredClone(f.state());
+    await assert.rejects(f.simulator.simulateMatch(50n), /news persistence failed/);
+    assert.deepEqual(f.state(), before);
+  }
 });
 
 test('match fitness is the persisted Squad/training value, stays below 24 loss and does not deduct condition', async () => {
@@ -179,6 +209,24 @@ async function persistenceFixture() {
   }
   return { f, prepared, input };
 }
+
+test('knockout news distinguishes match scores, shootout scores and the second-leg aggregate', async () => {
+  const { f, prepared, input } = await persistenceFixture();
+  const result = simulateMatchEngine(input);
+  Object.assign(input.rules, { knockout: true, decidingLeg: true, aggregateHome: 0, aggregateAway: 0, priorHomeAwayGoals: 0 });
+  Object.assign(result, { homeScore: 2, awayScore: 2, homeRegularScore: 1, awayRegularScore: 1,
+    homeExtraScore: 1, awayExtraScore: 1, homePenaltyScore: 4, awayPenaltyScore: 5,
+    aggregateHome: 2, aggregateAway: 2, resultType: 'PENALTIES', winnerClubId: input.away.id });
+  await f.db.$transaction(tx => f.results.persist(tx, f.state().match, input, result, prepared));
+  const reports = f.state().news.filter(row => row.news_type === 'MATCH_RESULT');
+  assert.equal(reports.length, 2);
+  for (const row of reports) {
+    assert.ok(row.title.includes(`${input.home.name} 2-2 ${input.away.name}`));
+    assert.match(row.content, /Sau 90 phút: 1-1/);
+    assert.match(row.content, /Luân lưu: 4-5/);
+    assert.match(row.content, /Tổng tỷ số hai lượt: 2-2/);
+  }
+});
 
 test('league and cup reuse the preseason row and consolidate old competition totals without losing statistics', async () => {
   const { f, prepared, input } = await persistenceFixture();
@@ -223,6 +271,7 @@ test('third yellow and red cards create scoped bans and aggregate ratings use ap
   const stats = f.state().stats.find(s => s.player_id === playerId);
   assert.equal(stats.appearances, 3); assert.equal(stats.average_rating, 6);
   assert.ok(f.state().bans.some(b => b.player_id === playerId && b.reason === 'YELLOW_ACCUMULATION' && b.competition_season_id === 9n));
+  assert.ok(f.state().news.some(row => row.club_id === 10n && row.news_type === 'SUSPENSION' && row.content.includes('tích lũy thẻ vàng')));
   assert.equal(f.state().players.find(p => p.id === playerId).player_status.is_suspended, true);
 });
 
@@ -253,6 +302,10 @@ test('injuries are persisted with return date and unused substitutes get no appe
   const injury = f.state().injuries.find(i => i.player_id === BigInt(player.player.id));
   assert.equal(injury.days_remaining, 5);
   assert.equal(injury.expected_return_date.toISOString().slice(0,10), '2026-11-30');
+  const news = f.state().news.find(row => row.news_type === 'INJURY' && row.title.includes(player.player.name));
+  assert.equal(news.club_id, 10n);
+  assert.equal(news.season_id, 7n);
+  assert.match(news.content, /nghỉ 5 ngày/);
   const unused = result.home.players.find(p => !p.stats.minutes);
   assert.ok(unused);
   assert.ok(!f.state().stats.some(s => s.player_id.toString() === unused.player.id));
@@ -268,6 +321,11 @@ test('direct reds and second yellows create different suspension lengths', async
     const ban = f.state().bans.find(b => b.player_id.toString() === target.player.id);
     assert.equal(ban.reason, secondYellow ? 'SECOND_YELLOW' : 'RED_CARD');
     assert.equal(ban.matches_banned, secondYellow ? 1 : 2);
+    const news = f.state().news.find(row => row.news_type === 'SUSPENSION' && row.title.includes(target.player.name));
+    assert.equal(news.club_id, 10n);
+    assert.equal(news.season_id, 7n);
+    assert.ok(news.content.includes(`${ban.matches_banned} trận`));
+    assert.ok(news.content.includes(secondYellow ? 'hai thẻ vàng' : 'thẻ đỏ trực tiếp'));
   }
 });
 
@@ -326,4 +384,5 @@ test('knockout and friendly matches do not add league points or competitive appe
   assert.equal(f.state().standings.length, 0);
   assert.equal(f.state().stats.length, 0);
   assert.equal(f.state().bans.length, 0);
+  assert.equal(f.state().news.filter(row => row.news_type === 'SUSPENSION').length, 0);
 });
