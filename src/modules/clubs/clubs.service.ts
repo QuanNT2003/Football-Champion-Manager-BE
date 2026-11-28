@@ -1,3 +1,4 @@
+import { matchScorers, scorerEventsQuery } from '../matches/match-report';
 import {
   BadRequestException,
   ConflictException,
@@ -574,6 +575,7 @@ export class ClubsService {
         status: { in: ['FINISHED', 'COMPLETED'] },
       },
       include: {
+        match_events: scorerEventsQuery,
         clubs_matches_home_club_idToclubs: true,
         clubs_matches_away_club_idToclubs: true,
         competition_seasons: {
@@ -717,6 +719,7 @@ export class ClubsService {
         } : null,
         last_match: lastMatch ? {
           id: lastMatch.id.toString(),
+          scorers: matchScorers(lastMatch.match_events),
           competition_name: lastMatch.competition_seasons?.competitions?.name || 'VĐQG',
           home_club_id: lastMatch.home_club_id ? lastMatch.home_club_id.toString() : undefined,
           home_club_name: lastMatch.clubs_matches_home_club_idToclubs?.name || '',
@@ -919,6 +922,7 @@ export class ClubsService {
     const matches = await this.prisma.matches.findMany({
       where,
       include: {
+        match_events: scorerEventsQuery,
         clubs_matches_home_club_idToclubs: {
           select: { id: true, name: true, short_name: true, logo_url: true },
         },
@@ -991,6 +995,9 @@ export class ClubsService {
         },
         home_score: m.home_score,
         away_score: m.away_score,
+        scorers: matchScorers(m.match_events),
+        home_penalty_score: m.home_penalty_score, away_penalty_score: m.away_penalty_score,
+        result_type: m.result_type,
         result,
         competition_name: m.competition_seasons?.competitions?.name || 'VĐQG',
         competition_type: m.competition_seasons?.competitions?.competition_type || 'DOMESTIC_LEAGUE',

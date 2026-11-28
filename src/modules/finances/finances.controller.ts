@@ -2,11 +2,37 @@ import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { FinancesService } from './finances.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { AuthUser, CurrentUser } from '@/common/decorators/current-user.decorator';
+import { SponsorshipsService } from './sponsorships.service';
 
 @ApiTags('Tài Chính & Cửa Hàng Vàng')
 @Controller('finances')
 export class FinancesController {
-  constructor(private readonly financesService: FinancesService) {}
+  constructor(private readonly financesService: FinancesService, private readonly sponsorshipsService: SponsorshipsService) {}
+
+  @Get('club/:clubId/sponsorships')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem hợp đồng tài trợ và suất ký còn lại trong mùa' })
+  getSponsorships(@CurrentUser() user: AuthUser, @Param('clubId') clubId: string) {
+    return this.sponsorshipsService.getSponsorships(BigInt(user.id), BigInt(clubId));
+  }
+
+  @Post('club/:clubId/sponsorships/offers')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mở lời mời tài trợ cố định theo mùa' })
+  openSponsorOffers(@CurrentUser() user: AuthUser, @Param('clubId') clubId: string) {
+    return this.sponsorshipsService.openOffers(BigInt(user.id), BigInt(clubId));
+  }
+
+  @Post('club/:clubId/sponsorships/:offerId/sign')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Ký tài trợ và nhận CASH, tối đa 4 hợp đồng mỗi mùa' })
+  signSponsor(@CurrentUser() user: AuthUser, @Param('clubId') clubId: string, @Param('offerId') offerId: string) {
+    return this.sponsorshipsService.sign(BigInt(user.id), BigInt(clubId), BigInt(offerId));
+  }
 
   @Get('club/:clubId/balance')
   @UseGuards(JwtAuthGuard)

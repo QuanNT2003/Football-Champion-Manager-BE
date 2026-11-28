@@ -1,3 +1,6 @@
+import { competitionPlayerStatistics } from './competition-player-statistics';
+import { consolidatePlayerStatistics } from '../players/player-statistics';
+import { isFinishedMatch, singleMatchWinner, twoLegWinner } from '../matches/match-result.rules';
 import {
   CUP_KICKOFF_SLOTS, LEAGUE_KICKOFF_SLOTS, YOUTH_KICKOFF_SLOTS,
   getMatchScheduleFromLocalSlot, formatKickoffTime,
@@ -531,210 +534,84 @@ export class CompetitionsService implements OnModuleInit {
   }
 
   async getTopScorers(competitionId: bigint, limit: number = 10, countryId?: string, groupId?: string) {
-    const l = Math.max(1, Number(limit) || 10);
-    const whereCs: any = { competition_id: competitionId };
-    if (countryId) whereCs.country_id = BigInt(countryId);
-
-    let compSeason = await this.prisma.competition_seasons.findFirst({
-      where: whereCs,
-      orderBy: { id: 'desc' },
-    });
-
-    if (!compSeason) {
-      compSeason = await this.prisma.competition_seasons.findFirst({
-        where: { competition_id: competitionId },
-        orderBy: { id: 'desc' },
-      });
-    }
-
-    if (compSeason) {
-      let groupClubIds: bigint[] = [];
-      if (groupId) {
-        const teams = await this.getCompetitionTeams(competitionId, countryId, groupId);
-        groupClubIds = teams.map((t) => BigInt(t.id));
-      }
-
-      const stats = await this.prisma.player_statistics.findMany({
-        where: {
-          competition_season_id: compSeason.id,
-          goals: { gt: 0 },
-          ...(groupClubIds.length > 0 ? { club_id: { in: groupClubIds } } : {}),
-        },
-        take: l,
-        orderBy: [{ goals: 'desc' }, { assists: 'desc' }],
-        include: {
-          players: {
-            select: { id: true, first_name: true, last_name: true, photo_url: true },
-          },
-          clubs: {
-            select: { id: true, name: true, logo_url: true },
-          },
-        },
-      });
-
-      if (stats.length > 0) {
-        return stats.map((s, idx) => ({
-          rank: idx + 1,
-          player: s.players
-            ? {
-                id: s.players.id.toString(),
-                name: `${s.players.first_name} ${s.players.last_name}`.trim(),
-                photo_url: s.players.photo_url,
-              }
-            : null,
-          club: s.clubs
-            ? {
-                id: s.clubs.id.toString(),
-                name: s.clubs.name,
-                logo_url: s.clubs.logo_url,
-              }
-            : null,
-          goals: s.goals,
-          assists: s.assists,
-          appearances: s.appearances,
-          rating: s.average_rating,
-        }));
-      }
-    }
-
-    // Fallback: Top forwards from clubs in this competition
-    const clubs = await this.getCompetitionTeams(competitionId, countryId, groupId);
-    const clubIds = clubs.slice(0, 16).map((c) => BigInt(c.id));
-    if (clubIds.length === 0) return [];
-
-    const topPlayers = await this.prisma.players.findMany({
-      where: {
-        current_club_id: { in: clubIds },
-      },
-      take: l,
-      orderBy: [{ reputation: 'desc' }],
-      include: {
-        clubs_players_current_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
-      },
-    });
-
-    return topPlayers.map((p, idx) => ({
-      rank: idx + 1,
-      player: {
-        id: p.id.toString(),
-        name: `${p.first_name} ${p.last_name}`.trim(),
-        photo_url: p.photo_url,
-      },
-      club: p.clubs_players_current_club_idToclubs
-        ? {
-            id: p.clubs_players_current_club_idToclubs.id.toString(),
-            name: p.clubs_players_current_club_idToclubs.name,
-            logo_url: p.clubs_players_current_club_idToclubs.logo_url,
-          }
-        : null,
-      goals: 0,
-      assists: 0,
-      appearances: 0,
-      rating: ((p.reputation || 7000) / 1000).toFixed(1),
-    }));
+    return this.getPlayerLeaderboard(competitionId, limit, countryId, groupId, 'goals');
   }
 
   async getTopAssists(competitionId: bigint, limit: number = 10, countryId?: string, groupId?: string) {
-    const l = Math.max(1, Number(limit) || 10);
-    const whereCs: any = { competition_id: competitionId };
-    if (countryId) whereCs.country_id = BigInt(countryId);
+    return this.getPlayerLeaderboard(competitionId, limit, countryId, groupId, 'assists');
+  }
 
-    let compSeason = await this.prisma.competition_seasons.findFirst({
-      where: whereCs,
+  async getTopPlayers(competitionId: bigint, limit: number = 10, countryId?: string, groupId?: string) {
+    return this.getPlayerLeaderboard(competitionId, limit, countryId, groupId, 'rating');
+  }
+
+  private async getPlayerLeaderboard(competitionId: bigint, limit: number, countryId: string | undefined,
+    groupId: string | undefined, metric: 'goals' | 'assists' | 'rating') {
+    const take = Math.min(100, Math.max(1, Math.trunc(Number(limit)) || 10));
+    const competition = await this.prisma.competitions.findUnique({
+      where: { id: competitionId },
+    });
+    if (!competition) return [];
+
+    let confederationId: bigint | undefined;
+    if (countryId && (competition.scope === 'CONTINENTAL' || competition.scope === 'REGIONAL')) {
+      const country = await this.prisma.countries.findUnique({
+        where: { id: BigInt(countryId) },
+        select: { confederation_id: true },
+      });
+      if (!country?.confederation_id) return [];
+      confederationId = country.confederation_id;
+    }
+
+    const compSeason = await this.prisma.competition_seasons.findFirst({
+      where: {
+        competition_id: competitionId,
+        ...(countryId && competition.scope === 'DOMESTIC' ? { country_id: BigInt(countryId) } : {}),
+        ...(confederationId ? { confederation_id: confederationId } : {}),
+      },
       orderBy: { id: 'desc' },
     });
+    if (!compSeason) return [];
 
-    if (!compSeason) {
-      compSeason = await this.prisma.competition_seasons.findFirst({
-        where: { competition_id: competitionId },
-        orderBy: { id: 'desc' },
-      });
-    }
-
-    if (compSeason) {
-      let groupClubIds: bigint[] = [];
-      if (groupId) {
-        const teams = await this.getCompetitionTeams(competitionId, countryId, groupId);
-        groupClubIds = teams.map((t) => BigInt(t.id));
-      }
-
-      const stats = await this.prisma.player_statistics.findMany({
+    let clubIds: bigint[] | undefined;
+    if (groupId) {
+      const teams = await this.prisma.stage_teams.findMany({
         where: {
-          competition_season_id: compSeason.id,
-          assists: { gt: 0 },
-          ...(groupClubIds.length > 0 ? { club_id: { in: groupClubIds } } : {}),
+          group_id: BigInt(groupId),
+          competition_stages: { competition_season_id: compSeason.id },
         },
-        take: l,
-        orderBy: [{ assists: 'desc' }, { goals: 'desc' }],
-        include: {
-          players: {
-            select: { id: true, first_name: true, last_name: true, photo_url: true },
-          },
-          clubs: {
-            select: { id: true, name: true, logo_url: true },
-          },
-        },
+        select: { club_id: true },
       });
-
-      if (stats.length > 0) {
-        return stats.map((s, idx) => ({
-          rank: idx + 1,
-          player: s.players
-            ? {
-                id: s.players.id.toString(),
-                name: `${s.players.first_name} ${s.players.last_name}`.trim(),
-                photo_url: s.players.photo_url,
-              }
-            : null,
-          club: s.clubs
-            ? {
-                id: s.clubs.id.toString(),
-                name: s.clubs.name,
-                logo_url: s.clubs.logo_url,
-              }
-            : null,
-          goals: s.goals,
-          assists: s.assists,
-          appearances: s.appearances,
-          rating: s.average_rating,
-        }));
-      }
+      clubIds = teams.flatMap((team) => team.club_id === null ? [] : [team.club_id]);
+      if (clubIds.length === 0) return [];
     }
 
-    // Fallback: Top midfielders/playmakers
-    const clubs = await this.getCompetitionTeams(competitionId, countryId, groupId);
-    const clubIds = clubs.slice(0, 16).map((c) => BigInt(c.id));
-    if (clubIds.length === 0) return [];
+    const totals = await competitionPlayerStatistics(this.prisma, compSeason.id, clubIds);
+    const stats = totals.filter(stat => metric === 'rating' ? stat.average_rating > 0 : stat[metric] > 0)
+      .sort((a, b) => {
+        const difference = metric === 'rating'
+          ? b.average_rating - a.average_rating || b.motm - a.motm || b.appearances - a.appearances
+          : b[metric] - a[metric] || (metric === 'goals' ? b.assists - a.assists : b.goals - a.goals);
+        return difference || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      }).slice(0, take);
 
-    const topPlayers = await this.prisma.players.findMany({
-      where: {
-        current_club_id: { in: clubIds },
-      },
-      take: l,
-      orderBy: [{ reputation: 'desc' }],
-      include: {
-        clubs_players_current_club_idToclubs: { select: { id: true, name: true, logo_url: true } },
-      },
-    });
-
-    return topPlayers.map((p, idx) => ({
-      rank: idx + 1,
+    return stats.map((stat, index) => ({
+      rank: index + 1,
       player: {
-        id: p.id.toString(),
-        name: `${p.first_name} ${p.last_name}`.trim(),
-        photo_url: p.photo_url,
+        id: stat.players.id.toString(),
+        name: `${stat.players.first_name} ${stat.players.last_name}`.trim(),
+        photo_url: stat.players.photo_url,
       },
-      club: p.clubs_players_current_club_idToclubs
-        ? {
-            id: p.clubs_players_current_club_idToclubs.id.toString(),
-            name: p.clubs_players_current_club_idToclubs.name,
-            logo_url: p.clubs_players_current_club_idToclubs.logo_url,
-          }
-        : null,
-      goals: 0,
-      assists: 0,
-      appearances: 0,
-      rating: ((p.reputation || 7000) / 1000).toFixed(1),
+      club: stat.clubs ? {
+        id: stat.clubs.id.toString(),
+        name: stat.clubs.name,
+        logo_url: stat.clubs.logo_url,
+      } : null,
+      goals: stat.goals,
+      assists: stat.assists,
+      appearances: stat.appearances,
+      rating: Number(stat.average_rating),
+      motm: stat.motm,
     }));
   }
 
@@ -1024,6 +901,18 @@ export class CompetitionsService implements OnModuleInit {
    */
   async ensurePlayerStatisticsForSeason(seasonId: bigint) {
     try {
+      // Repair old per-competition rows once; keep the preseason row and its ID.
+      const legacy = await this.prisma.player_statistics.findMany({
+        where: { season_id: seasonId, competition_season_id: { gt: 0n } },
+        distinct: ['player_id', 'season_id', 'club_id'],
+        select: { player_id: true, season_id: true, club_id: true },
+      });
+      for (const key of legacy) {
+        await this.prisma.$transaction(async tx => {
+          await tx.$queryRaw`SELECT id FROM clubs WHERE id = ${key.club_id} FOR UPDATE`;
+          await consolidatePlayerStatistics(tx, key);
+        });
+      }
       await this.prisma.$executeRaw`
         INSERT INTO player_statistics (
           player_id, season_id, club_id, 
@@ -3385,9 +3274,16 @@ export class CompetitionsService implements OnModuleInit {
     }
 
     // 7. Đóng mùa giải cũ
-    await this.prisma.seasons.update({
-      where: { id: completedSeason.id },
-      data: { status: 'COMPLETED' },
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM seasons WHERE id = ${completedSeason.id} FOR UPDATE`;
+      await tx.seasons.update({ where: { id: completedSeason.id }, data: { status: 'COMPLETED' } });
+      await tx.club_sponsorships.updateMany({
+        where: { status: { in: ['ACTIVE', 'OFFERED'] }, OR: [
+          { season_id: completedSeason.id },
+          { season_id: null, clubs: { world_id: worldId } },
+        ] },
+        data: { status: 'EXPIRED', end_date: new Date() },
+      });
     });
     await this.academyService.expireSeason(completedSeason.id);
 
@@ -3489,16 +3385,7 @@ export class CompetitionsService implements OnModuleInit {
       const countryObj = clubCountryMap.get(cs.country_id.toString());
 
       // Helper lấy đội thắng của 1 trận knockout đơn
-      const getMatchWinnerId = (m: any): bigint | null => {
-        if (m.home_score === null || m.away_score === null) return null;
-        if (m.home_score > m.away_score) return m.home_club_id;
-        if (m.away_score > m.home_score) return m.away_club_id;
-        if (m.home_penalty_score !== null && m.away_penalty_score !== null) {
-          if (m.home_penalty_score > m.away_penalty_score) return m.home_club_id;
-          if (m.away_penalty_score > m.home_penalty_score) return m.away_club_id;
-        }
-        return m.home_club_id; // Fallback đội nhà đi tiếp
-      };
+      const getMatchWinnerId = singleMatchWinner;
 
       // Helper tạo trận cho vòng tiếp theo
       const scheduleRoundMatches = async (targetRoundNo: number, targetDay: number, roundName: string, pairedTeams: Array<{ home: bigint; away: bigint }>) => {
@@ -3540,8 +3427,8 @@ export class CompetitionsService implements OnModuleInit {
         const r2Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 7 } });
         if (r2Matches === 0) {
           const r1Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 4 } });
-          const r1Completed = r1Matches.filter((m) => m.status === 'COMPLETED');
-          if (r1Matches.length > 0 && r1Completed.length === r1Matches.length) {
+          const r1Completed = r1Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r1Matches.length === 64 && r1Completed.length === r1Matches.length) {
             const winnersV1 = r1Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             let tier3Clubs = await this.prisma.clubs.findMany({
               where: { country_id: cs.country_id, current_competition_id: 3n },
@@ -3572,8 +3459,8 @@ export class CompetitionsService implements OnModuleInit {
         const r3Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 10 } });
         if (r3Matches === 0) {
           const r2Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 7 } });
-          const r2Completed = r2Matches.filter((m) => m.status === 'COMPLETED');
-          if (r2Matches.length > 0 && r2Completed.length === r2Matches.length) {
+          const r2Completed = r2Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r2Matches.length === 64 && r2Completed.length === r2Matches.length) {
             const winnersV2 = r2Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             let tier2Clubs = await this.prisma.clubs.findMany({
               where: { country_id: cs.country_id, current_competition_id: 2n },
@@ -3604,8 +3491,8 @@ export class CompetitionsService implements OnModuleInit {
         const r4Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 13 } });
         if (r4Matches === 0) {
           const r3Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 10 } });
-          const r3Completed = r3Matches.filter((m) => m.status === 'COMPLETED');
-          if (r3Matches.length > 0 && r3Completed.length === r3Matches.length) {
+          const r3Completed = r3Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r3Matches.length === 48 && r3Completed.length === r3Matches.length) {
             const winnersV3 = r3Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             let tier1Clubs = await this.prisma.clubs.findMany({
               where: { country_id: cs.country_id, current_competition_id: 1n },
@@ -3635,8 +3522,8 @@ export class CompetitionsService implements OnModuleInit {
         const r5Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 16 } });
         if (r5Matches === 0) {
           const r4Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 13 } });
-          const r4Completed = r4Matches.filter((m) => m.status === 'COMPLETED');
-          if (r4Matches.length > 0 && r4Completed.length === r4Matches.length) {
+          const r4Completed = r4Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r4Matches.length === 32 && r4Completed.length === r4Matches.length) {
             const pool = r4Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             const pairs: Array<{ home: bigint; away: bigint }> = [];
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
@@ -3652,8 +3539,8 @@ export class CompetitionsService implements OnModuleInit {
         const r6Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 21 } });
         if (r6Matches === 0) {
           const r5Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 16 } });
-          const r5Completed = r5Matches.filter((m) => m.status === 'COMPLETED');
-          if (r5Matches.length > 0 && r5Completed.length === r5Matches.length) {
+          const r5Completed = r5Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r5Matches.length === 16 && r5Completed.length === r5Matches.length) {
             const pool = r5Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             const pairs: Array<{ home: bigint; away: bigint }> = [];
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
@@ -3669,8 +3556,8 @@ export class CompetitionsService implements OnModuleInit {
         const r7Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 24 } });
         if (r7Matches === 0) {
           const r6Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 21 } });
-          const r6Completed = r6Matches.filter((m) => m.status === 'COMPLETED');
-          if (r6Matches.length > 0 && r6Completed.length === r6Matches.length) {
+          const r6Completed = r6Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r6Matches.length === 8 && r6Completed.length === r6Matches.length) {
             const pool = r6Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             const pairs: Array<{ home: bigint; away: bigint }> = [];
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
@@ -3686,8 +3573,8 @@ export class CompetitionsService implements OnModuleInit {
         const r8Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 27 } });
         if (r8Matches === 0) {
           const r7Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 24 } });
-          const r7Completed = r7Matches.filter((m) => m.status === 'COMPLETED');
-          if (r7Matches.length > 0 && r7Completed.length === r7Matches.length) {
+          const r7Completed = r7Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r7Matches.length === 4 && r7Completed.length === r7Matches.length) {
             const pool = r7Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             const pairs: Array<{ home: bigint; away: bigint }> = [];
             for (let i = 0; i < Math.floor(pool.length / 2); i++) {
@@ -3703,8 +3590,8 @@ export class CompetitionsService implements OnModuleInit {
         const r9Matches = await this.prisma.matches.count({ where: { competition_season_id: cs.id, season_day: 33 } });
         if (r9Matches === 0) {
           const r8Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, season_day: 27 } });
-          const r8Completed = r8Matches.filter((m) => m.status === 'COMPLETED');
-          if (r8Matches.length > 0 && r8Completed.length === r8Matches.length) {
+          const r8Completed = r8Matches.filter((m) => isFinishedMatch(m) && singleMatchWinner(m) !== null);
+          if (r8Matches.length === 2 && r8Completed.length === r8Matches.length) {
             const pool = r8Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             if (pool.length >= 2) {
               const pairs = [{ home: pool[0], away: pool[1] }];
@@ -3729,7 +3616,7 @@ export class CompetitionsService implements OnModuleInit {
         competition_stages: {
           include: {
             stage_groups: { orderBy: { order_no: 'asc' } },
-            stage_rounds: { orderBy: { round_no: 'asc' } },
+            stage_rounds: { orderBy: { round_no: 'asc' }, include: { knockout_round_rules: true } },
           },
         },
       },
@@ -3753,21 +3640,9 @@ export class CompetitionsService implements OnModuleInit {
       }
 
       // Helper tính đội thắng sau 2 lượt trận
-      const getWinnerOfTwoLegs = (leg1: any, leg2: any): bigint => {
-        const teamA = leg1.home_club_id;
-        const teamB = leg1.away_club_id;
-        // leg1: teamA (home) vs teamB (away)
-        // leg2: teamB (home) vs teamA (away)
-        const scoreA = (leg1.home_score || 0) + (leg2.away_score || 0);
-        const scoreB = (leg1.away_score || 0) + (leg2.home_score || 0);
-        if (scoreA > scoreB) return teamA;
-        if (scoreB > scoreA) return teamB;
-        // Nếu bằng: tính penalty leg 2 hoặc fallback
-        if (leg2.home_penalty_score !== null && leg2.away_penalty_score !== null) {
-          if (leg2.home_penalty_score > leg2.away_penalty_score) return teamB;
-          if (leg2.away_penalty_score > leg2.home_penalty_score) return teamA;
-        }
-        return teamA;
+      const getWinnerOfTwoLegs = (first: any, second: any) => {
+        const round = knockoutStage.stage_rounds?.find((r: any) => r.id === second.round_id);
+        return twoLegWinner(first, second, round?.knockout_round_rules?.[0]?.away_goals_rule ?? false);
       };
 
       // Vòng Bảng -> Vòng 1/8 (Sau Day 22: Nhất và Nhì 8 bảng -> 8 cặp đấu Lượt đi Day 25, Lượt về Day 26)
@@ -3779,7 +3654,7 @@ export class CompetitionsService implements OnModuleInit {
           const groupMatches = await this.prisma.matches.findMany({
             where: { competition_season_id: cs.id, stage_id: groupStage.id },
           });
-          const allGroupCompleted = groupMatches.length === 96 && groupMatches.every((m) => m.status === 'COMPLETED');
+          const allGroupCompleted = groupMatches.length === 96 && groupMatches.every((m) => isFinishedMatch(m));
           if (allGroupCompleted) {
             // Tính BXH 8 bảng
             const firstPlaces: bigint[] = [];
@@ -3880,12 +3755,13 @@ export class CompetitionsService implements OnModuleInit {
         if (qfMatches === 0) {
           const leg1Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 25 } });
           const leg2Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 26 } });
-          if (leg1Matches.length === 8 && leg2Matches.length === 8 && leg2Matches.every((m) => m.status === 'COMPLETED')) {
+          if (leg1Matches.length === 8 && leg2Matches.length === 8 && leg1Matches.every(isFinishedMatch) && leg2Matches.every(isFinishedMatch)) {
             const winners8: bigint[] = [];
             for (let i = 0; i < 8; i++) {
               const l1 = leg1Matches[i];
-              const l2 = leg2Matches.find((m) => m.home_club_id === l1.away_club_id && m.away_club_id === l1.home_club_id) || leg2Matches[i];
-              winners8.push(getWinnerOfTwoLegs(l1, l2));
+              const l2 = leg2Matches.find((m) => m.home_club_id === l1.away_club_id && m.away_club_id === l1.home_club_id);
+              const winner = l2 ? getWinnerOfTwoLegs(l1, l2) : null;
+              if (winner !== null) winners8.push(winner);
             }
             if (winners8.length === 8) {
               const rLeg1 = await this.ensureStageRound(knockoutStage.id, season, 3, 28, 'Quarter-finals - 1st Leg');
@@ -3950,12 +3826,13 @@ export class CompetitionsService implements OnModuleInit {
         if (sfMatches === 0) {
           const leg1Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 28 } });
           const leg2Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 29 } });
-          if (leg1Matches.length === 4 && leg2Matches.length === 4 && leg2Matches.every((m) => m.status === 'COMPLETED')) {
+          if (leg1Matches.length === 4 && leg2Matches.length === 4 && leg1Matches.every(isFinishedMatch) && leg2Matches.every(isFinishedMatch)) {
             const winners4: bigint[] = [];
             for (let i = 0; i < 4; i++) {
               const l1 = leg1Matches[i];
-              const l2 = leg2Matches.find((m) => m.home_club_id === l1.away_club_id && m.away_club_id === l1.home_club_id) || leg2Matches[i];
-              winners4.push(getWinnerOfTwoLegs(l1, l2));
+              const l2 = leg2Matches.find((m) => m.home_club_id === l1.away_club_id && m.away_club_id === l1.home_club_id);
+              const winner = l2 ? getWinnerOfTwoLegs(l1, l2) : null;
+              if (winner !== null) winners4.push(winner);
             }
             if (winners4.length === 4) {
               const rLeg1 = await this.ensureStageRound(knockoutStage.id, season, 5, 31, 'Semi-finals - 1st Leg');
@@ -4020,12 +3897,13 @@ export class CompetitionsService implements OnModuleInit {
         if (finalMatches === 0) {
           const leg1Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 31 } });
           const leg2Matches = await this.prisma.matches.findMany({ where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 32 } });
-          if (leg1Matches.length === 2 && leg2Matches.length === 2 && leg2Matches.every((m) => m.status === 'COMPLETED')) {
+          if (leg1Matches.length === 2 && leg2Matches.length === 2 && leg1Matches.every(isFinishedMatch) && leg2Matches.every(isFinishedMatch)) {
             const finalists: bigint[] = [];
             for (let i = 0; i < 2; i++) {
               const l1 = leg1Matches[i];
-              const l2 = leg2Matches.find((m) => m.home_club_id === l1.away_club_id && m.away_club_id === l1.home_club_id) || leg2Matches[i];
-              finalists.push(getWinnerOfTwoLegs(l1, l2));
+              const l2 = leg2Matches.find((m) => m.home_club_id === l1.away_club_id && m.away_club_id === l1.home_club_id);
+              const winner = l2 ? getWinnerOfTwoLegs(l1, l2) : null;
+              if (winner !== null) finalists.push(winner);
             }
             if (finalists.length === 2) {
               const rFinal = await this.ensureStageRound(knockoutStage.id, season, 7, 34, 'Continental Cup Final');
@@ -4096,16 +3974,7 @@ export class CompetitionsService implements OnModuleInit {
       const countryObj = cs.country_id ? clubCountryMap.get(cs.country_id.toString()) : undefined;
 
       // Helper lấy đội thắng trận Knockout đơn U21
-      const getMatchWinnerId = (m: any): bigint | null => {
-        if (m.home_score === null || m.away_score === null) return null;
-        if (m.home_score > m.away_score) return m.home_club_id;
-        if (m.away_score > m.home_score) return m.away_club_id;
-        if (m.home_penalty_score !== null && m.away_penalty_score !== null) {
-          if (m.home_penalty_score > m.away_penalty_score) return m.home_club_id;
-          if (m.away_penalty_score > m.home_penalty_score) return m.away_club_id;
-        }
-        return m.home_club_id;
-      };
+      const getMatchWinnerId = singleMatchWinner;
 
       // Vòng Bảng -> Vòng 1/8 (Sau Day 17: Nhất & Nhì 8 bảng A..H -> 8 cặp Vòng 1/8 Day 20)
       if (currentSeasonDay >= 18) {
@@ -4116,7 +3985,7 @@ export class CompetitionsService implements OnModuleInit {
           const groupMatches = await this.prisma.matches.findMany({
             where: { competition_season_id: cs.id, stage_id: groupStage.id },
           });
-          const allGroupCompleted = groupMatches.length === 48 && groupMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED');
+          const allGroupCompleted = groupMatches.length === 48 && groupMatches.every((m) => isFinishedMatch(m));
           if (allGroupCompleted) {
             // Lấy Nhất và Nhì 8 bảng A..H (16 đội)
             const firstPlaces: bigint[] = [];
@@ -4203,7 +4072,7 @@ export class CompetitionsService implements OnModuleInit {
             where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 20 },
             orderBy: { id: 'asc' },
           });
-          if (r16Matches.length === 8 && r16Matches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED')) {
+          if (r16Matches.length === 8 && r16Matches.every((m) => isFinishedMatch(m))) {
             const winners8 = r16Matches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             if (winners8.length === 8) {
               const rQF = await this.ensureStageRound(knockoutStage.id, season, 2, 23, 'Quarter-finals');
@@ -4250,7 +4119,7 @@ export class CompetitionsService implements OnModuleInit {
             where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 23 },
             orderBy: { id: 'asc' },
           });
-          if (qfMatches.length === 4 && qfMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED')) {
+          if (qfMatches.length === 4 && qfMatches.every((m) => isFinishedMatch(m))) {
             const winners4 = qfMatches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             if (winners4.length === 4) {
               const rSF = await this.ensureStageRound(knockoutStage.id, season, 3, 27, 'Semi-finals');
@@ -4297,7 +4166,7 @@ export class CompetitionsService implements OnModuleInit {
             where: { competition_season_id: cs.id, stage_id: knockoutStage.id, season_day: 27 },
             orderBy: { id: 'asc' },
           });
-          if (sfMatches.length === 2 && sfMatches.every((m) => m.status === 'COMPLETED' || m.status === 'FINISHED')) {
+          if (sfMatches.length === 2 && sfMatches.every((m) => isFinishedMatch(m))) {
             const finalists = sfMatches.map(getMatchWinnerId).filter((id): id is bigint => id !== null);
             if (finalists.length === 2) {
               const rFinal = await this.ensureStageRound(knockoutStage.id, season, 4, 33, 'Youth Cup Final');
@@ -4412,7 +4281,8 @@ export class CompetitionsService implements OnModuleInit {
     const matches = await this.prisma.matches.findMany({
       where: whereMatches,
       include: {
-        stage_rounds: true,
+        stage_rounds: { include: { knockout_round_rules: true } },
+        match_lineups: { select: { tactics_snapshot: true } },
         stage_groups: true,
         competition_stages: true,
         clubs_matches_home_club_idToclubs: {
@@ -4455,19 +4325,17 @@ export class CompetitionsService implements OnModuleInit {
         });
       }
 
+      const stored = m.match_lineups.map(l => (l.tactics_snapshot as any)?.engine).find(Boolean);
       let winnerClubId: string | null = null;
-      if (m.status === 'COMPLETED' && m.home_score !== null && m.away_score !== null) {
-        if (m.home_score > m.away_score) {
-          winnerClubId = m.home_club_id?.toString() || null;
-        } else if (m.away_score > m.home_score) {
-          winnerClubId = m.away_club_id?.toString() || null;
-        } else if (m.home_penalty_score !== null && m.away_penalty_score !== null) {
-          if (m.home_penalty_score > m.away_penalty_score) {
-            winnerClubId = m.home_club_id?.toString() || null;
-          } else if (m.away_penalty_score > m.home_penalty_score) {
-            winnerClubId = m.away_club_id?.toString() || null;
+      if (isFinishedMatch(m)) {
+        if (stored) winnerClubId = stored.winnerClubId || null;
+        else if (comp.competition_type.startsWith('CONTINENTAL_CLUB') && m.stage_rounds?.round_no <= 6) {
+          if (m.stage_rounds.round_no % 2 === 0) {
+            const first = matches.find(first => first.stage_rounds?.round_no === m.stage_rounds.round_no - 1 &&
+              first.home_club_id === m.away_club_id && first.away_club_id === m.home_club_id);
+            winnerClubId = first ? twoLegWinner(first, m, m.stage_rounds.knockout_round_rules[0]?.away_goals_rule ?? false)?.toString() || null : null;
           }
-        }
+        } else winnerClubId = singleMatchWinner(m)?.toString() || null;
       }
 
       roundMap.get(roundKey)!.matches.push({

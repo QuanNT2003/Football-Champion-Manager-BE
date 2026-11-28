@@ -1,0 +1,1744 @@
+{
+  "engine": "2.2.0",
+  "ruleset": "1.0.0",
+  "hash": "734b5800a6f589cb89fc4a455304d18e133aefa04bea88005e5cfec6872af611",
+  "samples": 8,
+  "matches": 2640,
+  "formationPairs": [
+    {
+      "a": "433_ATT",
+      "b": "433_DEF",
+      "baselineDisadvantaged": "433_ATT",
+      "winsA": 8,
+      "draws": 2,
+      "winsB": 6,
+      "goalsA": 15,
+      "goalsB": 17
+    },
+    {
+      "a": "433_ATT",
+      "b": "4231_MOD",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "433_ATT",
+      "b": "4231_WIDE",
+      "baselineDisadvantaged": "433_ATT",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 13,
+      "goalsB": 15
+    },
+    {
+      "a": "433_ATT",
+      "b": "442_CLASS",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 17,
+      "goalsB": 15
+    },
+    {
+      "a": "433_ATT",
+      "b": "41212_NAR",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "433_ATT",
+      "b": "41212_WIDE",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 16
+    },
+    {
+      "a": "433_ATT",
+      "b": "4312_NARROW",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "433_ATT",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "433_ATT",
+      "b": "352_WB",
+      "baselineDisadvantaged": "352_WB",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "433_ATT",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": "343_FLAT",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 18,
+      "goalsB": 16
+    },
+    {
+      "a": "433_ATT",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": "433_ATT",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 16,
+      "goalsB": 15
+    },
+    {
+      "a": "433_ATT",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 17
+    },
+    {
+      "a": "433_ATT",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "532_CATENACCIO",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 19
+    },
+    {
+      "a": "433_ATT",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "541_BUS",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 13,
+      "goalsB": 15
+    },
+    {
+      "a": "433_ATT",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "523_COUNTER",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 17,
+      "goalsB": 15
+    },
+    {
+      "a": "433_DEF",
+      "b": "4231_MOD",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 19,
+      "goalsB": 19
+    },
+    {
+      "a": "433_DEF",
+      "b": "4231_WIDE",
+      "baselineDisadvantaged": "433_DEF",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 15,
+      "goalsB": 18
+    },
+    {
+      "a": "433_DEF",
+      "b": "442_CLASS",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "433_DEF",
+      "b": "41212_NAR",
+      "baselineDisadvantaged": "433_DEF",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 15,
+      "goalsB": 20
+    },
+    {
+      "a": "433_DEF",
+      "b": "41212_WIDE",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 16
+    },
+    {
+      "a": "433_DEF",
+      "b": "4312_NARROW",
+      "baselineDisadvantaged": null,
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 16,
+      "goalsB": 16
+    },
+    {
+      "a": "433_DEF",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": "433_DEF",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 13,
+      "goalsB": 13
+    },
+    {
+      "a": "433_DEF",
+      "b": "352_WB",
+      "baselineDisadvantaged": null,
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 19,
+      "goalsB": 21
+    },
+    {
+      "a": "433_DEF",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": "343_FLAT",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 20,
+      "goalsB": 15
+    },
+    {
+      "a": "433_DEF",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": "3421_XABI",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 19,
+      "goalsB": 21
+    },
+    {
+      "a": "433_DEF",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 19
+    },
+    {
+      "a": "433_DEF",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 19,
+      "goalsB": 19
+    },
+    {
+      "a": "433_DEF",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "433_DEF",
+      "winsA": 4,
+      "draws": 7,
+      "winsB": 5,
+      "goalsA": 13,
+      "goalsB": 17
+    },
+    {
+      "a": "433_DEF",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "523_COUNTER",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 16,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_MOD",
+      "b": "4231_WIDE",
+      "baselineDisadvantaged": "4231_MOD",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_MOD",
+      "b": "442_CLASS",
+      "baselineDisadvantaged": "4231_MOD",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "4231_MOD",
+      "b": "41212_NAR",
+      "baselineDisadvantaged": "4231_MOD",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "4231_MOD",
+      "b": "41212_WIDE",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "4231_MOD",
+      "b": "4312_NARROW",
+      "baselineDisadvantaged": "4231_MOD",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 15
+    },
+    {
+      "a": "4231_MOD",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": "4231_MOD",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 15
+    },
+    {
+      "a": "4231_MOD",
+      "b": "352_WB",
+      "baselineDisadvantaged": "4231_MOD",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 14,
+      "goalsB": 16
+    },
+    {
+      "a": "4231_MOD",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 19
+    },
+    {
+      "a": "4231_MOD",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "4231_MOD",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 18
+    },
+    {
+      "a": "4231_MOD",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "4231_MOD",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 15
+    },
+    {
+      "a": "4231_MOD",
+      "b": "541_BUS",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 7,
+      "winsB": 4,
+      "goalsA": 16,
+      "goalsB": 15
+    },
+    {
+      "a": "4231_MOD",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 16,
+      "goalsB": 16
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "442_CLASS",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "41212_NAR",
+      "baselineDisadvantaged": "4231_WIDE",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "41212_WIDE",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 6,
+      "draws": 5,
+      "winsB": 5,
+      "goalsA": 13,
+      "goalsB": 12
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "4312_NARROW",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": "4231_WIDE",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 16
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "352_WB",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": "343_FLAT",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 16,
+      "goalsB": 13
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": "3421_XABI",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 6,
+      "draws": 5,
+      "winsB": 5,
+      "goalsA": 15,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "4231_WIDE",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 13,
+      "goalsB": 14
+    },
+    {
+      "a": "4231_WIDE",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "523_COUNTER",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 13,
+      "goalsB": 13
+    },
+    {
+      "a": "442_CLASS",
+      "b": "41212_NAR",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 15,
+      "goalsB": 16
+    },
+    {
+      "a": "442_CLASS",
+      "b": "41212_WIDE",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 20
+    },
+    {
+      "a": "442_CLASS",
+      "b": "4312_NARROW",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 15,
+      "goalsB": 14
+    },
+    {
+      "a": "442_CLASS",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 13,
+      "goalsB": 14
+    },
+    {
+      "a": "442_CLASS",
+      "b": "352_WB",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 15,
+      "goalsB": 20
+    },
+    {
+      "a": "442_CLASS",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": null,
+      "winsA": 8,
+      "draws": 0,
+      "winsB": 8,
+      "goalsA": 21,
+      "goalsB": 20
+    },
+    {
+      "a": "442_CLASS",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "442_CLASS",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 16,
+      "goalsB": 14
+    },
+    {
+      "a": "442_CLASS",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "442_CLASS",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "442_CLASS",
+      "b": "541_BUS",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "442_CLASS",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "41212_NAR",
+      "b": "41212_WIDE",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 7,
+      "draws": 4,
+      "winsB": 5,
+      "goalsA": 20,
+      "goalsB": 15
+    },
+    {
+      "a": "41212_NAR",
+      "b": "4312_NARROW",
+      "baselineDisadvantaged": "4312_NARROW",
+      "winsA": 6,
+      "draws": 5,
+      "winsB": 5,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "41212_NAR",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": "41212_NAR",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 13,
+      "goalsB": 14
+    },
+    {
+      "a": "41212_NAR",
+      "b": "352_WB",
+      "baselineDisadvantaged": "41212_NAR",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 15,
+      "goalsB": 20
+    },
+    {
+      "a": "41212_NAR",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": "343_FLAT",
+      "winsA": 8,
+      "draws": 1,
+      "winsB": 7,
+      "goalsA": 21,
+      "goalsB": 19
+    },
+    {
+      "a": "41212_NAR",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "41212_NAR",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 20,
+      "goalsB": 15
+    },
+    {
+      "a": "41212_NAR",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "41212_NAR",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "41212_NAR",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "541_BUS",
+      "winsA": 7,
+      "draws": 6,
+      "winsB": 3,
+      "goalsA": 19,
+      "goalsB": 12
+    },
+    {
+      "a": "41212_NAR",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "523_COUNTER",
+      "winsA": 7,
+      "draws": 4,
+      "winsB": 5,
+      "goalsA": 19,
+      "goalsB": 15
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "4312_NARROW",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 19,
+      "goalsB": 19
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "352_WB",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 15,
+      "goalsB": 17
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 0,
+      "winsB": 9,
+      "goalsA": 20,
+      "goalsB": 21
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 20
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 19
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 16,
+      "goalsB": 17
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "41212_WIDE",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 15
+    },
+    {
+      "a": "41212_WIDE",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "4321_TREE",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "352_WB",
+      "baselineDisadvantaged": "4312_NARROW",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 15,
+      "goalsB": 18
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": "343_FLAT",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 19
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": null,
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 16,
+      "goalsB": 16
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 20,
+      "goalsB": 15
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "4312_NARROW",
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 12,
+      "goalsB": 14
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "541_BUS",
+      "winsA": 7,
+      "draws": 6,
+      "winsB": 3,
+      "goalsA": 19,
+      "goalsB": 12
+    },
+    {
+      "a": "4312_NARROW",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "523_COUNTER",
+      "winsA": 6,
+      "draws": 5,
+      "winsB": 5,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "4321_TREE",
+      "b": "352_WB",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4321_TREE",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": "4321_TREE",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 16,
+      "goalsB": 18
+    },
+    {
+      "a": "4321_TREE",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4321_TREE",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 6,
+      "draws": 6,
+      "winsB": 4,
+      "goalsA": 15,
+      "goalsB": 14
+    },
+    {
+      "a": "4321_TREE",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "4321_TREE",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "541_BUS",
+      "winsA": 6,
+      "draws": 6,
+      "winsB": 4,
+      "goalsA": 16,
+      "goalsB": 12
+    },
+    {
+      "a": "4321_TREE",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "4321_TREE",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "352_WB",
+      "b": "343_FLAT",
+      "baselineDisadvantaged": "343_FLAT",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 17
+    },
+    {
+      "a": "352_WB",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "352_WB",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 15
+    },
+    {
+      "a": "352_WB",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "352_WB",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 14,
+      "goalsB": 16
+    },
+    {
+      "a": "352_WB",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "541_BUS",
+      "winsA": 6,
+      "draws": 7,
+      "winsB": 3,
+      "goalsA": 17,
+      "goalsB": 12
+    },
+    {
+      "a": "352_WB",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "523_COUNTER",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 16,
+      "goalsB": 15
+    },
+    {
+      "a": "343_FLAT",
+      "b": "3421_XABI",
+      "baselineDisadvantaged": null,
+      "winsA": 8,
+      "draws": 0,
+      "winsB": 8,
+      "goalsA": 21,
+      "goalsB": 22
+    },
+    {
+      "a": "343_FLAT",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": null,
+      "winsA": 8,
+      "draws": 0,
+      "winsB": 8,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "343_FLAT",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "343_FLAT",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 16,
+      "goalsB": 19
+    },
+    {
+      "a": "343_FLAT",
+      "b": "541_BUS",
+      "baselineDisadvantaged": null,
+      "winsA": 4,
+      "draws": 7,
+      "winsB": 5,
+      "goalsA": 13,
+      "goalsB": 14
+    },
+    {
+      "a": "343_FLAT",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 8,
+      "draws": 0,
+      "winsB": 8,
+      "goalsA": 20,
+      "goalsB": 21
+    },
+    {
+      "a": "3421_XABI",
+      "b": "3412_CLASS",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 19
+    },
+    {
+      "a": "3421_XABI",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "3421_XABI",
+      "b": "541_BUS",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "3421_XABI",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "3412_CLASS",
+      "b": "532_CATENACCIO",
+      "baselineDisadvantaged": "3412_CLASS",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 14,
+      "goalsB": 16
+    },
+    {
+      "a": "3412_CLASS",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "541_BUS",
+      "winsA": 6,
+      "draws": 5,
+      "winsB": 5,
+      "goalsA": 14,
+      "goalsB": 14
+    },
+    {
+      "a": "3412_CLASS",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 18,
+      "goalsB": 20
+    },
+    {
+      "a": "532_CATENACCIO",
+      "b": "541_BUS",
+      "baselineDisadvantaged": "541_BUS",
+      "winsA": 6,
+      "draws": 7,
+      "winsB": 3,
+      "goalsA": 17,
+      "goalsB": 12
+    },
+    {
+      "a": "532_CATENACCIO",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": "523_COUNTER",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 14,
+      "goalsB": 13
+    },
+    {
+      "a": "541_BUS",
+      "b": "523_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 16,
+      "goalsB": 15
+    }
+  ],
+  "stylePairs": [
+    {
+      "a": "BALANCED",
+      "b": "CONTROL_POSSESSION",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 5,
+      "winsB": 6,
+      "goalsA": 22,
+      "goalsB": 28
+    },
+    {
+      "a": "BALANCED",
+      "b": "COUNTER_ATTACK",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 22,
+      "goalsB": 22
+    },
+    {
+      "a": "BALANCED",
+      "b": "DIRECT_ATTACK",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 24,
+      "goalsB": 25
+    },
+    {
+      "a": "BALANCED",
+      "b": "FLUID_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 8,
+      "draws": 1,
+      "winsB": 7,
+      "goalsA": 22,
+      "goalsB": 19
+    },
+    {
+      "a": "BALANCED",
+      "b": "GEGENPRESSING",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 25,
+      "goalsB": 25
+    },
+    {
+      "a": "BALANCED",
+      "b": "PARK_THE_BUS",
+      "baselineDisadvantaged": null,
+      "winsA": 3,
+      "draws": 9,
+      "winsB": 4,
+      "goalsA": 15,
+      "goalsB": 15
+    },
+    {
+      "a": "BALANCED",
+      "b": "TIKI_TAKA",
+      "baselineDisadvantaged": null,
+      "winsA": 4,
+      "draws": 6,
+      "winsB": 6,
+      "goalsA": 20,
+      "goalsB": 28
+    },
+    {
+      "a": "BALANCED",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": null,
+      "winsA": 3,
+      "draws": 3,
+      "winsB": 10,
+      "goalsA": 18,
+      "goalsB": 35
+    },
+    {
+      "a": "BALANCED",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 23,
+      "goalsB": 23
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "COUNTER_ATTACK",
+      "baselineDisadvantaged": "CONTROL_POSSESSION",
+      "winsA": 4,
+      "draws": 4,
+      "winsB": 8,
+      "goalsA": 21,
+      "goalsB": 27
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "DIRECT_ATTACK",
+      "baselineDisadvantaged": "DIRECT_ATTACK",
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 28,
+      "goalsB": 29
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "FLUID_COUNTER",
+      "baselineDisadvantaged": "CONTROL_POSSESSION",
+      "winsA": 8,
+      "draws": 2,
+      "winsB": 6,
+      "goalsA": 28,
+      "goalsB": 23
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "GEGENPRESSING",
+      "baselineDisadvantaged": "CONTROL_POSSESSION",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 21,
+      "goalsB": 18
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "PARK_THE_BUS",
+      "baselineDisadvantaged": "PARK_THE_BUS",
+      "winsA": 5,
+      "draws": 8,
+      "winsB": 3,
+      "goalsA": 19,
+      "goalsB": 19
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "TIKI_TAKA",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 30,
+      "goalsB": 26
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": "CONTROL_POSSESSION",
+      "winsA": 6,
+      "draws": 3,
+      "winsB": 7,
+      "goalsA": 31,
+      "goalsB": 31
+    },
+    {
+      "a": "CONTROL_POSSESSION",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": null,
+      "winsA": 8,
+      "draws": 3,
+      "winsB": 5,
+      "goalsA": 32,
+      "goalsB": 22
+    },
+    {
+      "a": "COUNTER_ATTACK",
+      "b": "DIRECT_ATTACK",
+      "baselineDisadvantaged": null,
+      "winsA": 8,
+      "draws": 1,
+      "winsB": 7,
+      "goalsA": 22,
+      "goalsB": 18
+    },
+    {
+      "a": "COUNTER_ATTACK",
+      "b": "FLUID_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 6,
+      "draws": 5,
+      "winsB": 5,
+      "goalsA": 21,
+      "goalsB": 20
+    },
+    {
+      "a": "COUNTER_ATTACK",
+      "b": "GEGENPRESSING",
+      "baselineDisadvantaged": "GEGENPRESSING",
+      "winsA": 10,
+      "draws": 1,
+      "winsB": 5,
+      "goalsA": 29,
+      "goalsB": 19
+    },
+    {
+      "a": "COUNTER_ATTACK",
+      "b": "PARK_THE_BUS",
+      "baselineDisadvantaged": "COUNTER_ATTACK",
+      "winsA": 4,
+      "draws": 6,
+      "winsB": 6,
+      "goalsA": 15,
+      "goalsB": 17
+    },
+    {
+      "a": "COUNTER_ATTACK",
+      "b": "TIKI_TAKA",
+      "baselineDisadvantaged": "TIKI_TAKA",
+      "winsA": 8,
+      "draws": 2,
+      "winsB": 6,
+      "goalsA": 27,
+      "goalsB": 23
+    },
+    {
+      "a": "COUNTER_ATTACK",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": "VERTICAL_TIKI_TAKA",
+      "winsA": 6,
+      "draws": 6,
+      "winsB": 4,
+      "goalsA": 24,
+      "goalsB": 22
+    },
+    {
+      "a": "COUNTER_ATTACK",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": "WING_PLAY",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 22,
+      "goalsB": 22
+    },
+    {
+      "a": "DIRECT_ATTACK",
+      "b": "FLUID_COUNTER",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 25,
+      "goalsB": 24
+    },
+    {
+      "a": "DIRECT_ATTACK",
+      "b": "GEGENPRESSING",
+      "baselineDisadvantaged": "GEGENPRESSING",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 29,
+      "goalsB": 30
+    },
+    {
+      "a": "DIRECT_ATTACK",
+      "b": "PARK_THE_BUS",
+      "baselineDisadvantaged": "DIRECT_ATTACK",
+      "winsA": 4,
+      "draws": 5,
+      "winsB": 7,
+      "goalsA": 17,
+      "goalsB": 24
+    },
+    {
+      "a": "DIRECT_ATTACK",
+      "b": "TIKI_TAKA",
+      "baselineDisadvantaged": "DIRECT_ATTACK",
+      "winsA": 9,
+      "draws": 2,
+      "winsB": 5,
+      "goalsA": 28,
+      "goalsB": 25
+    },
+    {
+      "a": "DIRECT_ATTACK",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": null,
+      "winsA": 6,
+      "draws": 7,
+      "winsB": 3,
+      "goalsA": 27,
+      "goalsB": 27
+    },
+    {
+      "a": "DIRECT_ATTACK",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": null,
+      "winsA": 6,
+      "draws": 5,
+      "winsB": 5,
+      "goalsA": 27,
+      "goalsB": 29
+    },
+    {
+      "a": "FLUID_COUNTER",
+      "b": "GEGENPRESSING",
+      "baselineDisadvantaged": "GEGENPRESSING",
+      "winsA": 7,
+      "draws": 4,
+      "winsB": 5,
+      "goalsA": 27,
+      "goalsB": 19
+    },
+    {
+      "a": "FLUID_COUNTER",
+      "b": "PARK_THE_BUS",
+      "baselineDisadvantaged": "FLUID_COUNTER",
+      "winsA": 6,
+      "draws": 6,
+      "winsB": 4,
+      "goalsA": 17,
+      "goalsB": 13
+    },
+    {
+      "a": "FLUID_COUNTER",
+      "b": "TIKI_TAKA",
+      "baselineDisadvantaged": "TIKI_TAKA",
+      "winsA": 7,
+      "draws": 3,
+      "winsB": 6,
+      "goalsA": 24,
+      "goalsB": 28
+    },
+    {
+      "a": "FLUID_COUNTER",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": "VERTICAL_TIKI_TAKA",
+      "winsA": 6,
+      "draws": 4,
+      "winsB": 6,
+      "goalsA": 22,
+      "goalsB": 24
+    },
+    {
+      "a": "FLUID_COUNTER",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": null,
+      "winsA": 7,
+      "draws": 1,
+      "winsB": 8,
+      "goalsA": 20,
+      "goalsB": 18
+    },
+    {
+      "a": "GEGENPRESSING",
+      "b": "PARK_THE_BUS",
+      "baselineDisadvantaged": null,
+      "winsA": 5,
+      "draws": 4,
+      "winsB": 7,
+      "goalsA": 14,
+      "goalsB": 15
+    },
+    {
+      "a": "GEGENPRESSING",
+      "b": "TIKI_TAKA",
+      "baselineDisadvantaged": "TIKI_TAKA",
+      "winsA": 7,
+      "draws": 2,
+      "winsB": 7,
+      "goalsA": 26,
+      "goalsB": 23
+    },
+    {
+      "a": "GEGENPRESSING",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": "VERTICAL_TIKI_TAKA",
+      "winsA": 8,
+      "draws": 3,
+      "winsB": 5,
+      "goalsA": 31,
+      "goalsB": 25
+    },
+    {
+      "a": "GEGENPRESSING",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": "GEGENPRESSING",
+      "winsA": 5,
+      "draws": 3,
+      "winsB": 8,
+      "goalsA": 22,
+      "goalsB": 31
+    },
+    {
+      "a": "PARK_THE_BUS",
+      "b": "TIKI_TAKA",
+      "baselineDisadvantaged": "PARK_THE_BUS",
+      "winsA": 4,
+      "draws": 9,
+      "winsB": 3,
+      "goalsA": 19,
+      "goalsB": 18
+    },
+    {
+      "a": "PARK_THE_BUS",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": "PARK_THE_BUS",
+      "winsA": 8,
+      "draws": 3,
+      "winsB": 5,
+      "goalsA": 20,
+      "goalsB": 20
+    },
+    {
+      "a": "PARK_THE_BUS",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": "WING_PLAY",
+      "winsA": 5,
+      "draws": 6,
+      "winsB": 5,
+      "goalsA": 15,
+      "goalsB": 14
+    },
+    {
+      "a": "TIKI_TAKA",
+      "b": "VERTICAL_TIKI_TAKA",
+      "baselineDisadvantaged": null,
+      "winsA": 4,
+      "draws": 4,
+      "winsB": 8,
+      "goalsA": 33,
+      "goalsB": 36
+    },
+    {
+      "a": "TIKI_TAKA",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": "TIKI_TAKA",
+      "winsA": 9,
+      "draws": 4,
+      "winsB": 3,
+      "goalsA": 37,
+      "goalsB": 23
+    },
+    {
+      "a": "VERTICAL_TIKI_TAKA",
+      "b": "WING_PLAY",
+      "baselineDisadvantaged": null,
+      "winsA": 10,
+      "draws": 2,
+      "winsB": 4,
+      "goalsA": 36,
+      "goalsB": 26
+    }
+  ],
+  "byFormation": {
+    "433_ATT": {
+      "wins": 100,
+      "matches": 240,
+      "winRate": 41.7
+    },
+    "433_DEF": {
+      "wins": 93,
+      "matches": 240,
+      "winRate": 38.8
+    },
+    "4231_MOD": {
+      "wins": 91,
+      "matches": 240,
+      "winRate": 37.9
+    },
+    "4231_WIDE": {
+      "wins": 82,
+      "matches": 240,
+      "winRate": 34.2
+    },
+    "442_CLASS": {
+      "wins": 90,
+      "matches": 240,
+      "winRate": 37.5
+    },
+    "41212_NAR": {
+      "wins": 96,
+      "matches": 240,
+      "winRate": 40
+    },
+    "41212_WIDE": {
+      "wins": 93,
+      "matches": 240,
+      "winRate": 38.8
+    },
+    "4312_NARROW": {
+      "wins": 89,
+      "matches": 240,
+      "winRate": 37.1
+    },
+    "4321_TREE": {
+      "wins": 82,
+      "matches": 240,
+      "winRate": 34.2
+    },
+    "352_WB": {
+      "wins": 97,
+      "matches": 240,
+      "winRate": 40.4
+    },
+    "343_FLAT": {
+      "wins": 107,
+      "matches": 240,
+      "winRate": 44.6
+    },
+    "3421_XABI": {
+      "wins": 99,
+      "matches": 240,
+      "winRate": 41.3
+    },
+    "3412_CLASS": {
+      "wins": 95,
+      "matches": 240,
+      "winRate": 39.6
+    },
+    "532_CATENACCIO": {
+      "wins": 95,
+      "matches": 240,
+      "winRate": 39.6
+    },
+    "541_BUS": {
+      "wins": 67,
+      "matches": 240,
+      "winRate": 27.9
+    },
+    "523_COUNTER": {
+      "wins": 93,
+      "matches": 240,
+      "winRate": 38.8
+    }
+  },
+  "elapsedMs": 219218
+}

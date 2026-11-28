@@ -1,5 +1,9 @@
+import { matchSquadType, nextClubMatch } from './discipline-scope';
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { playerAvailability, playerAvailabilityInclude } from './player-availability';
+import { mergePlayerStatistics } from './player-statistics';
+import { loadYellowCards, yellowCardMatchScopes } from './player-yellow-cards';
 
 /**
  * Tính OVR động 100% từ CSDL:
@@ -205,7 +209,7 @@ export class PlayersService {
             stadiums: true,
           }
         },
-        player_status: true,
+        ...playerAvailabilityInclude,
         player_positions: {
           include: {
             positions: {
@@ -271,11 +275,6 @@ export class PlayersService {
                 include: { attributes: true },
                 orderBy: { created_at: 'asc' },
               },
-              injuries: {
-                include: { injury_types: true },
-                orderBy: { start_date: 'desc' },
-                take: 20,
-              },
             }
           : {}),
       },
@@ -285,6 +284,17 @@ export class PlayersService {
       throw new NotFoundException('Không tìm thấy cầu thủ');
     }
 
+
+    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: player.world_id } });
+    const yellowCards = await loadYellowCards(this.prisma, [playerId], timeline?.season_id ? [{ season_id: timeline.season_id }] : []);
+    const availability = playerAvailability(player, undefined, yellowCards.get(playerId));
+    const activeInjury = (player.injuries || []).filter((inj: any) =>
+      ['ACTIVE', 'RECOVERING'].includes(inj.status) && inj.days_remaining > 0,
+    ).sort((a: any, b: any) => b.days_remaining - a.days_remaining)[0];
+    const injuryHistory = isOwner ? await this.prisma.injuries.findMany({
+      where: { player_id: playerId }, include: { injury_types: true },
+      orderBy: [{ start_date: 'desc' }, { id: 'desc' }], take: 20,
+    }) : [];
 
     // Positions & position_attributes mapping from DB
     const primaryPos = player.player_positions.find((pos) => pos.is_preferred) || player.player_positions[0];
@@ -401,7 +411,8 @@ export class PlayersService {
     });
 
     // --- TAB 3: CAREER STATISTICS (100% PURE DB THEO BẢNG player_statistics) ---
-    const careerSeasons = (player.player_statistics || []).map((ps) => {
+    const seasonStatistics = mergePlayerStatistics(player.player_statistics || []);
+    const careerSeasons = seasonStatistics.map((ps) => {
       const yellow = ps.yellow_cards || 0;
       const red = ps.red_cards || 0;
       const avgRating = Number(Number(ps.average_rating || 0).toFixed(2));
@@ -430,12 +441,11 @@ export class PlayersService {
     const totalYellow = careerSeasons.reduce((acc, s) => acc + s.yellow_cards, 0);
     const totalRed = careerSeasons.reduce((acc, s) => acc + s.red_cards, 0);
     const totalMotm = careerSeasons.reduce((acc, s) => acc + s.motm, 0);
-    const careerRating = careerSeasons.length > 0
-      ? Number((careerSeasons.reduce((acc, s) => acc + s.rating, 0) / careerSeasons.length).toFixed(2))
+    const careerRating = totalMatches > 0
+      ? Number((seasonStatistics.reduce((acc, s) => acc + s.average_rating * s.appearances, 0) / totalMatches).toFixed(2))
       : 0;
 
     // Server timeline for contract & season comparison
-    const timeline = await this.prisma.server_timeline.findUnique({ where: { world_id: player.world_id } });
     const currentSeasonNumber = timeline?.season_number || 1;
 
     // --- TAB 4: TRANSFERS HISTORY (100% PURE DB) ---
@@ -477,8 +487,8 @@ export class PlayersService {
     });
 
     // --- TAB 5: INJURIES HISTORY (100% PURE DB - CHỈ KHI LÀ CLB CHỦ QUẢN) ---
-    const injuriesHistory = isOwner && player.injuries
-      ? player.injuries.map((inj: any) => ({
+    const injuriesHistory = isOwner && injuryHistory
+      ? injuryHistory.map((inj: any) => ({
           id: inj.id.toString(),
           injury_name: inj.injury_types?.name || 'Chấn thương',
           category: inj.injury_types?.category || 'MUSCLE',
@@ -492,8 +502,8 @@ export class PlayersService {
       : [];
 
     // Discipline from DB
-    const isSuspended = Boolean(player.player_status?.is_suspended);
-    const yellowCount = player.match_players?.reduce((acc: number, m: any) => acc + (m.yellow_cards || 0), 0) || 0;
+    const isSuspended = availability.is_suspended;
+    const yellowCount = availability.yellow_cards.reduce((total, cards) => total + cards.count, 0);
     let disciplineLabel = 'Clean';
     let disciplineStatus: 'CLEAN' | 'WARNING' | 'SUSPENDED' = 'CLEAN';
     if (isSuspended) {
@@ -629,23 +639,23 @@ export class PlayersService {
         code: primaryPos.positions.code,
         name: primaryPos.positions.name,
       } : null,
-      status: player.player_status ? {
-        condition: player.player_status.condition,
-        fitness: player.player_status.fitness,
-        form: player.player_status.form,
-        morale: player.player_status.morale,
-        is_injured: Boolean(player.player_status.is_injured),
-        is_suspended: Boolean(player.player_status.is_suspended),
-        is_transfer_listed: Boolean(player.player_status.is_transfer_listed),
-        is_loan_listed: Boolean(player.player_status.is_loan_listed),
-        asking_price: player.player_status.asking_price,
-      } : null,
-      active_injury: isOwner && player.injuries?.[0] && player.injuries[0].days_remaining > 0 ? {
-        injury_type: player.injuries[0].injury_types?.name || 'Chấn thương',
-        injury_code: player.injuries[0].injury_types?.code,
-        severity: player.injuries[0].severity,
-        days_remaining: player.injuries[0].days_remaining,
-        expected_return_date: player.injuries[0].expected_return_date,
+      status: {
+        ...availability,
+        condition: player.player_status?.condition,
+        fitness: player.player_status?.fitness,
+        form: player.player_status?.form,
+        morale: player.player_status?.morale,
+        is_transfer_listed: Boolean(player.player_status?.is_transfer_listed),
+        is_loan_listed: Boolean(player.player_status?.is_loan_listed),
+        asking_price: player.player_status?.asking_price,
+      },
+      active_injury: isOwner && activeInjury ? {
+        id: String(activeInjury.id),
+        injury_type: activeInjury.injury_types?.name || 'Chấn thương',
+        injury_code: activeInjury.injury_types?.code,
+        severity: activeInjury.severity,
+        days_remaining: activeInjury.days_remaining,
+        expected_return_date: activeInjury.expected_return_date,
       } : null,
       play_styles: [player.player_tactics?.primary_style, player.player_tactics?.secondary_style].filter(Boolean),
       mentality: player.player_mentality || null,
@@ -694,10 +704,10 @@ export class PlayersService {
         potential_upgrades: [],
       },
       injuries_tab: {
-        current: isOwner && player.injuries?.[0] && player.injuries[0].days_remaining > 0 ? {
-          injury_type: player.injuries[0].injury_types?.name || 'Chấn thương',
-          severity: player.injuries[0].severity,
-          days_remaining: player.injuries[0].days_remaining,
+        current: isOwner && activeInjury ? {
+          injury_type: activeInjury.injury_types?.name || 'Chấn thương',
+          severity: activeInjury.severity,
+          days_remaining: activeInjury.days_remaining,
         } : null,
         history: injuriesHistory,
       },
@@ -715,7 +725,7 @@ export class PlayersService {
       orderBy: [{ squad_type: 'asc' }, { squad_number: 'asc' }],
       include: {
         countries_players_nationality_idTocountries: { select: { name: true, flag_url: true } },
-        player_status: true,
+        ...playerAvailabilityInclude,
         player_attributes: true,
         player_positions: {
           include: {
@@ -731,6 +741,10 @@ export class PlayersService {
       },
     });
 
+    const contexts = new Map(await Promise.all([...new Set(squad.map(p => matchSquadType(p.squad_type)))].map(async type =>
+      [type, await nextClubMatch(this.prisma, clubId, type)] as const,
+    )));
+    const yellowCards = await loadYellowCards(this.prisma, squad.map(p => p.id), yellowCardMatchScopes([...contexts.values()]));
     return squad.map((p) => {
 
       const primaryPos = p.player_positions.find((pos) => pos.is_preferred) || p.player_positions[0];
@@ -754,16 +768,15 @@ export class PlayersService {
         } : null,
         nationality: p.countries_players_nationality_idTocountries?.name,
         nationalityFlag: p.countries_players_nationality_idTocountries?.flag_url,
-        status: p.player_status ? {
-          condition: p.player_status.condition,
-          fitness: p.player_status.fitness,
-          form: p.player_status.form,
-          morale: p.player_status.morale,
-          is_injured: Boolean(p.player_status.is_injured),
-          is_suspended: Boolean(p.player_status.is_suspended),
-          is_transfer_listed: Boolean(p.player_status.is_transfer_listed),
-          is_loan_listed: Boolean(p.player_status.is_loan_listed),
-        } : null,
+        status: {
+          ...playerAvailability(p, contexts.get(matchSquadType(p.squad_type)) || null, yellowCards.get(p.id)),
+          condition: p.player_status?.condition,
+          fitness: p.player_status?.fitness,
+          form: p.player_status?.form,
+          morale: p.player_status?.morale,
+          is_transfer_listed: Boolean(p.player_status?.is_transfer_listed),
+          is_loan_listed: Boolean(p.player_status?.is_loan_listed),
+        },
         overall_rating: ovr,
         ovr: ovr,
       };

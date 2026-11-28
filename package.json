@@ -6,6 +6,10 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "test:availability": "npm run build && node --test test/player-availability.test.cjs test/discipline-scope.test.cjs test/match-results.test.cjs test/match-lineup.test.cjs",
+    "test:rankings": "npm run build && node --test test/match-ranking.test.cjs test/club-rankings.test.cjs",
+    "test:engine": "npm run build && node --test test/match-engine.test.cjs test/match-engine-contextual.test.cjs test/match-engine-contextual-v2.test.cjs test/tactical-dominance.test.cjs test/tactical-matchups.test.cjs test/tactics-instructions.test.cjs test/match-results.test.cjs test/discipline-scope.test.cjs test/match-lineup.test.cjs test/match-ranking.test.cjs test/club-rankings.test.cjs",
+    "test:lineups": "npm run build && node --test test/match-lineup.test.cjs",
     "test:facilities": "npm run build && node --test test/facilities.test.cjs",
     "test:training": "npm run build && node --test test/training.test.cjs",
     "test:academy": "npm run build && node --test test/academy.test.cjs",
@@ -19,7 +23,11 @@
     "start:prod": "node dist/main",
     "prisma:pull": "npx prisma db pull",
     "prisma:generate": "npx prisma generate",
-    "test:scheduling": "npm run build && node --test test/match-schedule.test.cjs"
+    "test:scheduling": "npm run build && node --test test/match-schedule.test.cjs",
+    "test:tactics:balance": "node scripts/check-tactical-balance.cjs",
+    "test:tactics:rules": "node scripts/check-tactical-rulebook.cjs",
+    "test:tactics:dominance": "node scripts/calibrate-tactical-dominance.cjs",
+    "test:sponsorships": "npm run build && node --test test/sponsorships.test.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

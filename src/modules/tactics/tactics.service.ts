@@ -1,5 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { DisciplineMatch, nextClubMatch } from '../players/discipline-scope';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { playerAvailability, playerAvailabilityInclude } from '../players/player-availability';
+import { coachTacticDefaults } from '../matches/match-lineup.rules';
+import { normalizeInstructions } from '../matches/tactic-normalizer';
+import { TACTICAL_RULEBOOK } from '../matches/tactical-rulebook';
+import { loadYellowCards, yellowCardMatchScopes, YellowCardAccumulation } from '../players/player-yellow-cards';
 
 @Injectable()
 export class TacticsService {
@@ -23,7 +29,7 @@ export class TacticsService {
     });
   }
 
-  private formatPlayerData(p: any, defaultPos?: string) {
+  private formatPlayerData(p: any, defaultPos?: string, nextMatch?: DisciplineMatch | null, yellowCards?: YellowCardAccumulation[]) {
     if (!p) return null;
     const naturalPos = p.player_positions?.find((pp: any) => pp.is_natural)?.positions?.code;
     return {
@@ -37,10 +43,12 @@ export class TacticsService {
       preferred_foot: p.preferred_foot,
       position: naturalPos || defaultPos || 'MID',
       squad_type: p.squad_type || 'FIRST_TEAM',
+      status: { ...playerAvailability(p, nextMatch, yellowCards), condition: p.player_status?.condition },
     };
   }
 
   async getClubTactic(clubId: bigint, squadType: string = 'FIRST_TEAM') {
+    const nextMatch = await nextClubMatch(this.prisma, clubId, squadType);
     // 1. Tìm thông tin HLV trưởng của CLB (ưu tiên HLV đội trẻ nếu truy vấn tuyến trẻ)
     let headCoachContract = null;
     if (squadType === 'YOUTH_U21' || squadType === 'YOUTH_U19') {
@@ -130,6 +138,7 @@ export class TacticsService {
           include: {
             players: {
               select: {
+                ...playerAvailabilityInclude,
                 id: true,
                 first_name: true,
                 last_name: true,
@@ -146,6 +155,7 @@ export class TacticsService {
             formation_positions: {
               include: { positions: true },
             },
+            tactic_position_instructions: { include: { tactical_instructions: true } },
           },
           orderBy: { order_no: 'asc' },
         },
@@ -165,11 +175,7 @@ export class TacticsService {
             squad_type: (squadType as any) || 'FIRST_TEAM',
             name: squadType === 'YOUTH_U21' ? 'Đội hình trẻ U21' : 'Đội hình chính',
             formation_id: defaultFormationId,
-            mentality: headCoachContract?.staff?.tactical_style === 'TIKI_TAKA' ? 'ATTACKING' : 'BALANCED',
-            tempo: 55,
-            passing_style: 'MIXED',
-            pressing_intensity: 55,
-            defensive_line: 50,
+            ...coachTacticDefaults(headCoachContract?.staff?.tactical_style || 'BALANCED'),
           },
         });
 
@@ -247,6 +253,7 @@ export class TacticsService {
               include: {
                 players: {
                   select: {
+                    ...playerAvailabilityInclude,
                     id: true,
                     first_name: true,
                     last_name: true,
@@ -262,6 +269,7 @@ export class TacticsService {
                 formation_positions: {
                   include: { positions: true },
                 },
+                tactic_position_instructions: { include: { tactical_instructions: true } },
               },
               orderBy: { order_no: 'asc' },
             },
@@ -271,6 +279,7 @@ export class TacticsService {
     }
 
     const allPositions: any[] = tactic?.club_tactic_positions || [];
+    const yellowCards = await loadYellowCards(this.prisma, allPositions.flatMap(pos => pos.players ? [pos.players.id] : []), yellowCardMatchScopes([nextMatch]));
     
     // 4. Phân chia đá chính (STARTING) và dự bị (SUBSTITUTE)
     const startingPositionsRaw = allPositions.filter(
@@ -282,7 +291,8 @@ export class TacticsService {
 
     const formattedStartingPositions = startingPositionsRaw.map((pos) => ({
       ...pos,
-      players: this.formatPlayerData(pos.players, pos.formation_positions?.slot_code),
+      instructions: (pos.tactic_position_instructions || []).filter(i => i.value !== 0).map(i => i.tactical_instructions.code),
+      players: this.formatPlayerData(pos.players, pos.formation_positions?.slot_code, nextMatch, yellowCards.get(pos.players?.id)),
     }));
 
     // Sắp xếp 9 ghế dự bị theo order_no (1..9), nếu ghế nào chưa có cầu thủ thì players = null
@@ -294,7 +304,7 @@ export class TacticsService {
           id: foundSub.id.toString(),
           order_no: seat,
           lineup_role: 'SUBSTITUTE',
-          players: this.formatPlayerData(foundSub.players),
+          players: this.formatPlayerData(foundSub.players, undefined, nextMatch, yellowCards.get(foundSub.players?.id)),
         });
       } else {
         formattedSubstitutes.push({
@@ -308,6 +318,7 @@ export class TacticsService {
 
     return {
       ...tactic,
+      next_match: nextMatch ? { id: String(nextMatch.id), competition_season_id: nextMatch.competition_season_id == null ? null : String(nextMatch.competition_season_id), competition_name: nextMatch.competition_seasons?.name || null } : null,
       club_tactic_positions: formattedStartingPositions,
       substitutes: formattedSubstitutes,
       headCoach: headCoachContract?.staff
@@ -345,160 +356,181 @@ export class TacticsService {
     squadType: string = 'FIRST_TEAM',
   ) {
     const finalSquadType = dto.squadType || squadType || 'FIRST_TEAM';
-    let tactic = await this.prisma.club_tactics.findFirst({
-      where: {
-        club_id: clubId,
-        squad_type: (finalSquadType as any),
-      },
-    });
-
-    if (!tactic) {
-      tactic = await this.prisma.club_tactics.create({
-        data: {
+    const instructionCodes: string[] = [...new Set<string>((dto.positions || []).flatMap(p => p.instructions || []))];
+    if (instructionCodes.some(code => !TACTICAL_RULEBOOK.instructions.includes(code))) {
+      throw new BadRequestException('Mã chỉ dẫn chiến thuật không hợp lệ');
+    }
+    const instructionRows = instructionCodes.length ? await this.prisma.tactical_instructions.findMany({ where: { code: { in: instructionCodes } } }) : [];
+    if (instructionRows.length !== instructionCodes.length) throw new BadRequestException('Thiếu chỉ dẫn trong danh mục chiến thuật');
+    await this.prisma.$transaction(async tx => {
+      let tactic = await tx.club_tactics.findFirst({
+        where: {
           club_id: clubId,
           squad_type: (finalSquadType as any),
-          name: dto.name || (finalSquadType === 'YOUTH_U21' ? 'Đội hình trẻ U21' : 'Đội hình thi đấu'),
-          formation_id: BigInt(dto.formationId || '1'),
-          mentality: dto.mentality || 'BALANCED',
-          tempo: dto.tempo ?? 50,
-          passing_style: dto.passingStyle || 'MIXED',
-          pressing_intensity: dto.pressingIntensity ?? 50,
-          defensive_line: dto.defensiveLine ?? 50,
-        },
-      });
-    } else {
-      await this.prisma.club_tactics.update({
-        where: { id: tactic.id },
-        data: {
-          ...(dto.name ? { name: dto.name } : {}),
-          ...(dto.formationId ? { formation_id: BigInt(dto.formationId) } : {}),
-          ...(dto.mentality ? { mentality: dto.mentality } : {}),
-          ...(dto.tempo !== undefined ? { tempo: Number(dto.tempo) } : {}),
-          ...(dto.passingStyle ? { passing_style: dto.passingStyle } : {}),
-          ...(dto.pressingIntensity !== undefined ? { pressing_intensity: Number(dto.pressingIntensity) } : {}),
-          ...(dto.defensiveLine !== undefined ? { defensive_line: Number(dto.defensiveLine) } : {}),
-          updated_at: new Date(),
-        },
-      });
-    }
-
-    // 1. CẬP NHẬT HOẶC TẠO MỚI 11 VỊ TRÍ ĐÁ CHÍNH (STARTING XI)
-    if (dto.positions && dto.positions.length > 0) {
-      const existingStarters = await this.prisma.club_tactic_positions.findMany({
-        where: {
-          tactic_id: tactic.id,
-          lineup_role: 'STARTING',
         },
       });
 
-      const activeFormationPosIds: bigint[] = [];
+      if (!tactic) {
+        tactic = await tx.club_tactics.create({
+          data: {
+            club_id: clubId,
+            squad_type: (finalSquadType as any),
+            name: dto.name || (finalSquadType === 'YOUTH_U21' ? 'Đội hình trẻ U21' : 'Đội hình thi đấu'),
+            formation_id: BigInt(dto.formationId || '1'),
+            mentality: dto.mentality || 'BALANCED',
+            tempo: dto.tempo ?? 50,
+            passing_style: dto.passingStyle || 'MIXED',
+            pressing_intensity: dto.pressingIntensity ?? 50,
+            defensive_line: dto.defensiveLine ?? 50,
+          },
+        });
+      } else {
+        await tx.club_tactics.update({
+          where: { id: tactic.id },
+          data: {
+            ...(dto.name ? { name: dto.name } : {}),
+            ...(dto.formationId ? { formation_id: BigInt(dto.formationId) } : {}),
+            ...(dto.mentality ? { mentality: dto.mentality } : {}),
+            ...(dto.tempo !== undefined ? { tempo: Number(dto.tempo) } : {}),
+            ...(dto.passingStyle ? { passing_style: dto.passingStyle } : {}),
+            ...(dto.pressingIntensity !== undefined ? { pressing_intensity: Number(dto.pressingIntensity) } : {}),
+            ...(dto.defensiveLine !== undefined ? { defensive_line: Number(dto.defensiveLine) } : {}),
+            updated_at: new Date(),
+          },
+        });
+      }
 
-      for (let i = 0; i < dto.positions.length; i++) {
-        const pos = dto.positions[i];
-        if (pos.formationPositionId) {
-          const formPosId = BigInt(pos.formationPositionId);
-          activeFormationPosIds.push(formPosId);
-          const pId = pos.playerId ? BigInt(pos.playerId) : null;
+      // 1. CẬP NHẬT HOẶC TẠO MỚI 11 VỊ TRÍ ĐÁ CHÍNH (STARTING XI)
+      if (dto.positions && dto.positions.length > 0) {
+        const existingStarters = await tx.club_tactic_positions.findMany({
+          where: {
+            tactic_id: tactic.id,
+            lineup_role: 'STARTING',
+          },
+        });
 
-          const matched = existingStarters.find(
-            (e) => e.formation_position_id !== null && e.formation_position_id === formPosId,
-          );
+        const activeFormationPosIds: bigint[] = [];
 
-          if (matched) {
-            // Có rồi -> CẬP NHẬT
-            await this.prisma.club_tactic_positions.update({
-              where: { id: matched.id },
+        for (let i = 0; i < dto.positions.length; i++) {
+          const pos = dto.positions[i];
+          if (pos.formationPositionId) {
+            const formPosId = BigInt(pos.formationPositionId);
+            activeFormationPosIds.push(formPosId);
+            const pId = pos.playerId ? BigInt(pos.playerId) : null;
+
+            const matched = existingStarters.find(
+              (e) => e.formation_position_id !== null && e.formation_position_id === formPosId,
+            );
+
+            let positionId: bigint;
+            if (matched) {
+              // Có rồi -> CẬP NHẬT
+              const savedPosition = await tx.club_tactic_positions.update({
+                where: { id: matched.id },
+                data: {
+                  player_id: pId,
+                  role: pos.role || 'STANDARD',
+                  duty: pos.duty || 'SUPPORT',
+                  order_no: i + 1,
+                },
+              });
+              positionId = savedPosition.id;
+            } else {
+              // Chưa có -> TẠO MỚI
+              const savedPosition = await tx.club_tactic_positions.create({
+                data: {
+                  tactic_id: tactic.id,
+                  formation_position_id: formPosId,
+                  player_id: pId,
+                  role: pos.role || 'STANDARD',
+                  duty: pos.duty || 'SUPPORT',
+                  lineup_role: 'STARTING',
+                  order_no: i + 1,
+                },
+              });
+              positionId = savedPosition.id;
+            }
+            if (pos.instructions !== undefined) {
+              const codes = normalizeInstructions(pos.instructions);
+              await tx.tactic_position_instructions.deleteMany({ where: { tactic_position_id: positionId } });
+              if (codes.length) await tx.tactic_position_instructions.createMany({ data: codes.map(code => ({
+                tactic_position_id: positionId, instruction_id: instructionRows.find(row => row.code === code).id, value: 1,
+              })) });
+            }
+          }
+        }
+
+        // Nếu HLV đổi sang sơ đồ mới, dọn dẹp các vị trí của sơ đồ cũ không còn trong sơ đồ mới
+        if (activeFormationPosIds.length > 0) {
+          await tx.club_tactic_positions.deleteMany({
+            where: {
+              tactic_id: tactic.id,
+              lineup_role: 'STARTING',
+              formation_position_id: { notIn: activeFormationPosIds },
+            },
+          });
+        }
+      }
+
+      // 2. CẬP NHẬT HOẶC TẠO MỚI 9 GHẾ DỰ BỊ (SUBSTITUTES)
+      // Đảm bảo đủ 9 ghế (order_no = 1..9), nếu ghế chưa fill cầu thủ thì player_id = null
+      if (dto.substitutes !== undefined) {
+        const existingSubs = await tx.club_tactic_positions.findMany({
+          where: {
+            tactic_id: tactic.id,
+            lineup_role: 'SUBSTITUTE',
+          },
+          orderBy: { order_no: 'asc' },
+        });
+
+        const subInputs = dto.substitutes || [];
+
+        for (let seatNo = 1; seatNo <= 9; seatNo++) {
+          // Tìm ghế tương ứng từ DTO (theo orderNo hoặc theo index)
+          const inputSub = subInputs.find((s) => (s.orderNo || 0) === seatNo) || subInputs[seatNo - 1];
+          const pId = inputSub?.playerId ? BigInt(inputSub.playerId) : null;
+
+          // Tìm bản ghi ghế dự bị hiện có trong CSDL
+          const matchedSub = existingSubs.find((e) => e.order_no === seatNo) || existingSubs[seatNo - 1];
+
+          if (matchedSub) {
+            // Có rồi -> CẬP NHẬT (player_id có thể là null nếu ghế chưa fill)
+            await tx.club_tactic_positions.update({
+              where: { id: matchedSub.id },
               data: {
+                formation_position_id: null,
                 player_id: pId,
-                role: pos.role || 'STANDARD',
-                duty: pos.duty || 'SUPPORT',
-                order_no: i + 1,
+                role: 'BENCH',
+                duty: 'SUPPORT',
+                order_no: seatNo,
               },
             });
           } else {
-            // Chưa có -> TẠO MỚI
-            await this.prisma.club_tactic_positions.create({
+            // Chưa có -> TẠO MỚI ghế dự bị này
+            await tx.club_tactic_positions.create({
               data: {
                 tactic_id: tactic.id,
-                formation_position_id: formPosId,
+                formation_position_id: null,
                 player_id: pId,
-                role: pos.role || 'STANDARD',
-                duty: pos.duty || 'SUPPORT',
-                lineup_role: 'STARTING',
-                order_no: i + 1,
+                role: 'BENCH',
+                duty: 'SUPPORT',
+                lineup_role: 'SUBSTITUTE',
+                order_no: seatNo,
               },
             });
           }
         }
+
+        // Xóa các ghế thừa nếu trước đó có > 9 ghế
+        if (existingSubs.length > 9) {
+          const extraIds = existingSubs.slice(9).map((e) => e.id);
+          await tx.club_tactic_positions.deleteMany({
+            where: { id: { in: extraIds } },
+          });
+        }
+
       }
-
-      // Nếu HLV đổi sang sơ đồ mới, dọn dẹp các vị trí của sơ đồ cũ không còn trong sơ đồ mới
-      if (activeFormationPosIds.length > 0) {
-        await this.prisma.club_tactic_positions.deleteMany({
-          where: {
-            tactic_id: tactic.id,
-            lineup_role: 'STARTING',
-            formation_position_id: { notIn: activeFormationPosIds },
-          },
-        });
-      }
-    }
-
-    // 2. CẬP NHẬT HOẶC TẠO MỚI 9 GHẾ DỰ BỊ (SUBSTITUTES)
-    // Đảm bảo đủ 9 ghế (order_no = 1..9), nếu ghế chưa fill cầu thủ thì player_id = null
-    const existingSubs = await this.prisma.club_tactic_positions.findMany({
-      where: {
-        tactic_id: tactic.id,
-        lineup_role: 'SUBSTITUTE',
-      },
-      orderBy: { order_no: 'asc' },
-    });
-
-    const subInputs = dto.substitutes || [];
-
-    for (let seatNo = 1; seatNo <= 9; seatNo++) {
-      // Tìm ghế tương ứng từ DTO (theo orderNo hoặc theo index)
-      const inputSub = subInputs.find((s) => (s.orderNo || 0) === seatNo) || subInputs[seatNo - 1];
-      const pId = inputSub?.playerId ? BigInt(inputSub.playerId) : null;
-
-      // Tìm bản ghi ghế dự bị hiện có trong CSDL
-      const matchedSub = existingSubs.find((e) => e.order_no === seatNo) || existingSubs[seatNo - 1];
-
-      if (matchedSub) {
-        // Có rồi -> CẬP NHẬT (player_id có thể là null nếu ghế chưa fill)
-        await this.prisma.club_tactic_positions.update({
-          where: { id: matchedSub.id },
-          data: {
-            formation_position_id: null,
-            player_id: pId,
-            role: 'BENCH',
-            duty: 'SUPPORT',
-            order_no: seatNo,
-          },
-        });
-      } else {
-        // Chưa có -> TẠO MỚI ghế dự bị này
-        await this.prisma.club_tactic_positions.create({
-          data: {
-            tactic_id: tactic.id,
-            formation_position_id: null,
-            player_id: pId,
-            role: 'BENCH',
-            duty: 'SUPPORT',
-            lineup_role: 'SUBSTITUTE',
-            order_no: seatNo,
-          },
-        });
-      }
-    }
-
-    // Xóa các ghế thừa nếu trước đó có > 9 ghế
-    if (existingSubs.length > 9) {
-      const extraIds = existingSubs.slice(9).map((e) => e.id);
-      await this.prisma.club_tactic_positions.deleteMany({
-        where: { id: { in: extraIds } },
-      });
-    }
+    }, { timeout: 10_000 });
 
     return {
       message: 'Cập nhật chiến thuật, đội hình xuất phát và danh sách dự bị thành công!',

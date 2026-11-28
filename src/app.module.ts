@@ -13,6 +13,7 @@ import { TransfersModule } from './modules/transfers/transfers.module';
 import { FinancesModule } from './modules/finances/finances.module';
 import { TrainingModule } from './modules/training/training.module';
 import { AcademyModule } from './modules/academy/academy.module';
+import { ClubRankingsModule } from './modules/rankings/club-rankings.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AcademyModule } from './modules/academy/academy.module';
     FinancesModule,
     TrainingModule,
     AcademyModule,
+    ClubRankingsModule,
   ],
 })
 export class AppModule {}

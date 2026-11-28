@@ -29,6 +29,12 @@ export class TacticPositionDto {
   @IsOptional()
   @IsString()
   duty?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Mã chỉ dẫn cho vị trí; [] để xóa, bỏ qua để giữ nguyên' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  instructions?: string[];
 }
 
 export class TacticSubstituteDto {

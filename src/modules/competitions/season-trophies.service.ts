@@ -1,3 +1,4 @@
+import { isFinishedMatch, singleMatchWinner } from '../matches/match-result.rules';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
@@ -44,7 +45,7 @@ export class SeasonTrophiesService {
         },
       });
 
-      if (!match || match.status !== 'FINISHED' || !match.competition_seasons) {
+      if (!match || !isFinishedMatch(match) || !match.competition_seasons) {
         return { awarded: false, reason: 'Trận đấu chưa kết thúc hoặc không thuộc mùa giải' };
       }
 
@@ -204,7 +205,7 @@ export class SeasonTrophiesService {
         const unfinishedCount = await this.prisma.matches.count({
           where: {
             competition_season_id: cs.id,
-            status: { not: 'FINISHED' },
+            status: { notIn: ['FINISHED', 'COMPLETED'] },
           },
         });
 
@@ -373,7 +374,7 @@ export class SeasonTrophiesService {
     const finishedMatches = await this.prisma.matches.findMany({
       where: {
         competition_season_id: competitionSeasonId,
-        status: 'FINISHED',
+        status: { in: ['FINISHED', 'COMPLETED'] },
         home_score: { not: null },
         away_score: { not: null },
       },
@@ -453,13 +454,6 @@ export class SeasonTrophiesService {
    * Helper xác định CLB thắng trận Knockout
    */
   private determineMatchWinnerId(match: any): bigint | null {
-    if (match.home_score === null || match.away_score === null) return null;
-    if (match.home_score > match.away_score) return match.home_club_id;
-    if (match.away_score > match.home_score) return match.away_club_id;
-    if (match.home_penalty_score !== null && match.away_penalty_score !== null) {
-      if (match.home_penalty_score > match.away_penalty_score) return match.home_club_id;
-      if (match.away_penalty_score > match.home_penalty_score) return match.away_club_id;
-    }
-    return match.home_club_id;
+    return singleMatchWinner(match);
   }
 }

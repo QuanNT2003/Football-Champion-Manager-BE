@@ -123,7 +123,7 @@ export class ContinentalCoefficientService {
         competition_seasons: {
           competitions: { scope: 'CONTINENTAL' },
         },
-        status: 'COMPLETED',
+        status: { in: ['FINISHED', 'COMPLETED'] },
       },
       include: {
         competition_seasons: { select: { competition_id: true } },

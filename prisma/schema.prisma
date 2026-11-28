@@ -182,6 +182,7 @@ model club_sponsorships {
   id          BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
   club_id     BigInt     @db.UnsignedBigInt
   sponsor_id  BigInt     @db.UnsignedBigInt
+  season_id   BigInt?    @db.UnsignedBigInt
   start_date  DateTime   @db.Date
   end_date    DateTime?  @db.Date
   amount      Decimal    @default(0.00) @db.Decimal(18, 2)
@@ -190,7 +191,10 @@ model club_sponsorships {
   clubs       clubs      @relation(fields: [club_id], references: [id], onDelete: Cascade, map: "fk_club_sponsorships_club_id")
   currencies  currencies @relation(fields: [currency_id], references: [id], onDelete: Cascade, map: "fk_club_sponsorships_currency_id")
   sponsors    sponsors   @relation(fields: [sponsor_id], references: [id], onDelete: Cascade, map: "fk_club_sponsorships_sponsor_id")
+  seasons     seasons?   @relation(fields: [season_id], references: [id], onDelete: Cascade, map: "fk_club_sponsorships_season_id")
 
+  @@unique([club_id, season_id, sponsor_id], map: "uq_club_sponsorships_season_sponsor")
+  @@index([season_id, status], map: "idx_club_sponsorships_season_status")
   @@index([club_id], map: "idx_club_sponsorships_club_id")
   @@index([currency_id], map: "idx_club_sponsorships_currency_id")
   @@index([sponsor_id], map: "idx_club_sponsorships_sponsor_id")
@@ -1438,6 +1442,7 @@ model seasons {
   club_bonuses               club_bonuses[]
   club_news                  club_news[]
   club_objectives            club_objectives[]
+  club_sponsorships          club_sponsorships[]
   club_trophies              club_trophies[]
   competition_seasons        competition_seasons[]
   player_performance_bonuses player_performance_bonuses[]

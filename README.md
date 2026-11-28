@@ -37,12 +37,37 @@ API yêu cầu JWT và người đang quản lý CLB:
 | POST | `/clubs/:clubId/academy/recruitment` | Mở lại danh sách ứng viên của mùa |
 | POST | `/clubs/:clubId/academy/candidates/:candidateId/sign` | Ký ứng viên vào U21 |
 
-Cấu trúc database được quản lý tập trung trong `../qkaito_football_champion_schema.sql`.
-Mọi thay đổi bảng, cột, index và khóa ngoại cập nhật vào file schema này.
+Cấu trúc và dữ liệu database được quản lý tập trung trong ba file SQL gốc, import theo thứ tự:
+
+1. `../qkaito_football_champion_schema.sql`: bảng, cột, index và khóa ngoại.
+2. `../qkaito_football_champion_seed_data.sql`: dữ liệu danh mục và cấu hình.
+3. `../qkaito_football_champion_world1_season1_data.sql`: dữ liệu thế giới 1, mùa 1.
+
+Mọi thay đổi database phải cập nhật trực tiếp các file gốc tương ứng và đồng bộ `prisma/schema.prisma` khi thay đổi cấu trúc. Không tạo file SQL cập nhật cấu trúc hoặc migration riêng. Người dùng tự import lại database.
 Backend không tự sửa cấu trúc database khi khởi động.
 Các lứa cũ thiếu snapshot được giữ nguyên, không tự tạo lại ứng viên.
 
 `npm run test:academy` build và kiểm thử nghiệp vụ. `npm run test:academy:db` kiểm thử MySQL bằng thế giới/CLB riêng rồi rollback toàn bộ dữ liệu kiểm thử; cần database có cấu trúc khớp schema chính và có dữ liệu người dùng, CLB, tiền tệ SOFT hoạt động, học viện cấp 10.
+
+## Nhà tài trợ
+
+Màn hình tài chính của FE và FEv2 có nút **Nhà tài trợ** mở modal lời mời và hợp đồng có hiệu lực. API yêu cầu JWT và chủ quản lý CLB:
+
+- `GET /finances/club/:clubId/sponsorships`: xem hợp đồng và suất còn lại.
+- `POST /finances/club/:clubId/sponsorships/offers`: sinh lời mời lần đầu rồi dùng lại danh sách đã lưu trong mùa.
+- `POST /finances/club/:clubId/sponsorships/:offerId/sign`: ký và nhận toàn bộ CASH trong cùng transaction với hợp đồng và sổ giao dịch.
+
+Mỗi mùa ký tối đa 4 hợp đồng, đồng thời không quá 4 hợp đồng có hiệu lực. Không có hủy/đổi nhà tài trợ giữa mùa. Hết mùa, cả hợp đồng và lời mời cũ chuyển `EXPIRED`; mùa mới có 4 suất mới. Khóa CLB rồi khóa mùa ngăn ký trùng hoặc vượt giới hạn khi gửi nhiều yêu cầu đồng thời. `idempotency_key = SPONSORSHIP_<id>` bảo vệ sổ giao dịch.
+
+Phòng tài chính dùng cơ sở hiện có `COMMERCIAL_OFFICE` (Văn phòng thương mại). Cấp hiện tại vẫn áp dụng trong lúc nâng cấp; thiếu công trình tính cấp 0. Lần mở đầu mùa sinh `4 + floor(level × 4 / 10)` lời mời, tối đa 8, lấy từ danh mục `sponsors` và không lặp thương hiệu. Danh tiếng CLB chuẩn hóa 0–10.000 và cấp phòng 0–10 tạo sức hút `0,65 × reputation / 10000 + 0,35 × level / 10`. Sức hút tăng cơ hội thương hiệu danh tiếng và khoản tài trợ cao. Mức tiền nguyên 1–100M dùng phân phối `1 + floor(100 × U^(10 − 7 × sức hút))`, chặn trên 100M; xác suất giảm theo giá trị, kể cả ở cấp cao nhất. Lời mời đã sinh không đổi khi tải lại hoặc nâng cấp trong mùa; không phát sinh dòng thu tiền cho lời mời chưa ký.
+
+Schema chuẩn `../qkaito_football_champion_schema.sql` và Prisma đã bổ sung `club_sponsorships.season_id` cùng index/khóa ngoại. Danh mục nhà tài trợ tiếp tục lấy từ `../qkaito_football_champion_seed_data.sql`; không cần thêm hợp đồng mẫu vào `../qkaito_football_champion_world1_season1_data.sql` vì lời mời được sinh khi CLB mở danh sách lần đầu trong mùa. Người dùng tự import lại ba file SQL gốc theo thứ tự nêu trên, sau đó tạo Prisma Client và khởi động lại backend:
+
+```sh
+npm run prisma:generate
+```
+
+Backend không tự sửa schema. Hợp đồng `ACTIVE` từ dữ liệu cũ chưa có mùa được gắn vào mùa hiện tại nếu chưa hết hạn và vẫn chiếm suất. `npm run test:sponsorships` kiểm thử xác suất, lưu lời mời, quyền quản lý, ký đồng thời, giới hạn, rollback và chuyển mùa với database giả lập.
 
 ## Nâng cấp cơ sở vật chất
 

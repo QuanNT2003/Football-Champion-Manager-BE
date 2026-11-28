@@ -588,6 +588,7 @@ function playerProfileFixture(history) {
       ...player, ...(include?.player_attribute_history ? { player_attribute_history: history } : {}),
     }) },
     player_contracts: { findFirst: async () => null },
+    injuries: { findMany: async () => [] },
     attributes: { findMany: async () => [
       { id: 1n, code: 'FIN', name: 'Finishing', category: 'TECHNICAL' },
       { id: 2n, code: 'STA', name: 'Stamina', category: 'PHYSICAL' },

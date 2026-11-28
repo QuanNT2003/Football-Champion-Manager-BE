@@ -232,9 +232,12 @@ export class GameWorldService implements OnApplicationBootstrap {
 
     await this.prisma.$executeRaw`
       UPDATE player_status ps
-      JOIN injuries inj ON ps.player_id = inj.player_id
       SET ps.is_injured = 0
-      WHERE inj.days_remaining = 0 AND ps.is_injured = 1
+      WHERE ps.is_injured = 1 AND NOT EXISTS (
+        SELECT 1 FROM injuries inj
+        WHERE inj.player_id = ps.player_id AND inj.days_remaining > 0
+          AND inj.status IN ('ACTIVE', 'RECOVERING')
+      )
     `;
 
     await this.prisma.$executeRaw`

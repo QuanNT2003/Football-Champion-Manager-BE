@@ -105,6 +105,20 @@ export class CompetitionsController {
     return this.competitionsService.getTopAssists(BigInt(id), limit ? Number(limit) : 10, countryId, groupId);
   }
 
+  @Get(':id/top-players')
+  @ApiOperation({ summary: 'Lấy top cầu thủ xuất sắc nhất theo điểm thi đấu trung bình' })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'countryId', required: false })
+  @ApiQuery({ name: 'groupId', required: false })
+  async getTopPlayers(
+    @Param('id') id: string,
+    @Query('limit') limit?: number,
+    @Query('countryId') countryId?: string,
+    @Query('groupId') groupId?: string,
+  ) {
+    return this.competitionsService.getTopPlayers(BigInt(id), limit ? Number(limit) : 10, countryId, groupId);
+  }
+
   @Get(':id/teams')
   @ApiOperation({ summary: 'Lấy danh sách các đội bóng tham gia giải đấu' })
   @ApiQuery({ name: 'countryId', required: false })

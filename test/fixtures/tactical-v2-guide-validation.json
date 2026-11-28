@@ -1,0 +1,168 @@
+[
+  {
+    "engine": "2.3.0",
+    "ruleset": "2.0.0",
+    "hash": "55faaf05f200e90db72cb2025c359ae961182bc3264a9c50e32094a452a7be16",
+    "strength": 0.5,
+    "suite": "guide",
+    "scenario": "normal",
+    "samples": 64,
+    "startSeed": 9000,
+    "matches": 2048,
+    "wins": 1443,
+    "draws": 360,
+    "losses": 245,
+    "goalsFor": 5080,
+    "goalsAgainst": 1865,
+    "pairs": [
+      {
+        "opponent": "433_ATT",
+        "favored": "4231_WIDE",
+        "wins": 81,
+        "draws": 25,
+        "losses": 22,
+        "goalsFor": 282,
+        "goalsAgainst": 134
+      },
+      {
+        "opponent": "433_DEF",
+        "favored": "4231_WIDE",
+        "wins": 101,
+        "draws": 15,
+        "losses": 12,
+        "goalsFor": 335,
+        "goalsAgainst": 94
+      },
+      {
+        "opponent": "4231_MOD",
+        "favored": "41212_NAR",
+        "wins": 93,
+        "draws": 23,
+        "losses": 12,
+        "goalsFor": 340,
+        "goalsAgainst": 120
+      },
+      {
+        "opponent": "4231_WIDE",
+        "favored": "4321_TREE",
+        "wins": 87,
+        "draws": 21,
+        "losses": 20,
+        "goalsFor": 285,
+        "goalsAgainst": 112
+      },
+      {
+        "opponent": "442_CLASS",
+        "favored": "433_ATT",
+        "wins": 86,
+        "draws": 27,
+        "losses": 15,
+        "goalsFor": 329,
+        "goalsAgainst": 133
+      },
+      {
+        "opponent": "41212_NAR",
+        "favored": "352_WB",
+        "wins": 90,
+        "draws": 27,
+        "losses": 11,
+        "goalsFor": 308,
+        "goalsAgainst": 115
+      },
+      {
+        "opponent": "41212_WIDE",
+        "favored": "4321_TREE",
+        "wins": 96,
+        "draws": 19,
+        "losses": 13,
+        "goalsFor": 326,
+        "goalsAgainst": 107
+      },
+      {
+        "opponent": "4312_NARROW",
+        "favored": "41212_NAR",
+        "wins": 95,
+        "draws": 22,
+        "losses": 11,
+        "goalsFor": 330,
+        "goalsAgainst": 111
+      },
+      {
+        "opponent": "4321_TREE",
+        "favored": "343_FLAT",
+        "wins": 84,
+        "draws": 27,
+        "losses": 17,
+        "goalsFor": 303,
+        "goalsAgainst": 122
+      },
+      {
+        "opponent": "352_WB",
+        "favored": "433_ATT",
+        "wins": 85,
+        "draws": 24,
+        "losses": 19,
+        "goalsFor": 314,
+        "goalsAgainst": 127
+      },
+      {
+        "opponent": "343_FLAT",
+        "favored": "433_DEF",
+        "wins": 86,
+        "draws": 23,
+        "losses": 19,
+        "goalsFor": 302,
+        "goalsAgainst": 127
+      },
+      {
+        "opponent": "3421_XABI",
+        "favored": "4231_WIDE",
+        "wins": 83,
+        "draws": 26,
+        "losses": 19,
+        "goalsFor": 279,
+        "goalsAgainst": 128
+      },
+      {
+        "opponent": "3412_CLASS",
+        "favored": "4321_TREE",
+        "wins": 99,
+        "draws": 22,
+        "losses": 7,
+        "goalsFor": 371,
+        "goalsAgainst": 95
+      },
+      {
+        "opponent": "532_CATENACCIO",
+        "favored": "433_ATT",
+        "wins": 89,
+        "draws": 20,
+        "losses": 19,
+        "goalsFor": 305,
+        "goalsAgainst": 128
+      },
+      {
+        "opponent": "541_BUS",
+        "favored": "41212_NAR",
+        "wins": 94,
+        "draws": 17,
+        "losses": 17,
+        "goalsFor": 350,
+        "goalsAgainst": 112
+      },
+      {
+        "opponent": "523_COUNTER",
+        "favored": "4231_WIDE",
+        "wins": 94,
+        "draws": 22,
+        "losses": 12,
+        "goalsFor": 321,
+        "goalsAgainst": 100
+      }
+    ],
+    "winRate": 0.70458984375,
+    "elapsedMs": 124099,
+    "sourceHash": "9eb6bffc9bcbc0b14e398efb07d7dbbfb40581af75f92eb2af2f041457072125",
+    "guideHash": "40066d8a033593056847a13f2dccd0eaa7cc41439d64a0fd7d5fa3899b51c3f9"
+  }
+]
